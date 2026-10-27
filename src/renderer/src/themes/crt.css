@@ -1,0 +1,43 @@
+/* 인광 터미널: green phosphor on black. Monospace everywhere, a soft glow on text, faint scanlines. */
+[data-theme='crt'] {
+  --task-0: #39ff6a; --task-1: #b6ff4a; --task-2: #ffc94a; --task-3: #5cffd6; --task-4: #8ad8ff; --task-5: #ff9e5c;
+  --bg: #030703;
+  --panel: #071107;
+  --panel-2: #0c1a0c;
+  --line: #1d4a22;
+  --text: #9dffb0;
+  --quiet: #57a866;
+  --accent: #39ff6a;
+  --accent-soft: rgba(57, 255, 106, 0.12);
+  --on-accent: #021204;
+  --good: #39ff6a;
+  --warn: #ffc94a;
+  --bad: #ff5f56;
+  --mono: 'D2Coding', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  --sans: var(--mono);
+}
+
+[data-theme='crt'] body { text-shadow: 0 0 3px rgba(57, 255, 106, 0.45); }
+[data-theme='crt'] * { border-radius: 0 !important; }
+
+/* Scanlines over the whole window. pointer-events: none keeps every click working. */
+[data-theme='crt'] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, 0.22) 2px 3px);
+}
+
+[data-theme='crt'] .actions button.primary,
+[data-theme='crt'] .browser-bar button.primary,
+[data-theme='crt'] .recommend,
+[data-theme='crt'] .num-badge,
+[data-theme='crt'] .rail-badge {
+  text-shadow: none;
+}
+[data-theme='crt'] .node-지금 { box-shadow: 0 0 8px rgba(57, 255, 106, 0.5); }
+[data-theme='crt'] .memo:focus,
+[data-theme='crt'] .filter:focus,
+[data-theme='crt'] .address:focus { box-shadow: 0 0 6px rgba(57, 255, 106, 0.4); outline: none; }

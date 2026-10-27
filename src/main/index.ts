@@ -1,0 +1,276 @@
+import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, shell } from 'electron'
+import { execFile } from 'node:child_process'
+import { request } from 'node:http'
+import { homedir } from 'node:os'
+import { existsSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import type { BridgeState, Reply, WorktreeCheck } from '../shared/types'
+import { watchBridge } from './bridgeWatch'
+import { registerAccount } from './account'
+import { registerDevServers } from './devservers'
+import { bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
+import { saveShot } from './shots'
+import { onTerminalsChange, registerTerminals, typingTarget } from './terminals'
+import { registerAgentTerms } from './agentTerms'
+import { startAgentDelivery } from './agentDelivery'
+import { resolveLang, setLang, t } from '../shared/i18n'
+
+const DIR = join(homedir(), '.claude-ide')
+const SOCKET = process.env.CLAUDE_IDE_SOCKET ?? join(DIR, 'bridge.sock')
+const RETRY_MS = 2000
+
+let win: BrowserWindow | null = null
+let connected = false
+
+// The app's own page. Only it may navigate the main window or call the handlers
+// below: every ipcMain.handle and ipcMain.on in this process goes through the
+// guard, so a page dropped onto the window or opened in a webview gets nothing.
+const APP_URL = process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(join(import.meta.dirname, '../renderer/index.html')).href
+const ipcMain = guardIpc(rawIpcMain, event => isAppUrl(event.senderFrame?.url, APP_URL))
+
+function startBridge(): Promise<boolean> {
+  return new Promise(resolve => {
+    execFile('sh', [join(DIR, 'start-bridge.sh')], error => resolve(error === null))
+  })
+}
+
+function call(method: string, path: string, body?: unknown): Promise<Reply> {
+  return new Promise(resolve => {
+    const req = request(
+      { socketPath: SOCKET, method, path, headers: { 'content-type': 'application/json' } },
+      res => {
+        let text = ''
+        res.setEncoding('utf8')
+        res.on('data', chunk => (text += chunk))
+        res.on('end', () => {
+          let json: Record<string, unknown> = {}
+          try {
+            json = text ? (JSON.parse(text) as Record<string, unknown>) : {}
+          } catch {
+            json = { error: text }
+          }
+          const status = res.statusCode ?? 0
+          resolve({ ok: status >= 200 && status < 300, status, json })
+        })
+      },
+    )
+    req.on('error', error => resolve({ ok: false, status: 0, json: { error: error.message } }))
+    if (body !== undefined) req.write(JSON.stringify(body))
+    req.end()
+  })
+}
+
+function send(channel: string, payload: unknown): void {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+}
+
+// Keeps one SSE subscription to the bridge; every change becomes an IPC event,
+// and the renderer refetches /state (also on the 'connected' event after a
+// reconnect). On loss the app shows the bridge as down at once, restarts it and
+// subscribes again.
+function watch(): void {
+  watchBridge({
+    socketPath: SOCKET,
+    retryMs: RETRY_MS,
+    onConnection: up => {
+      connected = up
+      send('bridge:connection', up)
+    },
+    onEvent: event => {
+      send('bridge:change', event)
+      agentDelivery.onBridgeEvent(event)
+    },
+    beforeRetry: startBridge,
+  })
+}
+
+ipcMain.handle('bridge:state', async (): Promise<BridgeState | null> => {
+  const reply = await call('GET', '/state')
+  // Feature area: UI language. Texts this process words (errors, dialogs, terminal names) follow the setting.
+  if (reply.ok) setLang(resolveLang((reply.json as unknown as BridgeState).settings?.lang, app.getLocale()))
+  // The bridge, the mod and the MCP server only see LANG, which often says en_US on a Mac set
+  // to another language. Saving the OS language once makes them all speak the app's language.
+  if (reply.ok && (reply.json as unknown as BridgeState).settings?.lang === undefined) {
+    await call('POST', '/settings', { key: 'lang', value: resolveLang(undefined, app.getLocale()) })
+  }
+  return reply.ok ? (reply.json as unknown as BridgeState) : null
+})
+ipcMain.handle('bridge:answer', (_e, id: number, choice: string, memo: string) =>
+  call('POST', `/questions/${Number(id)}/answer`, { choice, memo }),
+)
+function run(command: string, args: string[], cwd?: string): Promise<{ code: number; out: string }> {
+  return new Promise(resolve => {
+    execFile(command, args, { cwd, maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) =>
+      resolve({ code: error ? Number((error as { code?: number }).code ?? 1) : 0, out: (stdout || stderr).trim() }),
+    )
+  })
+}
+
+const ORCA = '/Applications/Orca.app/Contents/Resources/bin/orca'
+
+// Answer to Q11: before removing a worktree, show what would be lost.
+ipcMain.handle('worktree:check', async (_e, path: string, branch: string): Promise<WorktreeCheck> => {
+  if (!existsSync(path)) return { exists: false, changed: [], unpushed: 0, merged: false, base: '' }
+  const status = await run('git', ['status', '--porcelain'], path)
+  const changed = status.out ? status.out.split('\n').map(line => line.slice(3)) : []
+  const head = await run('git', ['rev-parse', '--abbrev-ref', 'origin/HEAD'], path)
+  const base = head.code === 0 && head.out ? head.out : 'main'
+  const upstream = await run('git', ['rev-parse', '--abbrev-ref', `${branch}@{upstream}`], path)
+  const against = upstream.code === 0 ? upstream.out : base
+  const ahead = await run('git', ['rev-list', '--count', `${against}..${branch}`], path)
+  const merged = await run('git', ['merge-base', '--is-ancestor', branch, base], path)
+  return { exists: true, changed, unpushed: Number(ahead.out) || 0, merged: merged.code === 0, base }
+})
+
+ipcMain.handle('worktree:remove', async (_e, nodeId: number, path: string, force: boolean): Promise<Reply> => {
+  const orca = existsSync(ORCA) ? ORCA : 'orca'
+  if (existsSync(path)) {
+    const args = ['worktree', 'rm', '--worktree', `path:${path}`, '--json', ...(force ? ['--force'] : [])]
+    const removed = await run(orca, args)
+    let ok = false
+    try {
+      ok = (JSON.parse(removed.out) as { ok?: boolean }).ok === true
+    } catch {
+      ok = false
+    }
+    if (!ok) return { ok: false, status: 0, json: { error: removed.out || 'orca worktree rm failed' } }
+  }
+  return call('POST', '/nodes/worktree', { nodeId, worktree: null })
+})
+
+// Linear issues through Orca's Linear connection (read only here; the session does the rest).
+ipcMain.handle('linear:list', async (_e, filter: string) => {
+  const orca = existsSync(ORCA) ? ORCA : 'orca'
+  const allowed = ['assigned', 'created', 'all', 'open', 'completed']
+  const ran = await run(orca, ['linear', 'list', '--filter', allowed.includes(filter) ? filter : 'assigned', '--limit', '50', '--json'])
+  try {
+    const reply = JSON.parse(ran.out) as { ok?: boolean; result?: { issues?: unknown[] }; error?: { message?: string } }
+    return reply.ok ? { issues: reply.result?.issues ?? [] } : { issues: [], error: reply.error?.message ?? t('linear.listFailed') }
+  } catch {
+    return { issues: [], error: ran.out || t('linear.listRunFailed') }
+  }
+})
+
+ipcMain.handle('bridge:connected', () => connected)
+ipcMain.handle('bridge:command', (_e, sessionId: string, kind: string, payload: Record<string, unknown>) =>
+  call('POST', '/commands', { sessionId, kind, payload }),
+)
+// Plain bridge calls for screens that only read or write rows (archive, settings, command results).
+ipcMain.handle('bridge:call', (_e, method: string, path: string, body?: unknown) => {
+  if (!bridgePathAllowed(path)) return { ok: false, status: 0, json: { error: `not allowed: ${String(path)}` } }
+  return call(method === 'POST' ? 'POST' : 'GET', path, body)
+})
+ipcMain.handle('bridge:send', (_e, sessionId: string, text: string, kind: string, taskTitle: string) =>
+  call('POST', '/outbox', { sessionId, text, kind, taskTitle }),
+)
+// Element shots for screen comments; the prompt carries the path so the session can read the image.
+ipcMain.handle('shots:save', (_e, dataUrl: string): string | null => saveShot(join(DIR, 'shots'), dataUrl))
+ipcMain.handle('bridge:hold', (_e, id: number) => call('POST', `/questions/${Number(id)}/hold`))
+// Dynamic debugging: screen comments, open_in_ide requests and live sessions (bridge/debug.ts).
+ipcMain.handle('debug:call', (_e, method: string, path: string, body?: unknown) => {
+  if (!debugPathAllowed(path)) return { ok: false, status: 0, json: { error: `not allowed: ${String(path)}` } }
+  return call(method === 'POST' ? 'POST' : 'GET', path, body)
+})
+registerDevServers(ipcMain, event => send('dev:change', event))
+registerTerminals(ipcMain, send)
+registerAccount(ipcMain)
+// Feature area: agent CLIs other than Claude Code. Their terminals, and answers typed into them.
+registerAgentTerms(ipcMain, call)
+const agentDelivery = startAgentDelivery({ socketPath: SOCKET, call, terminal: typingTarget })
+onTerminalsChange(() => void agentDelivery.refresh())
+
+// Drawn by scripts/icon.mjs.
+const ICON = join(app.getAppPath(), 'resources', 'icon.png')
+
+function createWindow(): void {
+  win = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    backgroundColor: '#0f1424',
+    title: 'Switchboard',
+    icon: ICON,
+    // Captures run without a window on screen, so checks never cover what the person is doing.
+    show: !process.env.CLAUDE_IDE_CAPTURE,
+    webPreferences: {
+      preload: join(import.meta.dirname, '../preload/index.mjs'),
+      sandbox: false,
+      contextIsolation: true,
+      webviewTag: true,
+    },
+  })
+  if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
+  else void win.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+  win.on('closed', () => (win = null))
+
+  // Window hardening: a dropped link or a stray navigation never replaces the
+  // app page, new windows open in the browser instead, and the debugging
+  // browser's <webview> runs without the preload or Node.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isAppUrl(url, APP_URL)) event.preventDefault()
+  })
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalUrl(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  win.webContents.on('will-attach-webview', (_event, webPreferences) => hardenWebview(webPreferences))
+
+  // For checks without a person at the screen: save one capture of the window, then quit.
+  const capture = process.env.CLAUDE_IDE_CAPTURE
+  if (capture) {
+    win.webContents.on('console-message', event => console.log(`renderer ${event.level}: ${event.message}`))
+    // Load stages, so a capture that never finishes shows where it stopped.
+    for (const stage of ['did-start-loading', 'dom-ready', 'did-stop-loading', 'unresponsive', 'did-attach-webview'] as const) {
+      win.webContents.on(stage as 'dom-ready', () => console.log(`capture: ${stage}`))
+    }
+    win.webContents.on('did-fail-load', (_e, code, reason, url) => console.log(`capture: did-fail-load ${code} ${reason} ${url}`))
+    win.webContents.on('render-process-gone', (_e, details) => console.log(`capture: render-process-gone ${details.reason}`))
+    // A capture that hangs (it happens now and then with a hidden window) gives up instead of lingering.
+    setTimeout(() => {
+      console.error('capture: gave up after 40s')
+      app.exit(1)
+    }, 40_000).unref()
+    win.webContents.once('did-finish-load', () => {
+      console.log('capture: did-finish-load')
+      setTimeout(async () => {
+        // Optional script and key presses before the capture, e.g.
+        // CLAUDE_IDE_CAPTURE_JS="document.querySelector('.task').click()" CLAUDE_IDE_CAPTURE_KEYS=a,Return
+        const script = process.env.CLAUDE_IDE_CAPTURE_JS
+        if (script) {
+          await win?.webContents.executeJavaScript(script).catch((error: unknown) => console.error('capture script failed:', error))
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+        for (const keyCode of (process.env.CLAUDE_IDE_CAPTURE_KEYS ?? '').split(',').filter(Boolean)) {
+          win?.webContents.sendInputEvent({ type: 'keyDown', keyCode })
+          if (keyCode.length === 1) win?.webContents.sendInputEvent({ type: 'char', keyCode })
+          win?.webContents.sendInputEvent({ type: 'keyUp', keyCode })
+          await new Promise(resolve => setTimeout(resolve, 300))
+        }
+        console.log('capture: taking the picture')
+        const image = await win?.webContents.capturePage()
+        if (image) writeFileSync(capture, image.toPNG())
+        console.log('capture: saved, quitting')
+        app.quit()
+      }, 2500)
+    })
+  }
+}
+
+// Captures keep their own profile so they never overwrite the real app's saved tabs and addresses.
+if (process.env.CLAUDE_IDE_CAPTURE) app.setPath('userData', `${process.env.CLAUDE_IDE_CAPTURE}.profile`)
+
+app.whenReady().then(async () => {
+  setLang(resolveLang(undefined, app.getLocale()))
+  if (process.env.CLAUDE_IDE_CAPTURE) app.dock?.hide()
+  else app.dock?.setIcon(nativeImage.createFromPath(ICON))
+  await startBridge()
+  createWindow()
+  watch()
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})

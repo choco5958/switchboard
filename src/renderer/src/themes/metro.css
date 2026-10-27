@@ -1,0 +1,80 @@
+/* 지하철 노선도: a light map. Bold line colors (Seoul lines 1 to 8, darkened so white badge text
+   and status text reach 4.5:1), stages drawn as stations on a line. */
+[data-theme='metro'] {
+  --task-0: #0052a4; --task-1: #007a38; --task-2: #b85500; --task-3: #8a5c9e; --task-4: #00739c; --task-5: #c8105a;
+  --bg: #f3f4f1;
+  --panel: #ffffff;
+  --panel-2: #eceee9;
+  --line: #c4c9c1;
+  --text: #1b1f1b;
+  --quiet: #586058;
+  --accent: #0052a4;
+  --accent-soft: rgba(0, 82, 164, 0.1);
+  --on-accent: #ffffff;
+  --good: #00733a;
+  --warn: #a34f00;
+  --bad: #c41d1b;
+  --track: #9aa19a;
+}
+
+[data-theme='metro'] h1,
+[data-theme='metro'] h2,
+[data-theme='metro'] .brand { font-weight: 800; letter-spacing: -0.01em; }
+[data-theme='metro'] .topbar { border-bottom: 4px solid var(--accent); }
+[data-theme='metro'] .tab.on { box-shadow: inset 0 -4px 0 var(--accent); }
+[data-theme='metro'] .card { border-width: 2px; border-radius: 14px; }
+[data-theme='metro'] .recommend,
+[data-theme='metro'] .rail-badge { color: #ffffff; }
+[data-theme='metro'] .chip { font-weight: 600; border-width: 2px; }
+[data-theme='metro'] .actions button { border-radius: 999px; border-width: 2px; font-weight: 600; }
+[data-theme='metro'] .option { border-width: 2px; border-radius: 999px; }
+[data-theme='metro'] .node { border-width: 3px; border-radius: 16px; }
+[data-theme='metro'] .node-지금 { box-shadow: 0 0 0 3px var(--accent-soft); }
+[data-theme='metro'] .edge { stroke-width: 2.5; stroke: var(--track); }
+[data-theme='metro'] .edge.done { stroke: var(--good); }
+
+/* The pipeline is a line with station pills on it. */
+[data-theme='metro'] .pipeline { position: relative; gap: 28px; }
+[data-theme='metro'] .pipeline::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 3px;
+  background: var(--track);
+}
+[data-theme='metro'] .pipeline li {
+  position: relative;
+  border: 3px solid var(--track);
+  background: #ffffff;
+  color: var(--text);
+  font-weight: 700;
+}
+[data-theme='metro'] .pipeline li.done { border-color: var(--good); color: var(--good); }
+[data-theme='metro'] .pipeline li.now { border-color: var(--accent); background: var(--accent); color: #ffffff; }
+[data-theme='metro'] .pipeline li.now .quiet { color: rgba(255, 255, 255, 0.85); }
+
+/* Small stage strips: a thick line with a station dot above each stage. */
+[data-theme='metro'] .stages { gap: 0; margin-top: 12px; }
+[data-theme='metro'] .stages li { position: relative; border-top: 5px solid var(--track); padding-top: 6px; }
+[data-theme='metro'] .stages li::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  margin-left: -7.5px;
+  border: 3px solid var(--track);
+  border-radius: 50%;
+  background: #ffffff;
+}
+[data-theme='metro'] .stages li.done,
+[data-theme='metro'] .stages li.done::before { border-color: var(--good); }
+[data-theme='metro'] .stages li.now::before { border-color: var(--accent); background: var(--accent); }
+[data-theme='metro'] .stages li.now { border-color: var(--accent); color: var(--accent); }
+[data-theme='metro'] .mini-stages span { height: 6px; border-radius: 3px; }
+[data-theme='metro'] .palette-backdrop { background: rgba(30, 35, 30, 0.3); }

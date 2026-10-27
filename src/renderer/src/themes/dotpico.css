@@ -1,0 +1,59 @@
+/* 도트 픽셀 (dotpico, PICO-8): only the 16 PICO-8 colors, chunky square corners, hard pixel shadows.
+   Palette: #000000 #1d2b53 #7e2553 #008751 #ab5236 #5f574f #c2c3c7 #fff1e8
+            #ff004d #ffa300 #ffec27 #00e436 #29adff #83769c #ff77a8 #ffccaa */
+[data-theme='dotpico'] {
+  --task-0: #29adff; --task-1: #00e436; --task-2: #ffa300; --task-3: #ff77a8; --task-4: #ffec27; --task-5: #ffccaa;
+  --bg: #000000;
+  --panel: #1d2b53;
+  --panel-2: #000000;
+  --line: #83769c;
+  --text: #fff1e8;
+  --quiet: #c2c3c7;
+  --accent: #29adff;
+  --accent-soft: #7e2553;
+  --on-accent: #000000;
+  --good: #00e436;
+  --warn: #ffec27;
+  --bad: #ff77a8; /* the red #ff004d is too dark for text on the blue panel */
+  --mono: 'Galmuri11', 'Galmuri9', 'DungGeunMo', 'D2Coding', Menlo, monospace;
+  --sans: var(--mono);
+}
+
+[data-theme='dotpico'] * { border-radius: 0 !important; }
+[data-theme='dotpico'] .card,
+[data-theme='dotpico'] .stat,
+[data-theme='dotpico'] .home-card,
+[data-theme='dotpico'] .node,
+[data-theme='dotpico'] .option,
+[data-theme='dotpico'] .palette,
+[data-theme='dotpico'] .node-detail {
+  border-width: 2px;
+  box-shadow: 4px 4px 0 #000000;
+}
+[data-theme='dotpico'] .card { border-color: #c2c3c7; }
+[data-theme='dotpico'] h1 { color: #ffec27; }
+[data-theme='dotpico'] h2 { color: #ffa300; }
+[data-theme='dotpico'] .tag { color: #ff77a8; }
+
+[data-theme='dotpico'] .actions button,
+[data-theme='dotpico'] .browser-bar button {
+  border: 2px solid #000000;
+  background: #5f574f;
+  box-shadow: 2px 2px 0 #000000;
+}
+[data-theme='dotpico'] .actions button.primary,
+[data-theme='dotpico'] .browser-bar button.primary {
+  background: #00e436;
+  border-color: #000000;
+  color: #000000;
+}
+[data-theme='dotpico'] .node-detail .actions button.danger { background: #ff004d; color: #fff1e8; border-color: #000000; }
+[data-theme='dotpico'] .actions button:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: none; }
+
+/* Stages as blocky progress cells. */
+[data-theme='dotpico'] .stages li { border-top-width: 6px; }
+[data-theme='dotpico'] .mini-stages span { height: 6px; }
+[data-theme='dotpico'] .meter-track { height: 8px; background: #5f574f; }
+[data-theme='dotpico'] .num-badge { box-shadow: 2px 2px 0 #000000; }
+[data-theme='dotpico'] .queue-item.active,
+[data-theme='dotpico'] .option.picked { border-color: #ff77a8; }

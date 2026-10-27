@@ -1,0 +1,160 @@
+import type { GraphNode, Option, Question, Task } from '../../shared/types'
+import { agoText } from '../../shared/i18n'
+
+export const STAGES = ['요구', '설계', '작업', '완료'] as const
+
+export function optionsOf(q: Question): Option[] {
+  try {
+    const parsed: unknown = JSON.parse(q.options)
+    return Array.isArray(parsed) ? (parsed as Option[]) : []
+  } catch {
+    return []
+  }
+}
+
+// Oldest pending first (they have waited longest), held ones after.
+export function queueOf(questions: Question[]): { pending: Question[]; held: Question[] } {
+  const byAge = (a: Question, b: Question) => a.id - b.id
+  return {
+    pending: questions.filter(q => q.status === 'pending').sort(byAge),
+    held: questions.filter(q => q.status === 'held').sort(byAge),
+  }
+}
+
+// After the current question leaves the queue, select the next one in line.
+export function nextAfter(questions: Question[], currentId: number | null): number | null {
+  const { pending } = queueOf(questions)
+  const open = pending.filter(q => q.id !== currentId)
+  if (open.length === 0) return null
+  return (open.find(q => currentId !== null && q.id > currentId) ?? open[0])?.id ?? null
+}
+
+export function tasksByProject(tasks: Task[]): [string, Task[]][] {
+  const groups = new Map<string, Task[]>()
+  for (const task of tasks) {
+    const list = groups.get(task.project) ?? []
+    list.push(task)
+    groups.set(task.project, list)
+  }
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))
+}
+
+export type KeyAction =
+  | { type: 'choose'; key: string }
+  | { type: 'send' }
+  | { type: 'hold' }
+  | { type: 'memo' }
+  | { type: 'none' }
+
+// Keys while the question card has focus (not while typing in the memo):
+// an option's own key or its 1-based number picks it, Enter sends, h holds, m opens the memo.
+export function keyAction(key: string, options: Option[]): KeyAction {
+  const lower = key.toLowerCase()
+  if (key === 'Enter') return { type: 'send' }
+  const byKey = options.find(o => o.key.toLowerCase() === lower)
+  if (byKey) return { type: 'choose', key: byKey.key }
+  if (/^[1-9]$/.test(key)) {
+    const byNumber = options.at(Number(key) - 1)
+    if (byNumber) return { type: 'choose', key: byNumber.key }
+  }
+  if (lower === 'h') return { type: 'hold' }
+  if (lower === 'm') return { type: 'memo' }
+  return { type: 'none' }
+}
+
+export function ago(ts: number, now = Date.now()): string {
+  return agoText(now - ts)
+}
+
+export function clock(ts: number): string {
+  const d = new Date(ts)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+export type Placed = { node: GraphNode; col: number; row: number }
+export type Layout = { placed: Placed[]; edges: [string, string][]; cols: number; rows: number }
+
+export function afterOf(node: GraphNode): string[] {
+  try {
+    const parsed: unknown = JSON.parse(node.after)
+    return Array.isArray(parsed) ? parsed.filter((a): a is string => typeof a === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+// Columns left to right by the longest chain of nodes before each one; rows
+// keep plan order. A cycle or a missing predecessor never loops or drops a node.
+export function layoutGraph(nodes: GraphNode[]): Layout {
+  const byKey = new Map(nodes.map(n => [n.key, n]))
+  const depth = new Map<string, number>()
+  const visiting = new Set<string>()
+  const depthOf = (key: string): number => {
+    const known = depth.get(key)
+    if (known !== undefined) return known
+    const node = byKey.get(key)
+    if (!node || visiting.has(key)) return -1
+    visiting.add(key)
+    const d = Math.max(-1, ...afterOf(node).map(depthOf)) + 1
+    visiting.delete(key)
+    depth.set(key, d)
+    return d
+  }
+  const rowsUsed: number[] = []
+  const placed = nodes.map(node => {
+    const col = depthOf(node.key)
+    const row = rowsUsed[col] ?? 0
+    rowsUsed[col] = row + 1
+    return { node, col, row }
+  })
+  const edges = nodes.flatMap(n => afterOf(n).filter(a => byKey.has(a)).map(a => [a, n.key] as [string, string]))
+  return { placed, edges, cols: rowsUsed.length, rows: Math.max(0, ...rowsUsed) }
+}
+
+export function stageCounts(nodes: GraphNode[]): { stage: (typeof STAGES)[number]; done: number; total: number }[] {
+  return STAGES.map(stage => {
+    const inStage = nodes.filter(n => n.stage === stage)
+    return { stage, done: inStage.filter(n => n.status === '끝').length, total: inStage.length }
+  })
+}
+
+// A node that started again (round > 1) went back because of a review after it:
+// draw a dashed edge from each review node downstream of it back to it.
+export function reviewLoops(nodes: GraphNode[]): { from: string; to: string; round: number }[] {
+  const next = new Map<string, string[]>()
+  for (const n of nodes) for (const a of afterOf(n)) next.set(a, [...(next.get(a) ?? []), n.key])
+  const byKey = new Map(nodes.map(n => [n.key, n]))
+  const loops: { from: string; to: string; round: number }[] = []
+  for (const node of nodes.filter(n => n.round > 1)) {
+    const seen = new Set<string>()
+    const stack = [...(next.get(node.key) ?? [])]
+    while (stack.length > 0) {
+      const key = stack.pop()!
+      if (seen.has(key)) continue
+      seen.add(key)
+      const down = byKey.get(key)
+      if (down?.kind === '검토' && down.status !== '대기') loops.push({ from: key, to: node.key, round: node.round })
+      stack.push(...(next.get(key) ?? []))
+    }
+  }
+  return loops
+}
+
+// The station line under the task header: this stage and the one after it.
+export function stations(stage: (typeof STAGES)[number]): { now: string; next: string | null } {
+  const index = STAGES.indexOf(stage)
+  return { now: stage, next: STAGES[index + 1] ?? null }
+}
+
+// Agent descriptions start with "[task title::node key]" so the bridge can tie
+// them to a node; on screen the task already shows as a badge, so the prefix goes.
+export function stripTaskPrefix(text: string): string {
+  return text.replace(/\[[^\][]+?::[^\][]+?\]\s*/g, '')
+}
+
+// The task a log line belongs to, matched as the bridge matches it: same session, same title.
+export function taskOfEvent<T extends Pick<Task, 'session_id' | 'title'>>(tasks: T[], event: { session_id: string; task_title: string }): T | null {
+  if (!event.task_title) return null
+  return tasks.find(t => t.session_id === event.session_id && t.title === event.task_title) ?? null
+}

@@ -1,0 +1,104 @@
+import type { BridgeState } from '../../../shared/types'
+import { taskStateLabel, isRunning, taskState } from '../../../shared/projects'
+import { stageLabel, t } from '../../../shared/i18n'
+import { tx } from '../tx'
+import { STAGES, ago } from '../model'
+import { AgentBadge, NumberBadge } from '../parts'
+import type { AgentTag } from '../../../shared/agents'
+
+// What a first start looks like: no tasks yet, so instead of four zeros, how to get going.
+function FirstRun({ sessions, onPickFolder }: { sessions: number; onPickFolder: () => void }) {
+  return (
+    <div className="card first-run">
+      <h1>{t('home.start')}</h1>
+      <ol className="first-run-steps">
+        <li>
+          <b>{t('home.step1')}</b>
+          <p className="quiet">
+            {tx('home.step1Body', { folder: <span className="kbd-like">{t('sidebar.addFolder')}</span> })}
+          </p>
+          <button className="link small inline-link" onClick={onPickFolder}>
+            {t('home.pickNow')}
+          </button>
+        </li>
+        <li>
+          <b>{t('home.step2')}</b>
+          <p className="quiet">
+            {tx('home.step2Body', { claude: <span className="kbd-like">+ Claude</span> })}
+            {sessions > 0 && ` ${t('home.sessionsNow', { n: sessions })}`}
+          </p>
+        </li>
+        <li>
+          <b>{t('home.step3')}</b>
+          <p className="quiet">
+            {t('home.step3Body')}
+          </p>
+        </li>
+      </ol>
+    </div>
+  )
+}
+
+export function HomePage({
+  state,
+  badges = {},
+  onOpenTask,
+  onOpenQuestion,
+  onPickFolder,
+}: {
+  state: BridgeState
+  badges?: Record<string, AgentTag> // session id to its agent badge
+  onOpenTask: (id: number) => void
+  onOpenQuestion: (id: number) => void
+  onPickFolder: () => void
+}) {
+  const running = state.tasks.filter(isRunning)
+  const pending = state.questions.filter(q => q.status === 'pending')
+  const agents = state.agents.filter(a => a.status === 'running')
+  if (state.tasks.length === 0 && pending.length === 0) {
+    return (
+      <div className="home">
+        <FirstRun sessions={state.sessions.length} onPickFolder={onPickFolder} />
+      </div>
+    )
+  }
+  return (
+    <div className="home">
+      <div className="home-stats">
+        <div className="stat"><b>{running.length}</b><span>{t('home.statRunning')}</span></div>
+        <div className="stat"><b>{pending.length}</b><span>{t('rail.questions')}</span></div>
+        <div className="stat"><b>{agents.length}</b><span>{t('home.statAgents')}</span></div>
+        <div className="stat"><b>{state.answeredCount}</b><span>{t('home.statAnswered')}</span></div>
+      </div>
+      <div className="home-grid">
+        {state.tasks.map(task => {
+          const nodes = state.nodes.filter(n => n.task_id === task.id)
+          const done = nodes.filter(n => n.status === '끝').length
+          const status = taskState(task)
+          return (
+            <button key={task.id} className="home-card" onClick={() => onOpenTask(task.id)}>
+              <div className="task-title"><NumberBadge task={task} /> {task.title} <AgentBadge tag={badges[task.session_id]} /></div>
+              <div className="quiet small">
+                <span className={`status status-${status}`}>{taskStateLabel(status)}</span>, {task.project}, {stageLabel(task.stage)}, {t('home.nodes', { done, total: nodes.length })}, {ago(task.updated_at)}
+              </div>
+              {task.now && <div className="small">{t('task.now', { now: task.now })}</div>}
+              <div className="mini-stages">
+                {STAGES.map((s, i) => <span key={s} className={i < STAGES.indexOf(task.stage) ? 'done' : s === task.stage ? 'now' : ''} />)}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+      {pending.length > 0 && (
+        <>
+          <h3>{t('home.pendingQuestions')}</h3>
+          {pending.map(q => (
+            <button key={q.id} className="link block" onClick={() => onOpenQuestion(q.id)}>
+              <span className="qid">Q{q.id}</span> [{q.task_title || q.project}] {q.question}
+            </button>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}

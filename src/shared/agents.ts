@@ -1,0 +1,277 @@
+import { shellQuote } from './projects'
+import { t, type Key } from './i18n'
+
+// Agent CLIs besides Claude Code. Each preset knows how to hand the CLI the
+// Switchboard MCP server (mcp/server.ts) for one run only: a flag, an env var on the
+// process, or a JSON file in the app's own folder that a flag or env var points at.
+// None of them touches the CLI's own config (~/.codex, ~/.gemini and so on).
+
+export const MCP_NAME = 'switchboard'
+
+// The server as a command: node and the server script with --agent and --terminal.
+export type McpServer = { command: string; args: string[] }
+
+// What the main process does to start one: the line typed into the shell, env vars for
+// the shell, and files to write first (paths the main process chose, in ~/.claude-ide).
+export type Launch = { line: string; env: Record<string, string>; files: { path: string; content: string }[] }
+
+type Injection = { args?: string[]; env?: Record<string, string>; file?: unknown }
+
+export type AgentPreset = {
+  id: string // the agent kind its sessions carry
+  label: string // badge and button text
+  bin: string // the command looked up on PATH
+  install: string // shown when it is not installed
+  docs: string
+  how: Key // how the MCP server goes in, for the settings list
+  mcp: ((server: McpServer, configFile: string) => Injection) | null // null: no per-run way, a plain terminal
+}
+
+const json = (value: unknown) => JSON.stringify(value)
+
+// A shell word: as it is when it holds nothing the shell would read, else quoted.
+export function shellWord(word: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : shellQuote(word)
+}
+
+export const PRESETS: AgentPreset[] = [
+  {
+    id: 'codex',
+    label: 'Codex',
+    bin: 'codex',
+    install: 'npm i -g @openai/codex',
+    docs: 'https://developers.openai.com/codex/mcp',
+    how: 'agents.how.codex',
+    // The value of -c is TOML; JSON strings and arrays of strings are valid TOML.
+    mcp: server => ({
+      args: ['-c', `mcp_servers.${MCP_NAME}.command=${json(server.command)}`, '-c', `mcp_servers.${MCP_NAME}.args=${json(server.args)}`],
+    }),
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini',
+    bin: 'gemini',
+    install: 'npm i -g @google/gemini-cli',
+    docs: 'https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md',
+    how: 'agents.how.gemini',
+    mcp: (server, configFile) => ({
+      env: { GEMINI_CLI_SYSTEM_DEFAULTS_PATH: configFile },
+      file: { mcpServers: { [MCP_NAME]: { command: server.command, args: server.args, trust: true } } },
+    }),
+  },
+  {
+    id: 'qwen',
+    label: 'Qwen',
+    bin: 'qwen',
+    install: 'npm i -g @qwen-code/qwen-code@latest',
+    docs: 'https://github.com/QwenLM/qwen-code',
+    how: 'agents.how.qwen',
+    mcp: (server, configFile) => ({
+      args: ['--mcp-config', configFile],
+      file: { mcpServers: { [MCP_NAME]: { command: server.command, args: server.args, trust: true } } },
+    }),
+  },
+  {
+    id: 'copilot',
+    label: 'Copilot',
+    bin: 'copilot',
+    install: 'npm i -g @github/copilot',
+    docs: 'https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference',
+    how: 'agents.how.copilot',
+    mcp: (server, configFile) => ({
+      args: ['--additional-mcp-config', `@${configFile}`],
+      file: { mcpServers: { [MCP_NAME]: { type: 'local', command: server.command, args: server.args, tools: ['*'] } } },
+    }),
+  },
+  {
+    id: 'opencode',
+    label: 'OpenCode',
+    bin: 'opencode',
+    install: 'npm i -g opencode-ai',
+    docs: 'https://opencode.ai/docs/mcp-servers/',
+    how: 'agents.how.opencode',
+    mcp: server => ({
+      env: { OPENCODE_CONFIG_CONTENT: json({ mcp: { [MCP_NAME]: { type: 'local', command: [server.command, ...server.args], enabled: true } } }) },
+    }),
+  },
+  {
+    id: 'goose',
+    label: 'Goose',
+    bin: 'goose',
+    install: 'brew install block-goose-cli',
+    docs: 'https://github.com/aaif-goose/goose/blob/main/documentation/docs/guides/goose-cli-commands.md',
+    how: 'agents.how.goose',
+    // Goose splits the extension command at spaces.
+    mcp: server => ({ args: ['session', '--with-extension', [server.command, ...server.args].join(' ')] }),
+  },
+  {
+    id: 'amp',
+    label: 'Amp',
+    bin: 'amp',
+    install: 'npm i -g @sourcegraph/amp',
+    docs: 'https://ampcode.com/docs/customize/mcp',
+    how: 'agents.how.amp',
+    mcp: server => ({ args: ['--mcp-config', json({ [MCP_NAME]: { command: server.command, args: server.args } })] }),
+  },
+  {
+    id: 'cursor',
+    label: 'Cursor',
+    bin: 'cursor-agent',
+    install: 'curl https://cursor.com/install -fsS | bash',
+    docs: 'https://cursor.com/docs/cli/reference/parameters',
+    how: 'agents.how.undocumented',
+    mcp: null,
+  },
+  {
+    id: 'grok',
+    label: 'Grok',
+    bin: 'grok',
+    install: 'curl -fsSL https://x.ai/cli/install.sh | bash',
+    docs: 'https://docs.x.ai/build/features/mcp-servers',
+    how: 'agents.how.undocumented',
+    mcp: null,
+  },
+  {
+    id: 'kimi',
+    label: 'Kimi',
+    bin: 'kimi',
+    install: 'npm i -g @moonshot-ai/kimi-code',
+    docs: 'https://github.com/MoonshotAI/kimi-code',
+    how: 'agents.how.kimi',
+    mcp: null,
+  },
+  {
+    id: 'crush',
+    label: 'Crush',
+    bin: 'crush',
+    install: 'brew install charmbracelet/tap/crush',
+    docs: 'https://github.com/charmbracelet/crush',
+    how: 'agents.how.crush',
+    mcp: null,
+  },
+]
+
+export function presetOf(id: string): AgentPreset | undefined {
+  return PRESETS.find(p => p.id === id)
+}
+
+// The person's own CLIs, kept in the bridge settings under CUSTOM_AGENTS_KEY.
+export type CustomAgent = { id: string; name: string; command: string; mcp: string } // mcp: a template, or 'none'
+export const CUSTOM_AGENTS_KEY = 'customAgents'
+
+export const PLACEHOLDERS = ['server', 'command', 'args', 'args_json', 'config_file', 'config_json', 'name'] as const
+
+// Every placeholder becomes one or more shell words, already quoted. {server} is the
+// whole command as one word, for CLIs that take a command line and split it at spaces.
+export function fillTemplate(template: string, server: McpServer, configFile: string): string {
+  const config = json({ mcpServers: { [MCP_NAME]: { command: server.command, args: server.args } } })
+  const values: Record<(typeof PLACEHOLDERS)[number], string> = {
+    server: shellQuote([server.command, ...server.args].join(' ')),
+    command: shellWord(server.command),
+    args: server.args.map(shellWord).join(' '),
+    args_json: shellQuote(json(server.args)),
+    config_file: shellWord(configFile),
+    config_json: shellQuote(config),
+    name: MCP_NAME,
+  }
+  return template.replace(/\{([a-z_]+)\}/g, (whole, key: string) => (key in values ? values[key as keyof typeof values] : whole))
+}
+
+// The JSON a custom entry's {config_file} holds: the mcpServers shape most CLIs read.
+export function customConfig(server: McpServer): string {
+  return json({ mcpServers: { [MCP_NAME]: { command: server.command, args: server.args } } })
+}
+
+export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string): Launch {
+  const got = preset.mcp?.(server, configFile) ?? {}
+  const words = [preset.bin, ...(got.args ?? []).map(shellWord)]
+  return {
+    line: words.join(' '),
+    env: got.env ?? {},
+    files: got.file === undefined ? [] : [{ path: configFile, content: `${json(got.file)}\n` }],
+  }
+}
+
+export function customLaunch(entry: CustomAgent, server: McpServer, configFile: string): Launch {
+  if (entry.mcp === 'none') return { line: entry.command, env: {}, files: [] }
+  const filled = fillTemplate(entry.mcp, server, configFile)
+  return {
+    line: `${entry.command} ${filled}`,
+    env: {},
+    files: entry.mcp.includes('{config_file}') ? [{ path: configFile, content: `${customConfig(server)}\n` }] : [],
+  }
+}
+
+export function customAgents(value: unknown): CustomAgent[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (a): a is CustomAgent =>
+      !!a && typeof a === 'object' && ['id', 'name', 'command', 'mcp'].every(k => typeof (a as Record<string, unknown>)[k] === 'string'),
+  )
+}
+
+const CONTROL = /[\u0000-\u001f\u007f]/
+
+// Checks a new entry before it is saved; nothing runs until the person presses its button.
+export function validateCustom(
+  input: { name: string; command: string; mcp: string },
+  existing: readonly CustomAgent[],
+): { entry: CustomAgent } | { error: string } {
+  const name = input.name.trim()
+  const command = input.command.trim()
+  const mcp = input.mcp.trim() || 'none'
+  if (!name || name.length > 30) return { error: t('agents.err.name') }
+  if (CONTROL.test(name)) return { error: t('agents.err.nameLine') }
+  if (existing.some(a => a.name === name) || PRESETS.some(p => p.label === name) || name.toLowerCase() === 'claude') {
+    return { error: t('agents.err.nameTaken') }
+  }
+  if (!command || command.length > 300) return { error: t('agents.err.command') }
+  if (CONTROL.test(command)) return { error: t('agents.err.commandLine') }
+  if (mcp !== 'none') {
+    if (mcp.length > 600 || CONTROL.test(mcp)) return { error: t('agents.err.mcpLine') }
+    const used = [...mcp.matchAll(/\{([^}]*)\}/g)].map(m => m[1] ?? '')
+    const unknown = used.find(key => !(PLACEHOLDERS as readonly string[]).includes(key))
+    if (unknown !== undefined) return { error: t('agents.err.unknownPlaceholder', { name: `{${unknown}}`, list: PLACEHOLDERS.map(p => `{${p}}`).join(', ') }) }
+    if (used.length === 0) return { error: t('agents.err.needPlaceholder', { example: '{server}' }) }
+    if (/['"]\{|\}['"]/.test(mcp)) return { error: t('agents.err.quoted') }
+  }
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24)
+  const taken = new Set(existing.map(a => a.id))
+  let id = `custom-${slug || 'cli'}`
+  for (let n = 2; taken.has(id); n++) id = `custom-${slug || 'cli'}-${n}`
+  return { entry: { id, name, command, mcp } }
+}
+
+// The name on a session's badge.
+export function agentLabel(kind: string | undefined, customs: readonly CustomAgent[] = []): string {
+  if (!kind || kind === 'claude') return 'Claude'
+  return presetOf(kind)?.label ?? customs.find(c => c.id === kind)?.name ?? kind
+}
+
+export function isClaude(kind: string | undefined): boolean {
+  return !kind || kind === 'claude'
+}
+
+// Session id to agent kind, for badges. Empty while every session is Claude Code:
+// a badge only says something once another agent is around.
+export function agentBadges(sessions: readonly { id: string; agent?: string }[]): Record<string, string> {
+  if (sessions.every(s => isClaude(s.agent))) return {}
+  return Object.fromEntries(sessions.map(s => [s.id, s.agent || 'claude']))
+}
+
+export type AgentTag = { kind: string; label: string }
+
+// Session id to its badge, named; empty while every session is Claude Code (see agentBadges).
+export function agentTags(sessions: readonly { id: string; agent?: string }[], customs: readonly CustomAgent[] = []): Record<string, AgentTag> {
+  return Object.fromEntries(Object.entries(agentBadges(sessions)).map(([id, kind]) => [id, { kind, label: agentLabel(kind, customs) }]))
+}
+
+// The different agents behind one project's sessions, Claude first, for the project list.
+export function projectAgents(sessions: readonly { id: string; project: string }[], tags: Record<string, AgentTag>, project: string): AgentTag[] {
+  const seen = new Map<string, AgentTag>()
+  for (const s of sessions) {
+    const tag = s.project === project ? tags[s.id] : undefined
+    if (tag && !seen.has(tag.kind)) seen.set(tag.kind, tag)
+  }
+  return [...seen.values()].sort((a, b) => Number(b.kind === 'claude') - Number(a.kind === 'claude') || a.label.localeCompare(b.label))
+}

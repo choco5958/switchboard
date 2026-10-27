@@ -1,0 +1,27 @@
+/* 노르드 (nord): the Nord palette, https://www.nordtheme.com/docs/colors-and-palettes (MIT).
+   Polar Night nord0 to nord3 for the window, Snow Storm for text, Frost for the accent, Aurora for states.
+   Aurora red #bf616a and orange #d08770 and the comment grey nord3 are lightened (bad #d9a1a6, quiet #a9b2c3)
+   to reach 4.5:1 on nord1; badge text is #242933, the darker Polar Night of the Nord site. */
+[data-theme='nord'] {
+  --task-0: #88c0d0; --task-1: #a3be8c; --task-2: #ebcb8b; --task-3: #b48ead; --task-4: #d08770; --task-5: #81a1c1;
+  --bg: #2e3440;
+  --panel: #3b4252;
+  --panel-2: #353b49;
+  --line: #4c566a;
+  --text: #eceff4;
+  --quiet: #a9b2c3;
+  --accent: #88c0d0;
+  --accent-soft: rgba(136, 192, 208, 0.16);
+  --on-accent: #242933;
+  --good: #a3be8c;
+  --warn: #ebcb8b;
+  --bad: #d9a1a6;
+  --term-0: #3b4252; --term-1: #bf616a; --term-2: #a3be8c; --term-3: #ebcb8b;
+  --term-4: #81a1c1; --term-5: #b48ead; --term-6: #88c0d0; --term-7: #e5e9f0;
+  --term-8: #4c566a; --term-9: #bf616a; --term-10: #a3be8c; --term-11: #ebcb8b;
+  --term-12: #81a1c1; --term-13: #b48ead; --term-14: #8fbcbb; --term-15: #eceff4;
+  --term-cursor: #d8dee9;
+  --term-selection: #434c5e;
+}
+
+[data-theme='nord'] .tab.on { box-shadow: inset 0 -2px 0 var(--accent); }

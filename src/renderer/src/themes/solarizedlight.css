@@ -1,0 +1,28 @@
+/* 솔라라이즈드 (밝음) (solarizedlight): Ethan Schoonover's Solarized, https://ethanschoonover.com/solarized (MIT).
+   base3 and base2 for the window, base02 for text and base01 for quiet text, blue for the accent.
+   The accents are darkened (blue #2073ae, cyan #207c75, green #5f6e00, yellow #826200, red #c62421 and so on)
+   so that base3 badge text and the state colours reach 4.5:1; base01 becomes #556a71 for the same reason. */
+[data-theme='solarizedlight'] {
+  --task-0: #2073ae; --task-1: #207c75; --task-2: #687700; --task-3: #8b6900; --task-4: #c8337c; --task-5: #6368b4;
+  --bg: #fdf6e3;
+  --panel: #eee8d5;
+  --panel-2: #f6efdc;
+  --line: #d6cdb5;
+  --text: #073642;
+  --quiet: #556a71;
+  --accent: #2073ae;
+  --accent-soft: rgba(38, 139, 210, 0.14);
+  --on-accent: #fdf6e3;
+  --good: #5f6e00;
+  --warn: #826200;
+  --bad: #c62421;
+  --term-0: #073642; --term-1: #dc322f; --term-2: #859900; --term-3: #b58900;
+  --term-4: #268bd2; --term-5: #d33682; --term-6: #2aa198; --term-7: #eee8d5;
+  --term-8: #002b36; --term-9: #cb4b16; --term-10: #586e75; --term-11: #657b83;
+  --term-12: #839496; --term-13: #6c71c4; --term-14: #93a1a1; --term-15: #fdf6e3;
+  --term-cursor: #586e75;
+  --term-selection: #eee8d5;
+}
+
+[data-theme='solarizedlight'] .tab.on { box-shadow: inset 0 -2px 0 var(--accent); }
+[data-theme='solarizedlight'] .palette-backdrop { background: rgba(0, 43, 54, 0.25); }

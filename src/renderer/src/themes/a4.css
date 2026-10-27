@@ -1,0 +1,51 @@
+/* 모험 일지 (a4): an RPG quest log. Parchment text and gold on dark brown, serif headings, framed cards. */
+[data-theme='a4'] {
+  --task-0: #d9a441; --task-1: #93c062; --task-2: #d9814a; --task-3: #b18ad6; --task-4: #6cb8ad; --task-5: #e07a7a;
+  --bg: #1b130c;
+  --panel: #261b11;
+  --panel-2: #322417;
+  --line: #5c4630;
+  --text: #f1e4c4;
+  --quiet: #b9a37c;
+  --accent: #e0ad4c;
+  --accent-soft: rgba(224, 173, 76, 0.16);
+  --on-accent: #1b130c;
+  --good: #93c062;
+  --warn: #f0b955;
+  --bad: #e0705a;
+  --serif: 'Nanum Myeongjo', 'AppleMyungjo', 'Batang', serif;
+}
+
+[data-theme='a4'] h1,
+[data-theme='a4'] h2,
+[data-theme='a4'] h3,
+[data-theme='a4'] .brand,
+[data-theme='a4'] .task-title,
+[data-theme='a4'] .node-title,
+[data-theme='a4'] .stat b {
+  font-family: var(--serif);
+}
+[data-theme='a4'] h1 { color: var(--accent); letter-spacing: 0.02em; }
+[data-theme='a4'] h2 { color: var(--accent); }
+[data-theme='a4'] .brand { color: var(--accent); }
+
+/* Cards read like a framed page of the quest log: a thin gold rule inside the border. */
+[data-theme='a4'] .card,
+[data-theme='a4'] .stat,
+[data-theme='a4'] .home-card,
+[data-theme='a4'] .palette {
+  border-color: #7a5c34;
+  box-shadow: inset 0 0 0 3px var(--panel), inset 0 0 0 4px #4a3824;
+}
+[data-theme='a4'] .body { background: #2e2216; border-left: 3px solid #7a5c34; }
+
+[data-theme='a4'] .actions button.primary,
+[data-theme='a4'] .browser-bar button.primary {
+  background: linear-gradient(#ecbd5e, #c8902e);
+  border-color: #f3d38d;
+  color: #1b130c;
+  font-weight: 700;
+}
+[data-theme='a4'] .num-badge { box-shadow: 0 0 0 1px #1b130c, 0 0 0 2px #7a5c34; }
+[data-theme='a4'] .tab.on { box-shadow: inset 0 2px 0 var(--accent); }
+[data-theme='a4'] .recommend { color: #1b130c; }

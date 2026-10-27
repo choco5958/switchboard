@@ -1,0 +1,14 @@
+{
+  "name": "switchboard",
+  "owner": {
+    "name": "choco5958"
+  },
+  "description": "Switchboard: decision queue, tasks and progress graph for Claude Code sessions",
+  "plugins": [
+    {
+      "name": "ide-bridge",
+      "source": "./mod",
+      "description": "Connects a Claude Code session to the Switchboard bridge: decision queue, task list, work log"
+    }
+  ]
+}

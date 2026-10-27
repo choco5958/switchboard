@@ -1,0 +1,70 @@
+/* 요즘 터미널 (tuimod, htop, btop, lazygit): a dark terminal with box borders, cyan focus and magenta titles, monospace. */
+[data-theme='tuimod'] {
+  --task-0: #22d3ee; --task-1: #a3e635; --task-2: #fbbf24; --task-3: #e879f9; --task-4: #60a5fa; --task-5: #fb7185;
+  --bg: #0e0e14;
+  --panel: #13131b;
+  --panel-2: #1b1b26;
+  --line: #3a3e58;
+  --text: #e6e6f0;
+  --quiet: #8c90aa;
+  --accent: #22d3ee;
+  --accent-soft: rgba(34, 211, 238, 0.13);
+  --on-accent: #0e0e14;
+  --good: #a3e635;
+  --warn: #fbbf24;
+  --bad: #fb4d6d;
+  --magenta: #e879f9;
+  --mono: 'JetBrains Mono', 'D2Coding', 'SF Mono', Menlo, monospace;
+  --sans: var(--mono);
+}
+
+[data-theme='tuimod'] * { border-radius: 0 !important; }
+[data-theme='tuimod'] h1,
+[data-theme='tuimod'] h2,
+[data-theme='tuimod'] .brand { color: var(--magenta); }
+[data-theme='tuimod'] .tag,
+[data-theme='tuimod'] .palette-group { color: var(--magenta); }
+[data-theme='tuimod'] .count { color: var(--accent); }
+
+/* Boxed panes with the title sitting on the top border, as btop and lazygit draw them. */
+[data-theme='tuimod'] .sidebar section { position: relative; padding: 14px 10px 10px; border: 1px solid var(--line); }
+[data-theme='tuimod'] .sidebar section:hover { border-color: var(--accent); }
+[data-theme='tuimod'] .sidebar h2 {
+  position: absolute;
+  top: -9px;
+  left: 8px;
+  margin: 0;
+  padding: 0 4px;
+  background: var(--panel);
+  line-height: 16px;
+}
+[data-theme='tuimod'] .card { border-color: var(--accent); }
+[data-theme='tuimod'] .card h1::before { content: '┤ '; color: var(--line); }
+[data-theme='tuimod'] .card h1::after { content: ' ├'; color: var(--line); }
+
+[data-theme='tuimod'] .queue-item.active,
+[data-theme='tuimod'] .palette-item.on,
+[data-theme='tuimod'] .option.picked { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+[data-theme='tuimod'] .queue-item.active .qid,
+[data-theme='tuimod'] .queue-item.active .tag,
+[data-theme='tuimod'] .queue-item.active .quiet,
+[data-theme='tuimod'] .palette-item.on .palette-group,
+[data-theme='tuimod'] .palette-item.on .quiet,
+[data-theme='tuimod'] .option.picked .quiet { color: var(--on-accent); }
+[data-theme='tuimod'] .option.picked kbd { color: var(--text); }
+
+[data-theme='tuimod'] .actions button,
+[data-theme='tuimod'] .browser-bar button { background: none; }
+[data-theme='tuimod'] .actions button::before,
+[data-theme='tuimod'] .browser-bar button::before { content: '['; color: var(--quiet); margin-right: 4px; }
+[data-theme='tuimod'] .actions button::after,
+[data-theme='tuimod'] .browser-bar button::after { content: ']'; color: var(--quiet); margin-left: 4px; }
+[data-theme='tuimod'] .actions button.primary::before,
+[data-theme='tuimod'] .actions button.primary::after,
+[data-theme='tuimod'] .browser-bar button.primary::before,
+[data-theme='tuimod'] .browser-bar button.primary::after { color: var(--on-accent); }
+
+/* Meters as btop bars. */
+[data-theme='tuimod'] .meter-track { height: 8px; background: repeating-linear-gradient(to right, var(--line) 0 3px, transparent 3px 4px); }
+[data-theme='tuimod'] .meter-fill { -webkit-mask: repeating-linear-gradient(to right, #000 0 3px, transparent 3px 4px); }
+[data-theme='tuimod'] .tab.on { box-shadow: inset 0 -2px 0 var(--accent); color: var(--accent); }

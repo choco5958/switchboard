@@ -1,0 +1,50 @@
+/* 회로 기판: a dark green board. Copper and gold traces for borders and lines, silkscreen-white text, via-hole dots. */
+[data-theme='pcb'] {
+  --task-0: #e3b34f; --task-1: #64d48d; --task-2: #ea8a52; --task-3: #c7a2f0; --task-4: #56cbd9; --task-5: #f490ad;
+  --bg: #0a2615;
+  --panel: #0d311c;
+  --panel-2: #123d25;
+  --line: #9c6e30;
+  --text: #f0f4ec;
+  --quiet: #a7c4ad;
+  --accent: #e3b34f;
+  --accent-soft: rgba(227, 179, 79, 0.15);
+  --on-accent: #0a2615;
+  --good: #64d48d;
+  --warn: #f2c65a;
+  --bad: #ff7a68;
+  --copper: #c58a3e;
+}
+
+/* Via holes on the board behind the main area. */
+[data-theme='pcb'] .main {
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, rgba(197, 138, 62, 0.22) 1.2px, transparent 1.8px);
+  background-size: 18px 18px;
+}
+[data-theme='pcb'] h1,
+[data-theme='pcb'] h2,
+[data-theme='pcb'] h3,
+[data-theme='pcb'] .brand,
+[data-theme='pcb'] .chip,
+[data-theme='pcb'] .tag-chip,
+[data-theme='pcb'] .node .kind { font-family: var(--mono); letter-spacing: 0.04em; }
+[data-theme='pcb'] .card,
+[data-theme='pcb'] .stat,
+[data-theme='pcb'] .home-card,
+[data-theme='pcb'] .node,
+[data-theme='pcb'] .palette { border-radius: 3px; border-color: var(--copper); box-shadow: 0 0 0 3px rgba(10, 38, 21, 0.9), 0 0 0 4px rgba(197, 138, 62, 0.35); }
+[data-theme='pcb'] .node { border-width: 2px; }
+[data-theme='pcb'] .node-지금 { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 10px rgba(227, 179, 79, 0.35); }
+[data-theme='pcb'] .node-끝 { border-color: var(--good); }
+[data-theme='pcb'] .node-실패 { border-color: var(--bad); }
+[data-theme='pcb'] .edge { stroke: var(--copper); stroke-width: 2; }
+
+/* Buttons are gold pads. */
+[data-theme='pcb'] .actions button,
+[data-theme='pcb'] .browser-bar button { border-radius: 3px; border-color: var(--copper); }
+[data-theme='pcb'] .actions button.primary,
+[data-theme='pcb'] .browser-bar button.primary { background: linear-gradient(#f0c66a, #c9932f); border-color: #f5d68f; color: #0a2615; font-weight: 700; }
+[data-theme='pcb'] .stages li { border-top-width: 2px; }
+[data-theme='pcb'] .stages li.done { border-color: var(--good); }
+[data-theme='pcb'] .recommend { color: #0a2615; }

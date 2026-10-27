@@ -1,0 +1,19 @@
+/* 기본 남색 (a3): calm dark navy. The default theme; its tokens are the fallback for every other theme.
+   :where(:root) has no specificity, so any [data-theme] block wins over it regardless of order. */
+:where(:root), [data-theme='a3'] {
+  --task-0: #5b8cff; --task-1: #4cc38a; --task-2: #f2994a; --task-3: #b57cf6; --task-4: #2bb3c0; --task-5: #e86a92;
+  --bg: #0f1424;
+  --panel: #161c30;
+  --panel-2: #1c2440;
+  --line: #2a3354;
+  --text: #dde3f3;
+  --quiet: #8b95b5;
+  --accent: #5b8cff;
+  --accent-soft: rgba(91, 140, 255, 0.16);
+  --on-accent: #0b1020; /* dark text: white on the accent and the task colours stays under 4.5:1 */
+  --good: #4cc38a;
+  --warn: #f2b84b;
+  --bad: #f06a6a;
+  --mono: 'D2Coding', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  --sans: 'Pretendard', -apple-system, 'Apple SD Gothic Neo', sans-serif;
+}

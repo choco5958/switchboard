@@ -1,0 +1,108 @@
+/* 파란 도스 창 (tvision, Turbo Vision): a blue desktop, grey menu and status bars, white double-line windows with black shadows,
+   green buttons drawn as < 버튼 >, cyan selection, monospace and square corners. */
+[data-theme='tvision'] {
+  --task-0: #55ffff; --task-1: #55ff55; --task-2: #ffff55; --task-3: #ff55ff; --task-4: #aaaaaa; --task-5: #ff5555;
+  --bg: #0000aa;
+  --panel: #0000aa;
+  --panel-2: #000080;
+  --line: #aaaaaa;
+  --text: #ffffff;
+  --quiet: #c0c0c0;
+  --accent: #55ffff;
+  --accent-soft: #00aaaa;
+  --on-accent: #000000;
+  --good: #55ff55;
+  --warn: #ffff55;
+  --bad: #ff7777;
+  --menu: #aaaaaa;
+  --button: #00aa00;
+  --mono: 'D2Coding', 'SF Mono', Menlo, monospace;
+  --sans: var(--mono);
+}
+
+[data-theme='tvision'] * { border-radius: 0 !important; }
+[data-theme='tvision'] h1,
+[data-theme='tvision'] .count,
+[data-theme='tvision'] .tag { color: var(--warn); }
+[data-theme='tvision'] .qid { color: var(--text); }
+
+/* Menu bar and status line in grey with black text. */
+[data-theme='tvision'] .topbar,
+[data-theme='tvision'] .worklog-head { background: var(--menu); color: #000000; border-color: #000000; }
+[data-theme='tvision'] .topbar .quiet,
+[data-theme='tvision'] .worklog-head .link,
+[data-theme='tvision'] .topbar .brand { color: #000000; }
+[data-theme='tvision'] .topbar .brand::first-letter { color: #aa0000; }
+[data-theme='tvision'] .topbar .chip { color: #000000; border-color: #000000; }
+[data-theme='tvision'] .topbar .chip-warn { background: var(--warn); }
+[data-theme='tvision'] .topbar .chip-good { background: var(--good); }
+[data-theme='tvision'] .topbar .chip-bad { background: #ff5555; }
+[data-theme='tvision'] .topbar .chip-on { background: var(--accent); }
+[data-theme='tvision'] .topbar .meter-track { background: #000080; }
+[data-theme='tvision'] .searchbox { background: #000080; color: #ffffff; border-color: #000000; }
+
+/* Windows: white double border and a black drop shadow. */
+[data-theme='tvision'] .card,
+[data-theme='tvision'] .palette,
+[data-theme='tvision'] .stat,
+[data-theme='tvision'] .home-card { border: 3px double #ffffff; box-shadow: 8px 8px 0 #000000; }
+[data-theme='tvision'] .node { border: 3px double var(--line); box-shadow: 6px 6px 0 #000000; overflow: visible; }
+[data-theme='tvision'] .node-지금 { border-color: var(--accent); box-shadow: 6px 6px 0 #000000; }
+[data-theme='tvision'] .node-끝 { border-color: var(--good); }
+[data-theme='tvision'] .node-실패 { border-color: var(--bad); }
+[data-theme='tvision'] .graph-scroll { background: #000080; }
+
+/* Cyan selection with black text. */
+[data-theme='tvision'] .queue-item.active,
+[data-theme='tvision'] .option.picked,
+[data-theme='tvision'] .palette-item.on,
+[data-theme='tvision'] .rail-button.on,
+[data-theme='tvision'] .tab.on,
+[data-theme='tvision'] .task.active,
+[data-theme='tvision'] .pipeline li.now,
+[data-theme='tvision'] .theme-option.on { background: var(--accent-soft); color: #000000; border-color: var(--accent-soft); box-shadow: none; }
+[data-theme='tvision'] .queue-item.active *,
+[data-theme='tvision'] .option.picked *,
+[data-theme='tvision'] .palette-item.on *,
+[data-theme='tvision'] .task.active *,
+[data-theme='tvision'] .pipeline li.now *,
+[data-theme='tvision'] .theme-option.on * { color: #000000; }
+[data-theme='tvision'] .option.picked .recommend { color: #000000; }
+/* The selected project row and task: grey counts, yellow chips and bright stage bars vanish on cyan. */
+[data-theme='tvision'] .project-row.on { background: var(--accent-soft); color: #000000; border-color: var(--accent-soft); }
+[data-theme='tvision'] .project-row.on * { color: #000000; }
+[data-theme='tvision'] .task.active .tag-chip { border-color: #000000; }
+[data-theme='tvision'] .task.active .stages li { border-color: #006060; }
+[data-theme='tvision'] .task.active .stages li.done { border-color: #000080; }
+[data-theme='tvision'] .task.active .stages li.now { border-color: #000000; font-weight: 700; }
+
+/* Green buttons drawn as < 버튼 > with a black shadow. */
+[data-theme='tvision'] .actions button,
+[data-theme='tvision'] .browser-bar button {
+  border: none;
+  padding: 2px 6px;
+  margin-right: 8px;
+  margin-bottom: 4px;
+  background: var(--button);
+  color: #000000;
+  box-shadow: 6px 4px 0 #000000;
+}
+[data-theme='tvision'] .actions button::before,
+[data-theme='tvision'] .browser-bar button::before { content: '<\00a0'; }
+[data-theme='tvision'] .actions button::after,
+[data-theme='tvision'] .browser-bar button::after { content: '\00a0>'; }
+[data-theme='tvision'] .actions button.primary,
+[data-theme='tvision'] .browser-bar button.primary { background: #55ff55; color: #000000; font-weight: 700; }
+[data-theme='tvision'] .node-detail .actions button.danger { background: #aa0000; color: #ffffff; }
+[data-theme='tvision'] .actions button:disabled { opacity: 1; background: #005500; color: #55aa55; }
+[data-theme='tvision'] .actions button:active:not(:disabled) { transform: translate(6px, 4px); box-shadow: none; }
+
+[data-theme='tvision'] .memo,
+[data-theme='tvision'] .filter,
+[data-theme='tvision'] .address,
+[data-theme='tvision'] .session-select,
+[data-theme='tvision'] .palette-input { background: #000080; color: #ffffff; border-color: var(--accent); }
+[data-theme='tvision'] .recommend { background: var(--warn); color: #000000; }
+[data-theme='tvision'] kbd { background: var(--menu); color: #000000; border-color: #000000; }
+[data-theme='tvision'] ::-webkit-scrollbar-track { background: #00aaaa; }
+[data-theme='tvision'] ::-webkit-scrollbar-thumb { background: #000080; }
