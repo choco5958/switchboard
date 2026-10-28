@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AccountInfo, BridgeState, SessionUsage } from '../../shared/types'
+import type { AccountInfo, BridgeState, CcrSlot, SessionUsage } from '../../shared/types'
 import { Icon } from './Icons'
 import { countLabel, flipTheme, isLight, resetText } from './taskInfo'
 import { DEFAULT_THEME, themeOf } from './theme'
@@ -17,6 +17,28 @@ export function usageOf(state: BridgeState): SessionUsage {
     }
   }
   return {}
+}
+
+const ACCOUNT_POLL_MS = 60_000
+
+// A slot is usable when it is signed in and its limit is not marked as still holding.
+export function ccrFree(slot: CcrSlot, now = Date.now()): boolean {
+  return slot.email !== '' && slot.until * 1000 <= now
+}
+
+export function ccrTitle(ccr: NonNullable<AccountInfo['ccr']>, now = Date.now()): string {
+  const pct = (n: number | undefined) => (n === undefined ? '-' : `${n}%`)
+  const lines = ccr.slots.map(s => {
+    const line = t('top.ccrLine', {
+      mark: s.slot === ccr.current ? '▶' : ' ',
+      n: s.slot,
+      email: s.email || t('top.ccrNoLogin'),
+      five: pct(s.fiveHour),
+      week: pct(s.week),
+    })
+    return s.until * 1000 > now ? `${line}, ${t('top.ccrSpent', { reset: resetText(s.until, now) })}` : line
+  })
+  return [t('top.ccrTitle'), ...lines].join('\n')
 }
 
 function Meter({ label, percent, reset = '' }: { label: string; percent: number | undefined; reset?: string }) {
@@ -59,8 +81,14 @@ export function TopBar({
 }) {
   const [account, setAccount] = useState<AccountInfo | null>(null)
   useEffect(() => {
-    void window.ide.accountInfo?.().then(setAccount)
+    // ccr switches slots and marks limits while the app runs, so read it again now and then.
+    const read = () => void window.ide.accountInfo?.().then(setAccount)
+    read()
+    const timer = setInterval(read, ACCOUNT_POLL_MS)
+    return () => clearInterval(timer)
   }, [])
+  const ccr = account?.ccr
+  const ccrUsable = ccr ? ccr.slots.filter(s => ccrFree(s)).length : 0
   // A project whose sessions are all other agents shows no Claude meters rather than another project's.
   const claudeHere = !scoped || scoped.sessions.length === 0 || scoped.sessions.some(s => isClaude(s.agent))
   const usage = claudeHere ? usageOf(state) : {}
@@ -92,6 +120,11 @@ export function TopBar({
         <span className="account" title={t('top.accountTitle', { email: account.email })}>
           <span className="quiet small account-email">{account.email}</span>
           {account.plan && <span className="chip">{account.plan}</span>}
+          {ccr && (
+            <span className={`chip ${ccrUsable === 0 ? 'chip-bad' : ccrUsable === 1 ? 'chip-warn' : ''}`} title={ccrTitle(ccr)}>
+              {t('top.ccrSlot', { n: ccr.current, free: ccrUsable, total: ccr.slots.length })}
+            </span>
+          )}
         </span>
       )}
       {usage.model && <span className="chip topbar-model">{usage.model}</span>}

@@ -214,7 +214,19 @@ export type IdeApi = {
 }
 
 // Feature area: the signed-in Claude account for the top bar (masked email, readable plan).
-export type AccountInfo = { email: string; plan: string }
+export type AccountInfo = { email: string; plan: string; ccr?: { current: number; slots: CcrSlot[] } }
+
+// One ccr slot. until: epoch seconds its limit lifts (0: not marked spent); usage as ccr measured it at measuredAt.
+export type CcrSlot = {
+  slot: number
+  email: string
+  plan: string
+  until: number
+  fiveHour?: number
+  week?: number
+  weekResetsAt?: string
+  measuredAt?: number
+}
 
 // Feature area: agent CLIs other than Claude Code. found maps a command to its path
 // on the login-shell PATH; a command missing from it is not installed.

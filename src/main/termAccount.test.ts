@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { accountDir } from './termAccount'
+import { accountDir, claudeLauncher } from './termAccount'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -40,5 +40,16 @@ describe('accountDir', () => {
     accountDir({ CLAUDE_CONFIG_DIR: '/acct/a' }, path)
     writeFileSync(path, '{')
     expect(accountDir({}, path)).toBeUndefined()
+  })
+})
+
+describe('claudeLauncher', () => {
+  it('starts claude through ccr when ccr is on PATH or in ~/.local/bin', () => {
+    expect(claudeLauncher({ PATH: '/usr/bin:/opt/x/bin' }, p => p === '/opt/x/bin/ccr')).toBe("'/opt/x/bin/ccr'")
+    expect(claudeLauncher({ PATH: '' }, p => p.endsWith('/.local/bin/ccr'))).toMatch(/\/\.local\/bin\/ccr'$/)
+  })
+  it('plain claude without ccr, or when switched off', () => {
+    expect(claudeLauncher({ PATH: '/usr/bin' }, () => false)).toBe('claude')
+    expect(claudeLauncher({ PATH: '/opt/x/bin', SWITCHBOARD_NO_CCR: '1' }, () => true)).toBe('claude')
   })
 })

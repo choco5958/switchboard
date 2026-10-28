@@ -134,6 +134,11 @@ export const en: Dict = {
   'history.memo': 'Memo',
   // Top bar
   'top.accountTitle': '{email}: the Claude account signed in on this computer (shown on screen only)',
+  'top.ccrSlot': 'Account {n}, {free}/{total} slots free',
+  'top.ccrTitle': 'ccr account slots. New Claude terminals start on the current slot and continue the same conversation on the next one when a limit is hit. Usage is what ccr last measured.',
+  'top.ccrLine': '{mark} {n} {email}, 5h {five}, week {week}',
+  'top.ccrSpent': 'limit hit ({reset})',
+  'top.ccrNoLogin': 'not signed in',
   'top.fiveHour': '5h',
   'top.week': 'Week',
   'top.context': 'Context',

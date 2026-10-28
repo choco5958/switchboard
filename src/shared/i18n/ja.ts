@@ -134,6 +134,11 @@ export const ja: Dict = {
   'history.memo': 'メモ',
   // Top bar
   'top.accountTitle': '{email}: このコンピューターで Claude にログインしているアカウント (画面表示のみ)',
+  'top.ccrSlot': 'アカウント {n}, 使える枠 {free}/{total}',
+  'top.ccrTitle': 'ccr のアカウント枠。新しい Claude ターミナルは今の枠で起動し、上限に達すると次の枠で同じ会話を続けます。使用量は ccr が最後に測った値です。',
+  'top.ccrLine': '{mark} {n} {email}, 5時間 {five}, 週間 {week}',
+  'top.ccrSpent': '上限 ({reset})',
+  'top.ccrNoLogin': '未ログイン',
   'top.fiveHour': '5時間',
   'top.week': '週間',
   'top.context': 'コンテキスト',

@@ -134,6 +134,11 @@ export const zhCN: Dict = {
   'history.memo': '备注',
   // Top bar
   'top.accountTitle': '{email}：这台电脑上登录的 Claude 账号 (仅在界面显示)',
+  'top.ccrSlot': '账号 {n}, 可用 {free}/{total}',
+  'top.ccrTitle': 'ccr 账号槽位。新的 Claude 终端在当前槽位启动，达到上限时在下一个槽位继续同一对话。用量是 ccr 最后一次测量的值。',
+  'top.ccrLine': '{mark} {n} {email}, 5小时 {five}, 每周 {week}',
+  'top.ccrSpent': '已达上限 ({reset})',
+  'top.ccrNoLogin': '未登录',
   'top.fiveHour': '5小时',
   'top.week': '本周',
   'top.context': '上下文',

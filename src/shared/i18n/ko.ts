@@ -133,6 +133,11 @@ export const ko = {
   'history.memo': '메모',
   // Top bar
   'top.accountTitle': '{email}: 이 컴퓨터의 Claude 로그인 계정 (화면에만 표시)',
+  'top.ccrSlot': '계정 {n}번, 쓸 수 있는 칸 {free}/{total}',
+  'top.ccrTitle': 'ccr 계정 칸. 새 Claude 터미널은 지금 칸으로 뜨고, 한도에 걸리면 다음 칸으로 같은 대화를 이어 갑니다. 사용량은 ccr이 마지막으로 잰 값입니다.',
+  'top.ccrLine': '{mark} {n}번 {email}, 5시간 {five}, 주간 {week}',
+  'top.ccrSpent': '한도 걸림 ({reset})',
+  'top.ccrNoLogin': '로그인 안 됨',
   'top.fiveHour': '5시간',
   'top.week': '주간',
   'top.context': '컨텍스트',

@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { shellQuote } from '../shared/projects'
 
 // The IDE started from an Orca or Claude Code terminal carries the account
 // folder (CLAUDE_CONFIG_DIR); remember it in file so a later start from Finder
@@ -19,4 +21,13 @@ export function accountDir(env: Record<string, string | undefined>, file: string
     // fall back to claude's own default
   }
   return undefined
+}
+
+// ccr starts claude on a free account and, when that account hits its limit, resumes the same
+// conversation on the next one; its arguments are claude's. Plain claude when it is not installed.
+export function claudeLauncher(env: Record<string, string | undefined> = process.env, exists: (path: string) => boolean = existsSync): string {
+  if (env.SWITCHBOARD_NO_CCR) return 'claude'
+  const dirs = [...(env.PATH ?? '').split(':'), join(homedir(), '.local', 'bin')].filter(Boolean)
+  const found = dirs.map(dir => join(dir, 'ccr')).find(exists)
+  return found ? shellQuote(found) : 'claude'
 }
