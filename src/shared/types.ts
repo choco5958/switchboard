@@ -20,6 +20,7 @@ export type SessionUsage = {
   contextPercent?: number
   model?: string
   agentsRunning?: number
+  ccrSlot?: number // the ccr account slot the session runs on, when ccr started it
 }
 
 export type Task = {
@@ -211,6 +212,7 @@ export type IdeApi = {
   onTermData: (listener: (event: { id: string; data: string; seq: number }) => void) => () => void
   onTermExit: (listener: (event: { id: string; exitCode: number }) => void) => () => void
   accountInfo: () => Promise<AccountInfo | null>
+  measureAccounts: () => Promise<AccountInfo | null>
 }
 
 // Feature area: the signed-in Claude account for the top bar (masked email, readable plan).
@@ -226,6 +228,7 @@ export type CcrSlot = {
   week?: number
   weekResetsAt?: string
   measuredAt?: number
+  measureError?: string
 }
 
 // Feature area: agent CLIs other than Claude Code. found maps a command to its path

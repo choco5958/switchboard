@@ -68,6 +68,19 @@ describe('ccr slots', () => {
     expect(info?.ccr?.slots[0]?.fiveHour).toBeUndefined()
   })
 
+  test('a failed measurement keeps the last good data, dated when it was good', () => {
+    const paths = setup()
+    writeFileSync(join(paths.root, 'state', 'current'), '1')
+    writeFileSync(
+      join(paths.root, 'state', 'usage-1.json'),
+      JSON.stringify({ at: 1793100000, ok: false, err: 'http 401 token expired', data_at: 1793000000, data: { five_hour: { utilization: 40, resets_at: null } } }),
+    )
+    const one = readCcr(paths, 1793100000_000)?.slots[0]
+    expect(one?.measuredAt).toBe(1793000000)
+    expect(one?.measureError).toBe('http 401 token expired')
+    expect(one?.fiveHour).toBeUndefined() // good data from more than five hours before
+  })
+
   test('usage from before the window reset is left out', () => {
     const paths = setup()
     writeFileSync(join(paths.root, 'state', 'current'), '1')

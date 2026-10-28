@@ -56,6 +56,7 @@ const api: IdeApi = {
     return () => ipcRenderer.off('term:exit', handler)
   },
   accountInfo: () => ipcRenderer.invoke('account:info'),
+  measureAccounts: () => ipcRenderer.invoke('account:measure'),
 }
 
 contextBridge.exposeInMainWorld('ide', api)

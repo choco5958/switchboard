@@ -25,9 +25,13 @@ export function accountDir(env: Record<string, string | undefined>, file: string
 
 // ccr starts claude on a free account and, when that account hits its limit, resumes the same
 // conversation on the next one; its arguments are claude's. Plain claude when it is not installed.
-export function claudeLauncher(env: Record<string, string | undefined> = process.env, exists: (path: string) => boolean = existsSync): string {
-  if (env.SWITCHBOARD_NO_CCR) return 'claude'
+export function ccrPath(env: Record<string, string | undefined> = process.env, exists: (path: string) => boolean = existsSync): string | null {
+  if (env.SWITCHBOARD_NO_CCR) return null
   const dirs = [...(env.PATH ?? '').split(':'), join(homedir(), '.local', 'bin')].filter(Boolean)
   const found = dirs.map(dir => join(dir, 'ccr')).find(exists)
-  return found ? shellQuote(found) : 'claude'
+  return found ? shellQuote(found) : null
+}
+
+export function claudeLauncher(env: Record<string, string | undefined> = process.env, exists: (path: string) => boolean = existsSync): string {
+  return ccrPath(env, exists) ?? 'claude'
 }

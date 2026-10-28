@@ -1,4 +1,5 @@
 import type { IpcMain } from 'electron'
+import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -88,14 +89,15 @@ export function readCcrSlot(paths: CcrPaths, slot: number, now = Date.now()): Cc
   const account = readAccount(config)
   const untilRaw = readText(join(paths.root, 'state', `until-${slot}`))
   const until = /^\d+$/.test(untilRaw) ? Number(untilRaw) : 0
-  let usage: { at?: unknown; ok?: unknown; data?: { five_hour?: UsageWindow; seven_day?: UsageWindow } } = {}
+  let usage: { at?: unknown; ok?: unknown; data_at?: unknown; err?: unknown; data?: { five_hour?: UsageWindow; seven_day?: UsageWindow } } = {}
   try {
     usage = JSON.parse(readFileSync(join(paths.root, 'state', `usage-${slot}.json`), 'utf8'))
   } catch {
     // a slot ccr never measured
   }
   const data = usage.data ?? {}
-  const measuredAt = typeof usage.at === 'number' ? usage.at : undefined
+  // A failed measurement keeps the last good data, and data_at says when that was.
+  const measuredAt = typeof usage.data_at === 'number' ? usage.data_at : usage.ok === true && typeof usage.at === 'number' ? usage.at : undefined
   return {
     slot,
     email: account?.email ?? '',
@@ -105,6 +107,7 @@ export function readCcrSlot(paths: CcrPaths, slot: number, now = Date.now()): Cc
     week: percentOf(data.seven_day, measuredAt, WEEK, now),
     weekResetsAt: typeof data.seven_day?.resets_at === 'string' ? data.seven_day.resets_at : undefined,
     measuredAt,
+    measureError: usage.ok === false && typeof usage.err === 'string' ? usage.err.slice(0, 160) : undefined,
   }
 }
 
@@ -123,6 +126,20 @@ export function readAccountInfo(paths = ccrPaths(), now = Date.now()): AccountIn
   return { email: current?.email ?? '', plan: current?.plan ?? '', ccr }
 }
 
-export function registerAccount(ipc: IpcMain): void {
+// ccr status measures every signed-in slot (it holds the tokens; this app never does) and rewrites
+// usage-N.json. A login shell, since an app started from Finder has no PATH to claude or ccr.
+function measureCcr(ccr: string): Promise<void> {
+  return new Promise(resolve => {
+    execFile(process.env.SHELL || '/bin/zsh', ['-l', '-c', `${ccr} status -s`], { timeout: 60_000 }, () => resolve())
+  })
+}
+
+export function registerAccount(ipc: IpcMain, ccr: () => string | null): void {
   ipc.handle('account:info', () => readAccountInfo())
+  let measuring: Promise<void> | null = null
+  ipc.handle('account:measure', async () => {
+    const path = ccr()
+    if (path) await (measuring ??= measureCcr(path).finally(() => (measuring = null)))
+    return readAccountInfo()
+  })
 }

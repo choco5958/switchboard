@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url'
 import type { BridgeState, Reply, WorktreeCheck } from '../shared/types'
 import { watchBridge } from './bridgeWatch'
 import { registerAccount } from './account'
+import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
 import { bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
@@ -174,7 +175,7 @@ ipcMain.handle('debug:call', (_e, method: string, path: string, body?: unknown) 
 })
 registerDevServers(ipcMain, event => send('dev:change', event))
 registerTerminals(ipcMain, send)
-registerAccount(ipcMain)
+registerAccount(ipcMain, () => ccrPath())
 // Feature area: agent CLIs other than Claude Code. Their terminals, and answers typed into them.
 registerAgentTerms(ipcMain, call)
 const agentDelivery = startAgentDelivery({ socketPath: SOCKET, call, terminal: typingTarget })

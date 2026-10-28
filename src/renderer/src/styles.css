@@ -532,6 +532,22 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .topbar > .spacer { flex-shrink: 1; }
 .topbar .searchbox { min-width: 120px; max-width: 360px; flex: 0 1 260px; }
 .meter.has-reset { cursor: help; }
+.ccr-slots {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit;
+  font: inherit; cursor: pointer; -webkit-app-region: no-drag;
+}
+.ccr-slots.measuring { opacity: 0.6; cursor: progress; }
+.ccr-slot {
+  display: inline-flex; align-items: center; gap: 6px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 10px;
+  font-size: 11px; cursor: help;
+}
+.ccr-slot b { font-family: var(--mono); }
+.ccr-slot.current { border-color: var(--accent); background: var(--accent-soft); }
+.ccr-slot.spent { border-color: var(--bad); }
+.ccr-slot.spent b { color: var(--bad); }
+.ccr-slot.off { opacity: 0.45; }
+.ccr-meter { display: inline-flex; align-items: center; gap: 3px; }
+.topbar .ccr-meter .meter-track { width: 24px; }
 .shell.dock-closed .dock { display: none; }
 .shell:has(> .props-panel) {
   grid-template-areas: 'top top top top' 'rail side tabs props' 'rail side main props' 'rail side log props';
