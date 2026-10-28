@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, Notification, shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
@@ -8,12 +8,14 @@ import { pathToFileURL } from 'node:url'
 import type { BridgeState, Reply, WorktreeCheck } from '../shared/types'
 import { watchBridge } from './bridgeWatch'
 import { registerAccount } from './account'
+import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
 import { bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
 import { onTerminalsChange, registerTerminals, typingTarget } from './terminals'
 import { registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
+import { badgeText, planNotification, scanPending } from './notify'
 import { resolveLang, setLang, t } from '../shared/i18n'
 
 const DIR = join(homedir(), '.claude-ide')
@@ -65,6 +67,58 @@ function send(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
 }
 
+// Pending question ids seen by the last scan; null until the first state, which is only a baseline.
+let seenPending: Set<number> | null = null
+let scanTimer: ReturnType<typeof setTimeout> | null = null
+
+// Electron drops a notification's click handler once the object is collected, so live ones are held here.
+const liveNotifications = new Set<Notification>()
+
+// After the last window closes on macOS the app keeps running; a click then needs a new window, and the
+// question id is sent once the page has loaded and its listeners exist.
+function focusWindow(afterLoad?: () => void): void {
+  if (!win || win.isDestroyed()) {
+    createWindow()
+    if (afterLoad) win?.webContents.once('did-finish-load', () => setTimeout(afterLoad, 500))
+    return
+  }
+  afterLoad?.()
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+async function scanQueue(): Promise<void> {
+  const reply = await call('GET', '/state')
+  if (!reply.ok) return
+  const scan = scanPending((reply.json as unknown as BridgeState).questions ?? [], seenPending)
+  seenPending = scan.ids
+  app.dock?.setBadge(badgeText(scan.count))
+  // A focused window already shows the queue; only the badge is kept current.
+  const plan = win?.isFocused() ? null : planNotification(scan.fresh)
+  if (!plan || !Notification.isSupported()) return
+  const notification = 'many' in plan
+    ? new Notification({ title: 'Switchboard', body: t('notify.many', { count: plan.many }) })
+    : new Notification({ title: plan.title, body: plan.body })
+  liveNotifications.add(notification)
+  notification.on('click', () => {
+    liveNotifications.delete(notification)
+    const id = !('many' in plan) ? plan.questionId : null
+    focusWindow(id !== null ? () => send('notify:open', id) : undefined)
+  })
+  notification.on('close', () => liveNotifications.delete(notification))
+  notification.show()
+}
+
+// SSE events arrive in bursts; one state read per burst is enough.
+function scheduleScan(): void {
+  if (scanTimer) return
+  scanTimer = setTimeout(() => {
+    scanTimer = null
+    void scanQueue().catch(() => undefined)
+  }, 300)
+}
+
 // Keeps one SSE subscription to the bridge; every change becomes an IPC event,
 // and the renderer refetches /state (also on the 'connected' event after a
 // reconnect). On loss the app shows the bridge as down at once, restarts it and
@@ -76,9 +130,12 @@ function watch(): void {
     onConnection: up => {
       connected = up
       send('bridge:connection', up)
+      if (up) scheduleScan()
+      else app.dock?.setBadge('')
     },
     onEvent: event => {
       send('bridge:change', event)
+      scheduleScan()
       agentDelivery.onBridgeEvent(event)
     },
     beforeRetry: startBridge,
@@ -174,7 +231,7 @@ ipcMain.handle('debug:call', (_e, method: string, path: string, body?: unknown) 
 })
 registerDevServers(ipcMain, event => send('dev:change', event))
 registerTerminals(ipcMain, send)
-registerAccount(ipcMain)
+registerAccount(ipcMain, () => ccrPath())
 // Feature area: agent CLIs other than Claude Code. Their terminals, and answers typed into them.
 registerAgentTerms(ipcMain, call)
 const agentDelivery = startAgentDelivery({ socketPath: SOCKET, call, terminal: typingTarget })

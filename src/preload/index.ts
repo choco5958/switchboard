@@ -31,13 +31,18 @@ const api: IdeApi = {
     ipcRenderer.on('bridge:change', handler)
     return () => ipcRenderer.off('bridge:change', handler)
   },
+  onNotifyOpen: listener => {
+    const handler = (_e: unknown, id: number) => listener(id)
+    ipcRenderer.on('notify:open', handler)
+    return () => ipcRenderer.off('notify:open', handler)
+  },
   onConnection: listener => {
     const handler = (_e: unknown, connected: boolean) => listener(connected)
     ipcRenderer.on('bridge:connection', handler)
     return () => ipcRenderer.off('bridge:connection', handler)
   },
   termList: () => ipcRenderer.invoke('term:list'),
-  termOpen: (cwd, claude, cols, rows) => ipcRenderer.invoke('term:open', cwd, claude, cols, rows),
+  termOpen: (cwd, claude, cols, rows, slot) => ipcRenderer.invoke('term:open', cwd, claude, cols, rows, slot),
   termOpenAgent: (cwd, agentId, cols, rows) => ipcRenderer.invoke('term:openAgent', cwd, agentId, cols, rows),
   detectAgents: force => ipcRenderer.invoke('agents:detect', force === true),
   termBuffer: id => ipcRenderer.invoke('term:buffer', id),
@@ -56,6 +61,7 @@ const api: IdeApi = {
     return () => ipcRenderer.off('term:exit', handler)
   },
   accountInfo: () => ipcRenderer.invoke('account:info'),
+  measureAccounts: () => ipcRenderer.invoke('account:measure'),
 }
 
 contextBridge.exposeInMainWorld('ide', api)

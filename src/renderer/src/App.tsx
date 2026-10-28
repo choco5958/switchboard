@@ -18,7 +18,8 @@ import { SettingsPage } from './pages/SettingsPage'
 import { isRunning, nameForFolder, pickSession, projectsOf, savedProjects, scopeFor, scopeState } from '../../shared/projects'
 import { Dock } from './Dock'
 import { AgentBadge, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
-import { CUSTOM_AGENTS_KEY, agentTags, customAgents, projectAgents } from '../../shared/agents'
+import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
+import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
 import { HOME, activeTab, closeTab, openTab, pruneTabs, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
 import { applyTheme } from './theme'
 import { LOCALE_TAG, resolveLang, setLang, stageLabel, t, type Key } from '../../shared/i18n'
@@ -104,6 +105,8 @@ export function App() {
   const [dockOpen, setDockOpen] = useState(true)
   const [live, setLive] = useState(true)
   const liveRef = useRef(true)
+  // The notification click arrives through an effect that runs once; the ref keeps it calling the latest openQuestion.
+  const openQuestionRef = useRef<(id: number) => void>(() => undefined)
   const [pickedNode, setPickedNode] = useState<GraphNode | null>(null)
   // Feature area: UI language. Set before the children render, so one render redraws every string.
   const lang = resolveLang(state.settings.lang, navigator.language)
@@ -121,6 +124,13 @@ export function App() {
     }
   }, [])
 
+  // The top bar's play button opens a terminal in the dock; a closed dock would hold it out of sight.
+  useEffect(() => {
+    const open = () => setDockOpen(true)
+    window.addEventListener(OPEN_CLAUDE_SLOT, open)
+    return () => window.removeEventListener(OPEN_CLAUDE_SLOT, open)
+  }, [])
+
   useEffect(() => {
     void refresh()
     void window.ide.connected().then(setConnected)
@@ -128,7 +138,9 @@ export function App() {
       if (liveRef.current) void refresh()
     })
     const offConnection = window.ide.onConnection(setConnected)
+    const offNotify = window.ide.onNotifyOpen(id => openQuestionRef.current(id))
     return () => {
+      offNotify()
       offChange()
       offConnection()
     }
@@ -188,6 +200,7 @@ export function App() {
     setScope(current => scopeFor(current, state.questions.find(q => q.id === id)?.project))
     open({ kind: 'question', id })
   }
+  openQuestionRef.current = openQuestion
   // Everything in the sidebar, home, log and dock is seen through the chosen project.
   const view = useMemo(() => scopeState(state, scope), [state, scope])
   const saved = useMemo(() => savedProjects(state.settings.projects), [state.settings.projects])
@@ -439,9 +452,11 @@ export function App() {
                   <span className="quiet small">
                     {t('sidebar.taskCounts', { running: view.tasks.filter(isRunning).length, done: doneCount })}
                   </span>
-                  <button className="link small" disabled={doneCount === 0} onClick={() => void archiveDone()}>
-                    {t('sidebar.archiveDone', { n: doneCount })}
-                  </button>
+                  {doneCount > 0 && (
+                    <button className="link small" onClick={() => void archiveDone()}>
+                      {t('sidebar.archiveDone', { n: doneCount })}
+                    </button>
+                  )}
                 </div>
                 {view.tasks.length === 0 && (
                   <p className="quiet" title={t('sidebar.noTasksTitle')}>
@@ -578,6 +593,7 @@ export function App() {
           onFolder={cwd => void addProject(cwd)}
           agents={tags}
           customs={customs}
+          showOthers={showOtherAgents(state.settings[SHOW_OTHER_AGENTS_KEY])}
         />
 
         {palette && <Palette items={paletteItems} onClose={() => setPalette(false)} />}

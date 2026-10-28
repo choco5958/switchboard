@@ -20,6 +20,7 @@ export type SessionUsage = {
   contextPercent?: number
   model?: string
   agentsRunning?: number
+  ccrSlot?: number // the ccr account slot the session runs on, when ccr started it
 }
 
 export type Task = {
@@ -198,8 +199,9 @@ export type IdeApi = {
   onDevChange: (listener: (event: { id: string }) => void) => () => void
   onChange: (listener: (event: { type: string }) => void) => () => void
   onConnection: (listener: (connected: boolean) => void) => () => void
+  onNotifyOpen: (listener: (questionId: number) => void) => () => void
   termList: () => Promise<TermInfo[]>
-  termOpen: (cwd: string, claude: boolean, cols: number, rows: number) => Promise<TermInfo | { error: string }>
+  termOpen: (cwd: string, claude: boolean, cols: number, rows: number, slot?: number) => Promise<TermInfo | { error: string }>
   // Agent CLIs other than Claude Code: a terminal running one, and which ones are installed.
   termOpenAgent: (cwd: string, agentId: string, cols: number, rows: number) => Promise<TermInfo | { error: string }>
   detectAgents: (force?: boolean) => Promise<AgentDetect>
@@ -211,10 +213,26 @@ export type IdeApi = {
   onTermData: (listener: (event: { id: string; data: string; seq: number }) => void) => () => void
   onTermExit: (listener: (event: { id: string; exitCode: number }) => void) => () => void
   accountInfo: () => Promise<AccountInfo | null>
+  measureAccounts: () => Promise<AccountInfo | null>
 }
 
 // Feature area: the signed-in Claude account for the top bar (masked email, readable plan).
-export type AccountInfo = { email: string; plan: string }
+export type AccountInfo = { email: string; plan: string; ccr?: { current: number; slots: CcrSlot[] } }
+
+// One ccr slot. until: epoch seconds its limit lifts (0: not marked spent); usage as ccr measured it at measuredAt.
+export type CcrSlot = {
+  slot: number
+  email: string
+  plan: string
+  until: number
+  fiveHour?: number
+  week?: number
+  weekResetsAt?: string
+  measuredAt?: number
+  measureError?: string
+  token?: boolean // a one year token sits in the keychain for this slot
+  refreshExpiresAt?: number // epoch ms the login's refresh token stops working, from ccr's last measurement
+}
 
 // Feature area: agent CLIs other than Claude Code. found maps a command to its path
 // on the login-shell PATH; a command missing from it is not installed.

@@ -340,6 +340,8 @@ async function reportUsage($: Engine): Promise<void> {
   const usage = await $.session.usage().catch(() => undefined)
   if (!usage) return
   const running = (await $.agent.list().catch(() => [])).filter(a => a.status === 'running').length
+  // ccr puts the account slot in claude's environment; the app shows each slot's live usage by it.
+  const slot = Number(await $.env.get('CCR_SLOT').catch(() => undefined))
   await call($, 'POST', '/sessions/usage', {
     sessionId,
     usage: {
@@ -348,6 +350,7 @@ async function reportUsage($: Engine): Promise<void> {
       contextPercent: usage.context.percent,
       model: await $.session.model(),
       agentsRunning: running,
+      ccrSlot: Number.isInteger(slot) && slot > 0 ? slot : undefined,
     },
   }).catch(() => undefined)
 }

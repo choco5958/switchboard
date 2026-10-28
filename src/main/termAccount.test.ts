@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { accountDir } from './termAccount'
+import { accountDir, claudeLauncher, claudeLine } from './termAccount'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -40,5 +40,46 @@ describe('accountDir', () => {
     accountDir({ CLAUDE_CONFIG_DIR: '/acct/a' }, path)
     writeFileSync(path, '{')
     expect(accountDir({}, path)).toBeUndefined()
+  })
+})
+
+describe('claudeLauncher', () => {
+  it('starts claude through ccr when ccr is on PATH or in ~/.local/bin', () => {
+    const state = (p: string) => p.endsWith('/state/current')
+    expect(claudeLauncher({ PATH: '/usr/bin:/opt/x/bin' }, p => p === '/opt/x/bin/ccr' || state(p))).toBe("'/opt/x/bin/ccr'")
+    expect(claudeLauncher({ PATH: '' }, p => p.endsWith('/.local/bin/ccr') || state(p))).toMatch(/\/\.local\/bin\/ccr'$/)
+  })
+  it('plain claude when a ccr binary exists but has no state folder (another tool named ccr)', () => {
+    expect(claudeLauncher({ PATH: '/opt/x/bin' }, p => p === '/opt/x/bin/ccr')).toBe('claude')
+  })
+  it('looks for the state folder under CCR_ROOT', () => {
+    const env = { PATH: '/opt/x/bin', CCR_ROOT: '/r' }
+    expect(claudeLauncher(env, p => p === '/opt/x/bin/ccr' || p === '/r/state/current')).toBe("'/opt/x/bin/ccr'")
+  })
+  it('plain claude without ccr, or when switched off', () => {
+    expect(claudeLauncher({ PATH: '/usr/bin' }, () => false)).toBe('claude')
+    expect(claudeLauncher({ PATH: '/opt/x/bin', SWITCHBOARD_NO_CCR: '1' }, () => true)).toBe('claude')
+  })
+})
+
+describe('claudeLine', () => {
+  const ccr = "'/u/.local/bin/ccr'"
+  const dir = "'/app/mod'"
+
+  it('pins the slot with ccr use before the run, and runs Claude even if use fails', () => {
+    expect(claudeLine(ccr, dir, 3)).toBe(`${ccr} use 3; ${ccr} --plugin-dir ${dir}`)
+  })
+
+  it('starts as before without a slot, with a slot out of range, or a non integer', () => {
+    const plain = `${ccr} --plugin-dir ${dir}`
+    expect(claudeLine(ccr, dir)).toBe(plain)
+    expect(claudeLine(ccr, dir, 0)).toBe(plain)
+    expect(claudeLine(ccr, dir, 5)).toBe(plain)
+    expect(claudeLine(ccr, dir, 1.5)).toBe(plain)
+    expect(claudeLine(ccr, dir, Number('2; ls'))).toBe(plain)
+  })
+
+  it('ignores the slot when claude runs without ccr', () => {
+    expect(claudeLine('claude', dir, 2)).toBe(`claude --plugin-dir ${dir}`)
   })
 })

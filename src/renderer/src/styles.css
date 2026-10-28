@@ -216,7 +216,7 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .rail-badge { position: absolute; top: 2px; right: 2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--warn); color: var(--bg); font: 600 10px/15px var(--sans); }
 .sidebar { position: relative; }
 .sidebar-close { position: absolute; top: 10px; right: 8px; border: none; background: none; color: var(--quiet); cursor: pointer; }
-.sidebar-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.sidebar-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; white-space: nowrap; }
 .archived-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
 .tabbar { grid-area: tabs; display: flex; align-items: stretch; overflow-x: auto; background: var(--panel); border-bottom: 1px solid var(--line); }
 .tab { display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 0 10px; border-right: 1px solid var(--line); color: var(--quiet); cursor: pointer; white-space: nowrap; }
@@ -487,6 +487,9 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 
 /* First run: three steps instead of four zeros. */
 .first-run { max-width: 720px; }
+/* Centered so the lone card does not leave the lower half of the page looking unfinished. */
+.home.home-empty { display: flex; align-items: center; justify-content: center; min-height: 100%; }
+.home-empty .first-run { width: 100%; }
 .first-run-steps { margin: 0; padding-left: 20px; }
 .first-run-steps li { margin-bottom: 14px; }
 .first-run-steps p { margin: 4px 0; }
@@ -530,8 +533,36 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .topbar .meter-track { width: 40px; }
 @media (max-width: 1520px) { .topbar .topbar-cost, .topbar .topbar-model { display: none; } }
 .topbar > .spacer { flex-shrink: 1; }
-.topbar .searchbox { min-width: 120px; max-width: 360px; flex: 0 1 260px; }
+.topbar .searchbox { min-width: 36px; max-width: 360px; flex: 0 1 260px; overflow: hidden; }
 .meter.has-reset { cursor: help; }
+.ccr-slots { display: inline-flex; align-items: center; gap: 4px; -webkit-app-region: no-drag; }
+.ccr-slots.measuring { opacity: 0.6; cursor: progress; }
+.ccr-slot {
+  display: inline-flex; align-items: center; gap: 2px; padding: 1px 3px 1px 7px; border: 1px solid var(--line); border-radius: 10px;
+  font-size: 11px;
+}
+.ccr-slot b { font-family: var(--mono); font-size: 12px; }
+.ccr-slot.current { border-color: var(--accent); background: var(--accent-soft); }
+.ccr-slot.spent { border-color: var(--bad); }
+.ccr-slot.spent b { color: var(--bad); }
+.ccr-slot.off { opacity: 0.45; }
+.ccr-measure {
+  display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.ccr-run {
+  display: inline-grid; place-items: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: var(--quiet); font-size: 8px; line-height: 1; cursor: pointer;
+}
+.ccr-run:hover:not(:disabled) { background: var(--accent); color: var(--bg, #fff); }
+.ccr-run:disabled { opacity: 0.3; cursor: not-allowed; }
+.ccr-meter { display: inline-flex; align-items: center; gap: 2px; }
+.ccr-label { color: var(--text, inherit); opacity: 0.75; font-weight: 600; }
+.ccr-pct { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.ccr-meter.unmeasured { opacity: 0.35; }
+.topbar .ccr-meter .meter-track { width: 22px; height: 6px; background: var(--line); }
+.ccr-token { padding: 0 4px; border: 1px solid var(--line); border-radius: 6px; font-size: 10px; font-family: var(--mono); }
+.ccr-token.ok { border-color: var(--good); color: var(--good); }
+.ccr-token.warn { border-color: var(--bad); color: var(--bad); font-weight: 700; }
 .shell.dock-closed .dock { display: none; }
 .shell:has(> .props-panel) {
   grid-template-areas: 'top top top top' 'rail side tabs props' 'rail side main props' 'rail side log props';
@@ -545,7 +576,7 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
   background: none; color: var(--quiet); cursor: pointer;
 }
 .props-toggle:hover { color: var(--text); }
-.props-vertical { writing-mode: vertical-rl; letter-spacing: 2px; font-size: 12px; }
+.props-vertical { writing-mode: vertical-rl; letter-spacing: 2px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
 .props-head { display: flex; align-items: center; justify-content: space-between; }
 .props-head h2 { margin: 0; }
 .props-head .link { margin: 0; font-size: 16px; }
@@ -605,7 +636,6 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .agent-badge.agent-codex { color: var(--good); border-color: var(--good); }
 .agent-badge.agent-gemini { color: var(--warn); border-color: var(--warn); }
 .project-row .agent-badge { margin-left: 4px; }
-.dock-tab.add-agent { color: var(--text); }
 .agent-list { list-style: none; margin: 8px 0; padding: 0; }
 .agent-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .agent-row-name { min-width: 150px; }

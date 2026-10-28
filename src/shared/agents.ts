@@ -159,6 +159,11 @@ export function presetOf(id: string): AgentPreset | undefined {
 export type CustomAgent = { id: string; name: string; command: string; mcp: string } // mcp: a template, or 'none'
 export const CUSTOM_AGENTS_KEY = 'customAgents'
 
+// Whether the dock offers agent CLIs other than Claude. On unless the setting is exactly false, so
+// people who had these buttons before the setting existed keep them.
+export const SHOW_OTHER_AGENTS_KEY = 'showOtherAgents'
+export const showOtherAgents = (value: unknown): boolean => value !== false
+
 export const PLACEHOLDERS = ['server', 'command', 'args', 'args_json', 'config_file', 'config_json', 'name'] as const
 
 // Every placeholder becomes one or more shell words, already quoted. {server} is the
