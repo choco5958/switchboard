@@ -5,6 +5,7 @@ import { PRESETS, type AgentTag, type CustomAgent } from '../../shared/agents'
 import { Icon } from './Icons'
 import { TerminalView } from './TerminalView'
 import { LogLines } from './parts'
+import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
 import { t } from '../../shared/i18n'
 
 const HEIGHT_KEY = 'claude-ide:dock-height'
@@ -25,10 +26,14 @@ export const AGENTS_FOUND = 'switchboard:agents-found'
 // installed or the person added. kind is 'claude', 'shell' or the agent's id.
 type Launcher = { kind: string; text: string; title: string; menuTitle: string }
 
-export function launchers(found: AgentDetect | null, customs: readonly CustomAgent[]): Launcher[] {
-  return [
+export function launchers(found: AgentDetect | null, customs: readonly CustomAgent[], showOthers = true): Launcher[] {
+  const base: Launcher[] = [
     { kind: 'claude', text: '+ Claude', title: t('dock.newClaudeTitle'), menuTitle: t('dock.menuClaude') },
     { kind: 'shell', text: t('dock.newShell'), title: t('dock.newShellTitle'), menuTitle: t('dock.menuShell') },
+  ]
+  if (!showOthers) return base
+  return [
+    ...base,
     ...PRESETS.filter(p => found?.found[p.bin]).map(p => ({
       kind: p.id,
       text: `+ ${p.label}`,
@@ -58,6 +63,7 @@ export function Dock({
   onFolder,
   agents = {},
   customs = [],
+  showOthers = true,
 }: {
   events: BridgeState['events']
   tasks: Task[]
@@ -70,6 +76,7 @@ export function Dock({
   onFolder: (cwd: string) => void
   agents?: Record<string, AgentTag> // session id to its agent badge, for the log
   customs?: CustomAgent[] // the person's own agent CLIs (settings)
+  showOthers?: boolean // settings: offer agent CLIs other than Claude
 }) {
   const [terms, setTerms] = useState<TermInfo[]>([])
   const [active, setActive] = useState<string>('log')
@@ -81,6 +88,8 @@ export function Dock({
   const autoFolded = useRef(false)
   const [closing, setClosing] = useState<string | null>(null)
   const [error, setError] = useState('')
+  // A slot chosen in the top bar while no project is in view: the folder menu then opens Claude on it.
+  const [pickSlot, setPickSlot] = useState<number | undefined>()
   const body = useRef<HTMLDivElement>(null)
   const logBox = useRef<HTMLDivElement>(null)
 
@@ -129,8 +138,9 @@ export function Dock({
     }
   }, [logShown])
 
-  const openIn = async (cwd: string | null, kind = 'claude') => {
+  const openIn = async (cwd: string | null, kind = 'claude', slot?: number) => {
     setMenu(null)
+    setPickSlot(undefined)
     setError('')
     const folder = cwd || (await window.ide.pickFolder())
     if (!folder) return
@@ -139,7 +149,7 @@ export function Dock({
     const rows = box ? Math.floor(box.clientHeight / 17) : 20
     const made =
       kind === 'claude' || kind === 'shell'
-        ? await window.ide.termOpen(folder, kind === 'claude', cols, rows)
+        ? await window.ide.termOpen(folder, kind === 'claude', cols, rows, slot)
         : await window.ide.termOpenAgent(folder, kind, cols, rows)
     if ('error' in made) return setError(made.error)
     setTerms(list => [...list, made])
@@ -149,7 +159,21 @@ export function Dock({
   }
 
   const scoped = scope === null ? null : projects.find(p => p.name === scope)
-  const all = launchers(found, customs)
+  // The listener sees the latest scope through a ref, so it is attached once.
+  const openSlot = useRef<(slot: number) => void>(() => undefined)
+  openSlot.current = slot => {
+    if (scoped?.cwd) void openIn(scoped.cwd, 'claude', slot)
+    else {
+      setPickSlot(slot)
+      setMenu('claude')
+    }
+  }
+  useEffect(() => {
+    const on = (event: Event) => openSlot.current((event as CustomEvent<number>).detail)
+    window.addEventListener(OPEN_CLAUDE_SLOT, on)
+    return () => window.removeEventListener(OPEN_CLAUDE_SLOT, on)
+  }, [])
+  const all = launchers(found, customs, showOthers)
 
   const close = async (id: string) => {
     const term = terms.find(t => t.id === id)
@@ -204,7 +228,11 @@ export function Dock({
               key={l.kind}
               className={`dock-tab add ${l.kind === 'claude' || l.kind === 'shell' ? '' : 'add-agent'}`}
               title={l.title}
-              onClick={() => (scoped?.cwd ? void openIn(scoped.cwd, l.kind) : setMenu(m => (m === l.kind ? null : l.kind)))}
+              onClick={() => {
+                setPickSlot(undefined)
+                if (scoped?.cwd) void openIn(scoped.cwd, l.kind)
+                else setMenu(m => (m === l.kind ? null : l.kind))
+              }}
             >
               {l.text}
             </button>
@@ -215,12 +243,12 @@ export function Dock({
               {projects
                 .filter(p => p.cwd)
                 .map(p => (
-                  <button key={p.name} title={p.cwd} onClick={() => void openIn(p.cwd, menu)}>
+                  <button key={p.name} title={p.cwd} onClick={() => void openIn(p.cwd, menu, pickSlot)}>
                     <span className="dock-menu-name">{p.name}</span>
                     <span className="quiet small mono dock-menu-path">{p.cwd.replace(/^\/Users\/[^/]+/, '~')}</span>
                   </button>
                 ))}
-              <button onClick={() => void openIn(null, menu)}>{t('dock.otherFolder')}</button>
+              <button onClick={() => void openIn(null, menu, pickSlot)}>{t('dock.otherFolder')}</button>
             </div>
           )}
         </div>

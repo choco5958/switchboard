@@ -81,6 +81,24 @@ function percentOf(window: UsageWindow | null | undefined, measuredAt: number | 
   return Math.round(window.utilization)
 }
 
+// ccr stores the refresh token's expiry in epoch milliseconds (checked against real usage files).
+// A seconds-sized value would read as 1970, so anything that small is dropped instead of shown as expired.
+export function refreshExpiry(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 1e11 ? value : undefined
+}
+
+export { refreshDaysLeft } from '../shared/ccr'
+
+// A year token exists when its keychain item does. The check uses only the exit code of a lookup that
+// does not ask for the secret (no -w), and its output is dropped, so the token value is never read.
+export function hasYearToken(slot: number, env: Record<string, string | undefined> = process.env): Promise<boolean> {
+  const service = `${env.CCR_TOKEN_SERVICE || 'ccr-oauth'}-${slot}`
+  return new Promise(resolve => {
+    const child = execFile('security', ['find-generic-password', '-s', service, '-a', 'ccr'], { timeout: 5_000 }, error => resolve(!error))
+    child.stdout?.resume()
+  })
+}
+
 const FIVE_HOURS = 5 * 3600_000
 const WEEK = 7 * 86400_000
 
@@ -89,7 +107,14 @@ export function readCcrSlot(paths: CcrPaths, slot: number, now = Date.now()): Cc
   const account = readAccount(config)
   const untilRaw = readText(join(paths.root, 'state', `until-${slot}`))
   const until = /^\d+$/.test(untilRaw) ? Number(untilRaw) : 0
-  let usage: { at?: unknown; ok?: unknown; data_at?: unknown; err?: unknown; data?: { five_hour?: UsageWindow; seven_day?: UsageWindow } } = {}
+  let usage: {
+    at?: unknown
+    ok?: unknown
+    data_at?: unknown
+    err?: unknown
+    data?: { five_hour?: UsageWindow; seven_day?: UsageWindow }
+    cred?: { refreshTokenExpiresAt?: unknown }
+  } = {}
   try {
     usage = JSON.parse(readFileSync(join(paths.root, 'state', `usage-${slot}.json`), 'utf8'))
   } catch {
@@ -107,6 +132,7 @@ export function readCcrSlot(paths: CcrPaths, slot: number, now = Date.now()): Cc
     week: percentOf(data.seven_day, measuredAt, WEEK, now),
     weekResetsAt: typeof data.seven_day?.resets_at === 'string' ? data.seven_day.resets_at : undefined,
     measuredAt,
+    refreshExpiresAt: refreshExpiry(usage.cred?.refreshTokenExpiresAt),
     measureError: usage.ok === false && typeof usage.err === 'string' ? usage.err.slice(0, 160) : undefined,
   }
 }
@@ -134,12 +160,30 @@ function measureCcr(ccr: string): Promise<void> {
   })
 }
 
+// The files give the slots; the keychain says which of them run on a year token.
+// The keychain lookup spawns one process per slot and the answer rarely changes, so it is kept for
+// five minutes; an explicit measure request bypasses the cache.
+const TOKEN_CACHE_MS = 5 * 60_000
+let tokenCache: { at: number; tokens: boolean[] } | null = null
+
+export async function readAccountInfoWithTokens(fresh = false): Promise<AccountInfo | null> {
+  const info = readAccountInfo()
+  if (!info?.ccr) return info
+  const count = info.ccr.slots.length
+  if (fresh || !tokenCache || Date.now() - tokenCache.at > TOKEN_CACHE_MS || tokenCache.tokens.length !== count) {
+    tokenCache = { at: Date.now(), tokens: await Promise.all(info.ccr.slots.map(slot => hasYearToken(slot.slot))) }
+  }
+  const tokens = tokenCache.tokens
+  info.ccr.slots.forEach((slot, i) => (slot.token = tokens[i]))
+  return info
+}
+
 export function registerAccount(ipc: IpcMain, ccr: () => string | null): void {
-  ipc.handle('account:info', () => readAccountInfo())
+  ipc.handle('account:info', () => readAccountInfoWithTokens())
   let measuring: Promise<void> | null = null
   ipc.handle('account:measure', async () => {
     const path = ccr()
     if (path) await (measuring ??= measureCcr(path).finally(() => (measuring = null)))
-    return readAccountInfo()
+    return readAccountInfoWithTokens(true)
   })
 }

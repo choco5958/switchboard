@@ -57,7 +57,7 @@ export function HomePage({
   const agents = state.agents.filter(a => a.status === 'running')
   if (state.tasks.length === 0 && pending.length === 0) {
     return (
-      <div className="home">
+      <div className="home home-empty">
         <FirstRun sessions={state.sessions.length} onPickFolder={onPickFolder} />
       </div>
     )

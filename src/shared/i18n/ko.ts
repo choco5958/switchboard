@@ -133,7 +133,7 @@ export const ko = {
   'history.memo': '메모',
   // Top bar
   'top.accountTitle': '{email}: 이 컴퓨터의 Claude 로그인 계정 (화면에만 표시)',
-  'top.ccrTitle': 'ccr 계정 칸. 새 Claude 터미널은 표시된 칸으로 뜨고, 한도에 걸리면 다음 칸으로 같은 대화를 이어 갑니다. 누르면 지금 다시 잽니다.',
+  'top.ccrTitle': 'ccr 계정 칸. 새 Claude 터미널은 표시된 칸으로 뜨고, 한도에 걸리면 다음 칸으로 같은 대화를 이어 갑니다. 칸을 누르면 지금 다시 잽니다. 재생 버튼은 그 칸으로 새 Claude를 엽니다.',
   'top.ccrSlotTitle': '{n}번 {email}',
   'top.ccrCurrent': '새 Claude 터미널이 이 칸으로 뜹니다',
   'top.ccrUsage': '5시간 {five}, 주간 {week}',
@@ -145,6 +145,14 @@ export const ko = {
   'top.ccrNoLogin': '로그인 안 됨',
   'top.ccrFive': '5h',
   'top.ccrWeek': '주',
+  'top.ccrRunSpent': '한도가 풀린 뒤에 열 수 있습니다',
+  'top.ccrRunOff': '로그인된 칸만 열 수 있습니다',
+  'top.ccrRun': '이 칸으로 새 Claude 열기',
+  'top.ccrExpiredTitle': '로그인 갱신 토큰이 만료됐습니다. ccr login 이 필요합니다',
+  'top.ccrRefreshTitle': '로그인 갱신 토큰 만료까지 {n}일',
+  'top.ccrTokenTitle': '1년 토큰이 있어 로그인 만료와 상관없이 실행됩니다',
+  'top.ccrExpired': '만료',
+  'top.ccrToken': '1년',
   'top.fiveHour': '5시간',
   'top.week': '주간',
   'top.context': '컨텍스트',
@@ -156,6 +164,7 @@ export const ko = {
   'top.decisions': '결정',
   'top.connected': '연결',
   'top.disconnected': '끊김',
+  'top.disconnectedTitle': '끊긴 상태입니다. 연결 서버와의 연결을 다시 시도하고 있습니다.',
   'top.toggleSidebar': '사이드바 접기, 펼치기',
   'top.toggleDock': '아래 작업 로그와 터미널 접기, 펼치기',
   'top.liveOnTitle': '바뀐 내용을 바로 반영합니다. 누르면 멈춥니다.',
@@ -623,6 +632,8 @@ export const ko = {
   'question.fromAgent': '{project} {agent} 세션 {session}에서 올림',
   'agents.title': '에이전트 CLI',
   'agents.intro': 'Claude Code 말고 다른 코딩 CLI도 아래 독에서 열 수 있습니다. 연결되는 CLI는 그 실행에만 Switchboard 연결 서버(MCP)를 붙여 작업, 계획, 질문을 올리고, 답은 그 터미널에 입력됩니다. CLI 자체의 설정 파일은 고치지 않습니다. 사용량 막대는 Claude 세션에만 나옵니다.',
+  'agents.showOthers': '다른 에이전트 버튼 보이기',
+  'agents.showOthersHint': '기본은 켜짐입니다. 끄면 독에는 Claude와 셸 버튼만 보입니다. 켜면 설치된 CLI와 직접 추가한 CLI 버튼이 나옵니다.',
   'agents.looking': '찾는 중',
   'agents.installed': '설치됨',
   'agents.missing': '설치되지 않음',
@@ -647,6 +658,7 @@ export const ko = {
   'agents.add': '추가',
   'agents.addNote': '추가해도 바로 실행하지 않습니다. 독의 버튼을 눌러야 열립니다.',
   'agents.added': '{name}을(를) 추가했습니다. 아래 독의 + {name}으로 엽니다.',
+  'notify.many': '새 결정 요청 {count}건',
 } satisfies Record<string, string>
 
 export type Dict = Record<keyof typeof ko, string>

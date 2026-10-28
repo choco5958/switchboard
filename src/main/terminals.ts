@@ -6,7 +6,8 @@ import { randomBytes } from 'node:crypto'
 import * as pty from 'node-pty'
 import type { TermInfo } from '../shared/types'
 import { projectName, shellQuote, terminalEnv } from '../shared/projects'
-import { accountDir, claudeLauncher } from './termAccount'
+import { accountDir, claudeLauncher, claudeLine } from './termAccount'
+import { ccrPaths } from './account'
 import { pasteModeAfter, type TypingTarget } from './agentInput'
 import { t } from '../shared/i18n'
 
@@ -134,14 +135,14 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
 
   ipcMain.handle('term:list', () => [...terms.values()].map(info))
 
-  ipcMain.handle('term:open', (_e, cwd: string, claude: boolean, cols: number, rows: number): TermInfo | { error: string } =>
+  ipcMain.handle('term:open', (_e, cwd: string, claude: boolean, cols: number, rows: number, slot?: number): TermInfo | { error: string } =>
     openTerminal({
       cwd,
       cols,
       rows,
       claude,
       title: claude ? 'claude' : t('term.shell'),
-      prepare: () => ({ line: claude ? `${claudeLauncher()} --plugin-dir ${shellQuote(modDir)}` : undefined }),
+      prepare: () => ({ line: claude ? claudeLine(claudeLauncher(), shellQuote(modDir), slot, ccrPaths().count) : undefined }),
     }),
   )
 

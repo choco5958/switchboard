@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AccountInfo, BridgeState, CcrSlot, SessionUsage } from '../../shared/types'
+import { OPEN_CLAUDE_SLOT, refreshDaysLeft } from '../../shared/ccr'
 import { Icon } from './Icons'
 import { countLabel, flipTheme, isLight, resetText } from './taskInfo'
 import { DEFAULT_THEME, themeOf } from './theme'
@@ -23,10 +24,26 @@ const ACCOUNT_POLL_MS = 60_000
 // ccr status asks the usage API for every slot, so it runs far less often than the files are read.
 const MEASURE_MS = 5 * 60_000
 const LIVE_MS = 15 * 60_000
+const WARN_DAYS = 3
 
 // A slot is usable when it is signed in and its limit is not marked as still holding.
 export function ccrFree(slot: CcrSlot, now = Date.now()): boolean {
-  return slot.email !== '' && slot.until * 1000 <= now
+  return signedIn(slot) && slot.until * 1000 <= now
+}
+
+// A year token logs in without an email in the slot's config, so either one counts.
+function signedIn(slot: CcrSlot): boolean {
+  return slot.email !== '' || slot.token === true
+}
+
+export type SlotToken = { kind: 'year' } | { kind: 'days'; days: number; warn: boolean } | { kind: 'expired' } | { kind: 'none' }
+
+// A year token outlives logins, so it wins. Otherwise the login's refresh token is what runs out.
+export function slotToken(slot: CcrSlot, now = Date.now()): SlotToken {
+  if (slot.token) return { kind: 'year' }
+  if (slot.email === '' || slot.refreshExpiresAt === undefined) return { kind: 'none' }
+  const days = refreshDaysLeft(slot.refreshExpiresAt, now)
+  return days < 0 ? { kind: 'expired' } : { kind: 'days', days, warn: days <= WARN_DAYS }
 }
 
 export type SlotUsage = { five?: number; week?: number; live: boolean }
@@ -56,37 +73,64 @@ export function slotTitle(slot: CcrSlot, current: boolean, usage: SlotUsage, now
   lines.push(t('top.ccrUsage', { five: pct(usage.five), week: pct(usage.week) }))
   lines.push(usage.live ? t('top.ccrLive') : slot.measuredAt ? t('top.ccrMeasured', { time: time(slot.measuredAt) }) : t('top.ccrUnmeasured'))
   if (slot.measureError) lines.push(t('top.ccrFailed', { error: slot.measureError }))
+  const token = slotToken(slot, now)
+  if (token.kind === 'year') lines.push(t('top.ccrTokenTitle'))
+  else if (token.kind === 'days') lines.push(t('top.ccrRefreshTitle', { n: token.days }))
+  else if (token.kind === 'expired') lines.push(t('top.ccrExpiredTitle'))
   return lines.join('\n')
 }
 
 function MiniMeter({ label, percent }: { label: string; percent: number | undefined }) {
   const level = percent === undefined ? '' : percent >= 90 ? 'bad' : percent >= 70 ? 'warn' : 'good'
+  // An unmeasured slot is dimmed so it cannot be read as 0%.
   return (
-    <span className="ccr-meter">
-      <span className="quiet">{label}</span>
+    <span className={`ccr-meter ${percent === undefined ? 'unmeasured' : ''}`}>
+      <span className="ccr-label">{label}</span>
       <span className="meter-track">
         {percent !== undefined && <span className={`meter-fill ${level}`} style={{ width: `${Math.min(100, percent)}%` }} />}
       </span>
-      <span>{percent === undefined ? '-' : `${Math.round(percent)}%`}</span>
+      <span className="ccr-pct">{percent === undefined ? '-' : `${Math.round(percent)}%`}</span>
     </span>
   )
 }
 
+function TokenBadge({ slot }: { slot: CcrSlot }) {
+  const token = slotToken(slot)
+  if (token.kind === 'none') return null
+  if (token.kind === 'year') return <span className="ccr-token ok">{t('top.ccrToken')}</span>
+  if (token.kind === 'expired') return <span className="ccr-token warn">{t('top.ccrExpired')}</span>
+  return <span className={`ccr-token ${token.warn ? 'warn' : ''}`}>{`D-${token.days}`}</span>
+}
+
 function CcrSlots({ ccr, sessions, onMeasure, measuring }: { ccr: NonNullable<AccountInfo['ccr']>; sessions: BridgeState['sessions']; onMeasure: () => void; measuring: boolean }) {
   return (
-    <button className={`ccr-slots ${measuring ? 'measuring' : ''}`} title={t('top.ccrTitle')} onClick={onMeasure}>
+    <span className={`ccr-slots ${measuring ? 'measuring' : ''}`}>
       {ccr.slots.map(slot => {
         const usage = slotUsage(slot, sessions)
-        const state = slot.email === '' ? 'off' : !ccrFree(slot) ? 'spent' : ''
+        const state = !signedIn(slot) ? 'off' : !ccrFree(slot) ? 'spent' : ''
+        // ccr moves a spent or signed out slot to the next free one, so only a free slot can be opened as asked.
+        const runnable = ccrFree(slot)
         return (
-          <span key={slot.slot} className={`ccr-slot ${state} ${slot.slot === ccr.current ? 'current' : ''}`} title={slotTitle(slot, slot.slot === ccr.current, usage)}>
-            <b>{slot.slot}</b>
-            <MiniMeter label={t('top.ccrFive')} percent={usage.five} />
-            <MiniMeter label={t('top.ccrWeek')} percent={usage.week} />
+          <span key={slot.slot} className={`ccr-slot ${state} ${slot.slot === ccr.current ? 'current' : ''}`}>
+            <button className="ccr-measure" title={`${t('top.ccrTitle')}\n\n${slotTitle(slot, slot.slot === ccr.current, usage)}`} onClick={onMeasure}>
+              <b>{slot.slot}</b>
+              <MiniMeter label={t('top.ccrFive')} percent={usage.five} />
+              <MiniMeter label={t('top.ccrWeek')} percent={usage.week} />
+              <TokenBadge slot={slot} />
+            </button>
+            <button
+              className="ccr-run"
+              disabled={!runnable}
+              title={runnable ? t('top.ccrRun') : !signedIn(slot) ? t('top.ccrRunOff') : t('top.ccrRunSpent')}
+              aria-label={t('top.ccrRun')}
+              onClick={() => window.dispatchEvent(new CustomEvent(OPEN_CLAUDE_SLOT, { detail: slot.slot }))}
+            >
+              ▶
+            </button>
           </span>
         )
       })}
-    </button>
+    </span>
   )
 }
 
@@ -202,7 +246,18 @@ export function TopBar({
       <button className={`chip chip-button ${(scopedPending ?? pending) > 0 ? 'chip-warn' : ''}`} onClick={onQuestions}>
         {countLabel(t('top.decisions'), pending, scopedPending)}
       </button>
-      <span className={`chip ${connected ? 'chip-good' : 'chip-bad'}`}>{connected ? t('top.connected') : t('top.disconnected')}</span>
+      {/* One badge for both facts: a dropped bridge outranks the live toggle, since paused or live means nothing without a link. */}
+      {onToggleLive ? (
+        <button
+          className={`chip chip-button live ${!connected ? 'chip-bad' : live ? 'chip-good' : 'chip-warn'}`}
+          title={!connected ? t('top.disconnectedTitle') : live ? t('top.liveOnTitle') : t('top.liveOffTitle')}
+          onClick={connected ? onToggleLive : undefined}
+        >
+          {!connected ? t('top.disconnected') : live ? t('top.live') : t('top.paused')}
+        </button>
+      ) : (
+        <span className={`chip ${connected ? 'chip-good' : 'chip-bad'}`}>{connected ? t('top.connected') : t('top.disconnected')}</span>
+      )}
       {onToggleSidebar && (
         <button className="topbar-icon" title={t('top.toggleSidebar')} onClick={onToggleSidebar}>
           <Icon name="sidebar" size={16} />
@@ -211,15 +266,6 @@ export function TopBar({
       {onToggleDock && (
         <button className="topbar-icon" title={t('top.toggleDock')} onClick={onToggleDock}>
           <Icon name="dock" size={16} />
-        </button>
-      )}
-      {onToggleLive && (
-        <button
-          className={`chip chip-button live ${live ? 'chip-good' : 'chip-warn'}`}
-          title={live ? t('top.liveOnTitle') : t('top.liveOffTitle')}
-          onClick={onToggleLive}
-        >
-          {live ? t('top.live') : t('top.paused')}
         </button>
       )}
       <button className="topbar-icon" title={light ? t('top.toDark') : t('top.toLight')} onClick={() => void flip()}>

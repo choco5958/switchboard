@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { ccrFree, slotTitle, slotUsage } from './TopBar'
+import { ccrFree, slotTitle, slotToken, slotUsage } from './TopBar'
 import type { CcrSlot, Session } from '../../shared/types'
 
 const NOW = 1_793_000_000_000
@@ -13,6 +13,7 @@ describe('ccr top bar', () => {
     expect(ccrFree(slot({ until: NOW / 1000 + 600 }), NOW)).toBe(false)
     expect(ccrFree(slot({ until: NOW / 1000 - 1 }), NOW)).toBe(true)
     expect(ccrFree(slot({ email: '' }), NOW)).toBe(false)
+    expect(ccrFree(slot({ email: '', token: true }), NOW)).toBe(true)
   })
 
   test('a running session on the slot beats what ccr measured', () => {
@@ -32,5 +33,30 @@ describe('ccr top bar', () => {
     const live = slotTitle(slot({ slot: 3 }), false, { five: 1, live: true }, NOW).split('\n')
     expect(live).toHaveLength(3)
     expect(live[1]).toMatch(/1%.*-/)
+  })
+})
+
+describe('ccr slot token', () => {
+  const day = 86400_000
+
+  test('a year token wins over the refresh expiry', () => {
+    expect(slotToken(slot({ token: true, refreshExpiresAt: NOW + day }), NOW)).toEqual({ kind: 'year' })
+  })
+
+  test('without one, days left warn at three or fewer', () => {
+    expect(slotToken(slot({ refreshExpiresAt: NOW + 10 * day }), NOW)).toEqual({ kind: 'days', days: 10, warn: false })
+    expect(slotToken(slot({ refreshExpiresAt: NOW + 3 * day }), NOW)).toEqual({ kind: 'days', days: 3, warn: true })
+    expect(slotToken(slot({ refreshExpiresAt: NOW + 1.4 * day }), NOW)).toEqual({ kind: 'days', days: 1, warn: true })
+    expect(slotToken(slot({ refreshExpiresAt: NOW - 1 }), NOW)).toEqual({ kind: 'expired' })
+  })
+
+  test('nothing to show for a signed out slot or an unmeasured one', () => {
+    expect(slotToken(slot({ email: '', refreshExpiresAt: NOW + day }), NOW)).toEqual({ kind: 'none' })
+    expect(slotToken(slot({}), NOW)).toEqual({ kind: 'none' })
+  })
+
+  test('the tooltip gains one line for the token state', () => {
+    expect(slotTitle(slot({ token: true }), false, { live: false }, NOW).split('\n').length).toBe(4)
+    expect(slotTitle(slot({ refreshExpiresAt: NOW + 2 * day }), false, { live: false }, NOW)).toContain('2')
   })
 })

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { accountOf, configPath, maskEmail, planLabel, readAccount, readAccountInfo, readCcr } from './account'
+import { accountOf, configPath, hasYearToken, maskEmail, planLabel, readAccount, readAccountInfo, readCcr, readCcrSlot, refreshDaysLeft, refreshExpiry } from './account'
 
 describe('account', () => {
   test('masks the email', () => {
@@ -100,5 +100,38 @@ describe('ccr slots', () => {
     const planted = `planted-${Math.random().toString(36).slice(2)}`
     writeFileSync(join(paths.home, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'one@x.kr', accountUuid: planted }, userID: planted }))
     expect(JSON.stringify(readAccountInfo(paths))).not.toContain(planted)
+  })
+})
+
+describe('refresh token expiry', () => {
+  const now = 1_793_164_293_000
+
+  test('counts whole days down and goes negative once expired', () => {
+    expect(refreshDaysLeft(now + 1.4 * 86400_000, now)).toBe(1)
+    expect(refreshDaysLeft(now + 3 * 86400_000, now)).toBe(3)
+    expect(refreshDaysLeft(now + 3 * 86400_000 - 1, now)).toBe(2)
+    expect(refreshDaysLeft(now + 3600_000, now)).toBe(0)
+    expect(refreshDaysLeft(now - 1, now)).toBe(-1)
+  })
+
+  test('only epoch milliseconds are accepted', () => {
+    expect(refreshExpiry(1_793_287_676_492)).toBe(1_793_287_676_492)
+    expect(refreshExpiry(1_793_287_676)).toBeUndefined()
+    expect(refreshExpiry('1793287676492')).toBeUndefined()
+    expect(refreshExpiry(undefined)).toBeUndefined()
+  })
+
+  test('a slot takes the expiry from usage cred and nothing else from it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ccr-'))
+    mkdirSync(join(root, 'state'))
+    writeFileSync(join(root, 'state', 'usage-2.json'), JSON.stringify({ ok: true, at: 1, cred: { expiresAt: 5, refreshTokenExpiresAt: 1_795_622_217_821, accessToken: 'SECRET' } }))
+    const slot = readCcrSlot({ root, home: root, count: 4 }, 2)
+    expect(slot.refreshExpiresAt).toBe(1_795_622_217_821)
+    expect(JSON.stringify(slot)).not.toContain('SECRET')
+    expect(readCcrSlot({ root, home: root, count: 4 }, 3).refreshExpiresAt).toBeUndefined()
+  })
+
+  test('the year token check reads an exit code only: an unknown service is false', async () => {
+    expect(await hasYearToken(9, { CCR_TOKEN_SERVICE: 'ccr-oauth-nonexistent-test' })).toBe(false)
   })
 })

@@ -199,8 +199,9 @@ export type IdeApi = {
   onDevChange: (listener: (event: { id: string }) => void) => () => void
   onChange: (listener: (event: { type: string }) => void) => () => void
   onConnection: (listener: (connected: boolean) => void) => () => void
+  onNotifyOpen: (listener: (questionId: number) => void) => () => void
   termList: () => Promise<TermInfo[]>
-  termOpen: (cwd: string, claude: boolean, cols: number, rows: number) => Promise<TermInfo | { error: string }>
+  termOpen: (cwd: string, claude: boolean, cols: number, rows: number, slot?: number) => Promise<TermInfo | { error: string }>
   // Agent CLIs other than Claude Code: a terminal running one, and which ones are installed.
   termOpenAgent: (cwd: string, agentId: string, cols: number, rows: number) => Promise<TermInfo | { error: string }>
   detectAgents: (force?: boolean) => Promise<AgentDetect>
@@ -229,6 +230,8 @@ export type CcrSlot = {
   weekResetsAt?: string
   measuredAt?: number
   measureError?: string
+  token?: boolean // a one year token sits in the keychain for this slot
+  refreshExpiresAt?: number // epoch ms the login's refresh token stops working, from ccr's last measurement
 }
 
 // Feature area: agent CLIs other than Claude Code. found maps a command to its path

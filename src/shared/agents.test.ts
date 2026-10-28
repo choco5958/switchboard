@@ -10,6 +10,7 @@ import {
   presetLaunch,
   presetOf,
   shellWord,
+  showOtherAgents,
   validateCustom,
   type CustomAgent,
 } from './agents'
@@ -127,5 +128,11 @@ describe('badges', () => {
 
   it('a shell word stays bare only when the shell would read it as it is', () => {
     expect([shellWord('-c'), shellWord('a b'), shellWord('x"y')]).toEqual(['-c', "'a b'", `'x"y'`])
+  })
+})
+
+describe('other agent buttons setting', () => {
+  it('is on unless the stored value is exactly false', () => {
+    expect([undefined, null, true, 'false', 0, false].map(showOtherAgents)).toEqual([true, true, true, true, true, false])
   })
 })
