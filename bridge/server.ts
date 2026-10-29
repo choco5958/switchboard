@@ -10,13 +10,14 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
 import type { Activity } from '../src/shared/stall.ts'
-import { HELD_REPLY_MS, PEER_RECIPIENTS_MAX, clipText, forwardText, forwardedAnswer, peerText, type PeerRow } from './peer.ts'
+import { HELD_REPLY_MS, PEER_RECIPIENTS_MAX, clipText, forwardText, forwardedAnswer, peerText, shellText, type PeerRow } from './peer.ts'
 import { eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
 
 export type Option = { key: string; label: string }
 
 type OutboxRow = PeerRow & {
   session_id: string
+  delivered: number
   kind: string
   task_title: string
   created_at: number
@@ -245,6 +246,9 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     ['group_key', "text not null default ''"],
     ['question_id', 'integer'],
     ['request_key', "text not null default ''"],
+    // A request from the shell (switchboard send --wait): the session's reply waits here.
+    ['reply_text', 'text'],
+    ['replied_at', 'integer'],
   ])
   // Which agent CLI a session runs in (sessions before this were all Claude Code)
   // and the app terminal it runs in, when it does.
@@ -303,6 +307,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       if (q) return forwardText(m.id, q, sessionLabel(q.session_id), langNow(), autoReplies(m.session_id))
     }
     if (m.from_session) return peerText(m, sessionLabel(m.from_session), langNow(), autoReplies(m.session_id))
+    if (m.expects_reply) return shellText(m, langNow(), autoReplies(m.session_id))
     return m.text
   }
 
@@ -343,6 +348,11 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     if (!q || q.status === 'answered' || !text.trim()) return
     const { choice, memo } = forwardedAnswer(text, q.options)
     answerQuestion(q, choice, say('peer.forwardedMemo', { session: sessionLabel(from), text: memo }))
+  }
+
+  const keepShellReply = (row: OutboxRow, text: string) => {
+    db.prepare('update outbox set answered = 1, reply_text = ?, replied_at = ? where id = ? and answered = 0').run(clipText(text), now(), row.id)
+    changed('outbox')
   }
 
   // One message from a session to others; replies and plain information want no answer.
@@ -840,9 +850,11 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       if (!known) return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
       const kind = str(body.kind) || '메시지'
       const taskTitle = str(body.taskTitle)
+      // From the shell (scripts/switchboard.ts): the session's reply is kept on the row.
+      const expectsReply = body.expectsReply === true ? 1 : 0
       const result = db
-        .prepare('insert into outbox (session_id, kind, task_title, text, created_at) values (?, ?, ?, ?, ?)')
-        .run(sessionId, kind, taskTitle, text, now())
+        .prepare('insert into outbox (session_id, kind, task_title, text, created_at, expects_reply) values (?, ?, ?, ?, ?, ?)')
+        .run(sessionId, kind, taskTitle, text, now(), expectsReply)
       logEvent(sessionId, kind, text.split('\n')[0]?.slice(0, 200) ?? '', taskTitle)
       changed('outbox')
       pushDeliveries(sessionId)
@@ -1018,6 +1030,10 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
         answerForwarded(replied, from, text)
         return send(res, 200, { ids: [], answered: `Q${replied.question_id}` })
       }
+      if (replied && !replied.from_session && replied.expects_reply) {
+        keepShellReply(replied, text)
+        return send(res, 200, { ids: [], answered: `m${replied.id}` })
+      }
       const named = Array.isArray(body.to) ? [...new Set(body.to.map(id => str(id)).filter(Boolean))] : []
       const to = named.length > 0 ? named : replied?.from_session ? [replied.from_session] : []
       if (to.length === 0) return send(res, 400, { error: say('bridge.peer.noRecipients') })
@@ -1032,6 +1048,27 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       return send(res, 200, { ids })
     }
 
+    // switchboard status / send --wait: where a message stands, its reply, and the decision
+    // questions its session posted since it was sent (the shell then waits for a person).
+    const messageOne = path.match(/^\/messages\/m?(\d+)$/)
+    if (method === 'GET' && messageOne) {
+      const row = db.prepare('select * from outbox where id = ?').get(Number(messageOne[1])) as (OutboxRow & { reply_text: string | null; replied_at: number | null }) | undefined
+      if (!row) return send(res, 404, { error: say('bridge.peer.badReply', { id: `m${messageOne[1]}` }) })
+      const questions = db
+        .prepare("select id, question from questions where session_id = ? and status in ('pending', 'held') and created_at >= ? order by id")
+        .all(row.session_id, row.created_at)
+      return send(res, 200, {
+        id: `m${row.id}`,
+        sessionId: row.session_id,
+        live: liveSessions().includes(row.session_id),
+        delivered: row.delivered === 1,
+        answered: row.answered === 1,
+        reply: row.reply_text ?? null,
+        repliedAt: row.replied_at ?? null,
+        questions,
+      })
+    }
+
     // The mod's turn ended (turn.complete). Each request that went in with the turn and got
     // no reply gets the turn's last answer as its result; a forwarded question, as its answer.
     if (method === 'POST' && path === '/messages/turn-end') {
@@ -1044,6 +1081,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
         const row = db.prepare('select * from outbox where id = ? and session_id = ?').get(id, sessionId) as OutboxRow | undefined
         if (!row || !row.expects_reply || row.answered || !answerText) continue
         if (row.question_id) answerForwarded(row, sessionId, answerText)
+        else if (!row.from_session) keepShellReply(row, answerText)
         else if (row.from_session) {
           db.prepare('update outbox set answered = 1 where id = ?').run(row.id)
           sendPeer(sessionId, [row.from_session], answerText, row.id, false, `auto:${row.id}`)

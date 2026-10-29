@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "bridge", "mcp", "electron.vite.config.ts"]
+  "include": ["src", "bridge", "mcp", "scripts", "electron.vite.config.ts", "vitest.config.ts"]
 }

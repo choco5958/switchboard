@@ -86,3 +86,13 @@ export function forwardedAnswer(text: string, optionsJson: string): { choice: st
 export function clipText(text: string): string {
   return text.length > PEER_TEXT_MAX ? `${text.slice(0, PEER_TEXT_MAX - 1)}…` : text
 }
+
+// A request typed in the shell (switchboard send): the person waits there for the result.
+export function shellText(row: { id: number; text: string }, lang: Lang, autoReply: boolean): string {
+  return [
+    tIn(lang, 'peer.shellHead', { id: row.id }),
+    tIn(lang, autoReply ? 'peer.shellAuto' : 'peer.shellReply', { id: row.id }),
+    tIn(lang, 'peer.body'),
+    row.text,
+  ].join('\n')
+}

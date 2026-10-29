@@ -25,3 +25,17 @@ exit 1
 EOF
 chmod +x "$DIR/start-bridge.sh"
 echo "wrote $DIR/start-bridge.sh (node: $NODE, repo: $REPO)"
+
+# The switchboard command (scripts/switchboard.ts) for shells and scripts.
+BIN="$HOME/.local/bin"
+mkdir -p "$BIN"
+cat > "$BIN/switchboard" <<EOF2
+#!/bin/sh
+exec "$NODE" "$REPO/scripts/switchboard.ts" "\$@"
+EOF2
+chmod +x "$BIN/switchboard"
+echo "wrote $BIN/switchboard"
+case ":$PATH:" in
+  *":$BIN:"*) ;;
+  *) echo "add $BIN to PATH to run switchboard from any folder" ;;
+esac
