@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { BridgeState, CommandKind, GraphNode } from '../../shared/types'
+import type { BridgeState, CommandKind, GraphNode, Question } from '../../shared/types'
 import { Icon, type IconName } from './Icons'
 import { Palette, type PaletteItem } from './Palette'
 import { PropsPanel } from './PropsPanel'
 import { QuestionCard } from './QuestionCard'
 import { TaskView } from './TaskView'
 import { TopBar } from './TopBar'
-import { nextAfter, queueOf, tasksByProject } from './model'
+import { nextAfter, queueOf, reachOf, tasksByProject } from './model'
 import { ArchivePage } from './pages/ArchivePage'
 import { DebugPage } from './pages/DebugPage'
 import { DebugPanel } from './pages/DebugPanel'
@@ -26,6 +26,7 @@ import { LOCALE_TAG, resolveLang, setLang, stageLabel, t, type Key } from '../..
 
 const EMPTY: BridgeState = {
   sessions: [],
+  live: [],
   tasks: [],
   questions: [],
   answeredCount: 0,
@@ -209,6 +210,7 @@ export function App() {
   const customs = useMemo(() => customAgents(state.settings[CUSTOM_AGENTS_KEY]), [state.settings])
   const tags = useMemo(() => agentTags(state.sessions, customs), [state.sessions, customs])
   const { pending, held } = useMemo(() => queueOf(view.questions), [view.questions])
+  const reachOfQuestion = (q: Question) => reachOf(state.sessions.find(s => s.id === q.session_id), state.live ?? [])
   const inScope = (tab: Tab): boolean => {
     if (scope === null) return true
     if (tab.kind === 'task') return state.tasks.find(t => t.id === tab.id)?.project === scope
@@ -354,6 +356,7 @@ export function App() {
           q={q}
           agent={tags[q.session_id]}
           sessionProject={state.sessions.find(s => s.id === q.session_id)?.project ?? q.project}
+          reach={reachOfQuestion(q)}
           onDone={() => void advance(q.id)}
           onOpenTask={task ? () => openTask(task.id) : null}
         />
@@ -488,7 +491,7 @@ export function App() {
                 </h2>
                 {pending.length === 0 && <p className="quiet">{t('sidebar.noQuestions')}</p>}
                 {pending.map(q => (
-                  <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} onClick={() => openQuestion(q.id)} />
+                  <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} gone={reachOfQuestion(q) === 'gone'} onClick={() => openQuestion(q.id)} />
                 ))}
                 <button className="link" onClick={() => open({ kind: 'history' })}>
                   {t('rail.history')} <span className="count">{view.answeredCount}</span>
@@ -497,7 +500,7 @@ export function App() {
                   <>
                     <h3>{t('sidebar.held', { n: held.length })}</h3>
                     {held.map(q => (
-                      <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} onClick={() => openQuestion(q.id)} />
+                      <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} gone={reachOfQuestion(q) === 'gone'} onClick={() => openQuestion(q.id)} />
                     ))}
                   </>
                 )}

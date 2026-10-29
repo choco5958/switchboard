@@ -51,6 +51,7 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .queue-item:hover { background: var(--panel-2); }
 .queue-item.active { background: var(--accent-soft); border-color: var(--accent); }
 .queue-item .qtext { display: block; }
+.queue-item .gone-mark { margin-left: 6px; font-size: 11px; color: var(--quiet); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .qid { font-family: var(--mono); color: var(--accent); font-weight: 700; }
 .tag { color: var(--warn); }
 .link {

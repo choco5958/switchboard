@@ -71,6 +71,19 @@ test('a session registers under its folder name', async () => {
   assert.equal(json.project, 'music-app')
 })
 
+test('a session is live while its delivery stream is open', async () => {
+  await call('POST', '/sessions', { id: 'live-1', cwd: '/work/live' })
+  assert.ok(!(await call('GET', '/state')).json.live.includes('live-1'))
+  const req = request({ socketPath, path: '/deliveries?session=live-1' })
+  req.on('error', () => undefined)
+  req.end()
+  await new Promise(resolve => req.on('response', resolve))
+  assert.ok((await call('GET', '/state')).json.live.includes('live-1'))
+  req.destroy()
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.ok(!(await call('GET', '/state')).json.live.includes('live-1'))
+})
+
 test('a task upserts by title and keeps its stage when none is given', async () => {
   await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', stage: '설계' })
   const { json } = await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', now: '시안 비교' })

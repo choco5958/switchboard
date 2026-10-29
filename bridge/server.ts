@@ -362,6 +362,9 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     changed('tasks')
   }
 
+  // Sessions whose delivery stream is open: the mod's, or the app's for a CLI in its terminal.
+  const liveSessions = () => [...deliveryWatchers].filter(([, set]) => set.size > 0).map(([id]) => id)
+
   // Retention. Questions are history and stay. Delivered messages, done commands and
   // ended subagents go after 7 days; events keep the newest 5000; commands a session
   // never picked up go once it has not been seen for a day.
@@ -370,7 +373,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     db.prepare('delete from commands where done_at is not null and done_at < ?').run(at - 7 * DAY)
     db.prepare("delete from agents where status in ('completed', 'failed', 'killed') and updated_at < ?").run(at - 7 * DAY)
     db.prepare('delete from events where id <= (select max(id) - 5000 from events)').run()
-    const live = [...deliveryWatchers].filter(([, set]) => set.size > 0).map(([id]) => id)
+    const live = liveSessions()
     db.prepare(
       `delete from commands where done_at is null
        and session_id not in (select value from json_each(?))
@@ -383,6 +386,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
 
   const state = () => ({
     sessions: db.prepare('select * from sessions order by last_seen desc').all(),
+    live: liveSessions(),
     // Every running task, however many: the limit only trims waiting ones.
     tasks: db
       .prepare(
@@ -446,7 +450,12 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       const set = deliveryWatchers.get(sessionId) ?? new Set()
       set.add(res)
       deliveryWatchers.set(sessionId, set)
-      req.on('close', () => set.delete(res))
+      // The app shows which sessions can take an answer now (state().live).
+      if (set.size === 1) changed('sessions')
+      req.on('close', () => {
+        set.delete(res)
+        if (set.size === 0) changed('sessions')
+      })
       db.prepare('update sessions set last_seen = ? where id = ?').run(now(), sessionId)
       pushDeliveries(sessionId, res)
       pushCommands(sessionId, { only: res })

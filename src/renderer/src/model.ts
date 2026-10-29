@@ -1,4 +1,4 @@
-import type { GraphNode, Option, Question, Task } from '../../shared/types'
+import type { GraphNode, Option, Question, Session, Task } from '../../shared/types'
 import { agoText } from '../../shared/i18n'
 
 export const STAGES = ['요구', '설계', '작업', '완료'] as const
@@ -157,4 +157,17 @@ export function stripTaskPrefix(text: string): string {
 export function taskOfEvent<T extends Pick<Task, 'session_id' | 'title'>>(tasks: T[], event: { session_id: string; task_title: string }): T | null {
   if (!event.task_title) return null
   return tasks.find(t => t.session_id === event.session_id && t.title === event.task_title) ?? null
+}
+
+// Whether an answer can reach the session now. Claude Code holds its delivery stream
+// through the mod, and a CLI in an app terminal through the app; a CLI outside the app
+// only polls (check_answers), so the bridge cannot tell. An answer to a gone session
+// stays with the bridge and goes in when the session connects again (claude --resume).
+export type Reach = 'live' | 'gone' | 'unknown'
+
+export function reachOf(session: Pick<Session, 'id' | 'agent' | 'terminal'> | undefined, live: readonly string[]): Reach {
+  if (!session) return 'gone'
+  if (live.includes(session.id)) return 'live'
+  if (!session.agent || session.agent === 'claude' || session.terminal) return 'gone'
+  return 'unknown'
 }

@@ -115,6 +115,7 @@ export type GraphNode = {
 
 export type BridgeState = {
   sessions: Session[]
+  live?: string[] // sessions whose delivery stream is open now
   tasks: Task[]
   questions: Question[]
   answeredCount: number

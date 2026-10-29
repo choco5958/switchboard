@@ -29,10 +29,11 @@ export function AgentBadge({ tag }: { tag: AgentTag | undefined }) {
   )
 }
 
-export function QueueItem({ q, active, onClick }: { q: Question; active: boolean; onClick: () => void }) {
+export function QueueItem({ q, active, gone, onClick }: { q: Question; active: boolean; gone?: boolean; onClick: () => void }) {
   return (
     <button className={`queue-item ${active ? 'active' : ''}`} onClick={onClick}>
       <span className="qid">Q{q.id}</span> <span className="tag">[{q.task_title || q.project}]</span>
+      {gone && <span className="gone-mark" title={t('question.goneTitle')}>{t('question.gone')}</span>}
       <span className="qtext">{q.question}</span>
       <span className="quiet small">{ago(q.created_at)}</span>
     </button>

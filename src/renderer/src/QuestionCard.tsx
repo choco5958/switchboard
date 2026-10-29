@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Question } from '../../shared/types'
 import { renderMarkdown } from './markdown'
-import { clock, keyAction, optionsOf } from './model'
+import { clock, keyAction, optionsOf, type Reach } from './model'
 import { AgentBadge } from './parts'
 import type { AgentTag } from '../../shared/agents'
 import { t } from '../../shared/i18n'
@@ -12,12 +12,14 @@ export function QuestionCard({
   q,
   agent,
   sessionProject,
+  reach = 'unknown',
   onDone,
   onOpenTask,
 }: {
   q: Question
   agent?: AgentTag // the agent CLI that asked, once other agents than Claude are around
   sessionProject: string
+  reach?: Reach // whether the session can take the answer now
   onDone: () => void
   onOpenTask: (() => void) | null
 }) {
@@ -80,6 +82,9 @@ export function QuestionCard({
         <span className="qid">Q{q.id}</span>
         <span className="tag">[{q.task_title || q.project}]</span>
         <span className="spacer" />
+        {reach === 'gone' && (isOpen || !q.delivered) && (
+          <span className="chip" title={t('question.goneTitle')}>{t('question.gone')}</span>
+        )}
         <span className={`chip ${q.status === 'pending' ? 'chip-warn' : q.status === 'held' ? '' : 'chip-good'}`}>
           {t(q.status === 'pending' ? 'palette.qPending' : q.status === 'held' ? 'palette.qHeld' : 'palette.qAnswered')}
         </span>
@@ -108,7 +113,7 @@ export function QuestionCard({
         <li>
           {t('question.picked', { value: isOpen ? '-' : q.choice ? `(${q.choice}) ${chosen?.label ?? ''}` : t('question.memoOnly') })}
         </li>
-        <li>{t('question.how', { value: isOpen ? '-' : q.memo || t('question.noMemo') })}{!isOpen && ` ${q.delivered ? t('question.delivered') : t('question.notDelivered')}`}</li>
+        <li>{t('question.how', { value: isOpen ? '-' : q.memo || t('question.noMemo') })}{!isOpen && ` ${q.delivered ? t('question.delivered') : reach === 'gone' ? t('question.notDeliveredGone') : t('question.notDelivered')}`}</li>
         <li>{t('question.answeredAt', { time: q.answered_at ? clock(q.answered_at) : '-' })}</li>
       </ul>
 

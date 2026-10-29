@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { GraphNode, Question, Task } from '../../shared/types'
-import { ago, keyAction, layoutGraph, nextAfter, optionsOf, queueOf, reviewLoops, stageCounts, stations, stripTaskPrefix, taskOfEvent, tasksByProject } from './model'
+import { ago, keyAction, layoutGraph, nextAfter, optionsOf, queueOf, reachOf, reviewLoops, stageCounts, stations, stripTaskPrefix, taskOfEvent, tasksByProject } from './model'
 
 const q = (id: number, status: Question['status'] = 'pending'): Question => ({
   id,
@@ -153,4 +153,13 @@ describe('log lines', () => {
     expect(taskOfEvent(tasks, { session_id: 's1', task_title: '' })).toBeNull()
     expect(taskOfEvent(tasks, { session_id: 's3', task_title: 'A' })).toBeNull()
   })
+})
+
+test('an answer reaches a live session; a gone one waits; an outside CLI is unknown', () => {
+  expect(reachOf({ id: 's1', agent: 'claude', terminal: '' }, ['s1'])).toBe('live')
+  expect(reachOf({ id: 's1', agent: 'claude', terminal: '' }, [])).toBe('gone')
+  expect(reachOf({ id: 's2', terminal: '' }, [])).toBe('gone')
+  expect(reachOf({ id: 's3', agent: 'codex', terminal: 't1' }, [])).toBe('gone')
+  expect(reachOf({ id: 's4', agent: 'codex', terminal: '' }, [])).toBe('unknown')
+  expect(reachOf(undefined, [])).toBe('gone')
 })
