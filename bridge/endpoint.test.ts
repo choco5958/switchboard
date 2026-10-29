@@ -43,7 +43,7 @@ test('a socket on macOS and Linux, TCP on Windows or when asked, a socket set by
   assert.equal(usesTcp({}, 'win32'), true)
   assert.equal(usesTcp({ CLAUDE_IDE_TCP: '1' }, 'linux'), true)
   assert.equal(usesTcp({ CLAUDE_IDE_SOCKET: '/s', CLAUDE_IDE_TCP: '1' }, 'win32'), false)
-  assert.deepEqual(resolveEndpoint({}, '/H', 'darwin'), { kind: 'socket', path: '/H/.claude-ide/bridge.sock' })
+  assert.deepEqual(resolveEndpoint({}, '/H', 'darwin'), { kind: 'socket', path: join('/H', '.claude-ide', 'bridge.sock') })
   const home = tempHome()
   assert.deepEqual(resolveEndpoint({}, home, 'win32'), { kind: 'tcp', port: 0, token: '' })
   mkdirSync(join(home, '.claude-ide'))
