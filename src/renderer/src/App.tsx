@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { BridgeState, CommandKind, GraphNode, Question } from '../../shared/types'
+import type { BridgeState, CommandKind, GraphNode, Question, Task } from '../../shared/types'
 import { Icon, type IconName } from './Icons'
 import { Palette, type PaletteItem } from './Palette'
 import { PropsPanel } from './PropsPanel'
 import { QuestionCard } from './QuestionCard'
 import { TaskView } from './TaskView'
 import { TopBar } from './TopBar'
-import { nextAfter, queueOf, reachOf, tasksByProject } from './model'
+import { attentionOf, nextAfter, queueOf, reachOf, tasksByProject, waitingFirst, type Attention } from './model'
 import { ArchivePage } from './pages/ArchivePage'
 import { DebugPage } from './pages/DebugPage'
 import { DebugPanel } from './pages/DebugPanel'
@@ -219,6 +219,29 @@ export function App() {
   const stalled = useMemo(
     () => new Set(stalledSessions(state.activity ?? {}, state.live ?? [], clockNow)),
     [state.activity, state.live, clockNow],
+  )
+  const openQuestionsOf = (task: Task) =>
+    state.questions.filter(q => q.status !== 'answered' && q.session_id === task.session_id && q.task_title === task.title).length
+  const attentionOfTask = (task: Task): Attention | null =>
+    attentionOf({
+      openQuestions: openQuestionsOf(task),
+      stalled: stalled.has(task.session_id),
+      offline: reachOf(state.sessions.find(s => s.id === task.session_id), state.live ?? []) === 'gone',
+      running: isRunning(task),
+    })
+  const waitingTasks = waitingFirst(view.tasks, attentionOfTask)
+  const taskItem = (task: Task, showProject: boolean) => (
+    <TaskItem
+      key={task.id}
+      task={task}
+      active={tabs.active === `task:${task.id}`}
+      openQuestions={openQuestionsOf(task)}
+      nodeCount={state.nodes.filter(n => n.task_id === task.id).length}
+      agent={tags[task.session_id]}
+      attention={attentionOfTask(task)}
+      project={showProject ? task.project : undefined}
+      onClick={() => openTask(task.id)}
+    />
   )
   const stalledTerms = useMemo(
     () => new Set(state.sessions.filter(s => stalled.has(s.id) && s.terminal).map(s => s.terminal as string)),
@@ -481,21 +504,16 @@ export function App() {
                     {t('sidebar.noTasks')}
                   </p>
                 )}
-                {tasksByProject(view.tasks).map(([project, list]) => (
+                {waitingTasks.waiting.length > 0 && (
+                  <div className="project waiting-group">
+                    <h3>{t('sidebar.waiting', { n: waitingTasks.waiting.length })}</h3>
+                    {waitingTasks.waiting.map(task => taskItem(task, scope === null))}
+                  </div>
+                )}
+                {tasksByProject(waitingTasks.rest).map(([project, list]) => (
                   <div key={project} className="project">
                     <h3>{project}</h3>
-                    {list.map(task => (
-                      <TaskItem
-                        key={task.id}
-                        task={task}
-                        active={tabs.active === `task:${task.id}`}
-                        openQuestions={state.questions.filter(q => q.status !== 'answered' && q.session_id === task.session_id && q.task_title === task.title).length}
-                        nodeCount={state.nodes.filter(n => n.task_id === task.id).length}
-                        agent={tags[task.session_id]}
-                        stalled={isRunning(task) && stalled.has(task.session_id)}
-                        onClick={() => openTask(task.id)}
-                      />
-                    ))}
+                    {list.map(task => taskItem(task, false))}
                   </div>
                 ))}
               </section>

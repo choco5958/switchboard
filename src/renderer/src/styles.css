@@ -652,3 +652,4 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .lang-option.on { border-color: var(--accent); background: var(--accent-soft); }
 
 .dock-tab .stalled-mark { color: var(--warn); }
+.waiting-group h3 { color: var(--warn); }

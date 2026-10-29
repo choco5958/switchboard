@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { GraphNode, Question, Task } from '../../shared/types'
-import { ago, keyAction, layoutGraph, nextAfter, optionsOf, queueOf, reachOf, reviewLoops, stageCounts, stations, stripTaskPrefix, taskOfEvent, tasksByProject } from './model'
+import { ago, attentionOf, keyAction, layoutGraph, nextAfter, optionsOf, queueOf, reachOf, reviewLoops, stageCounts, stations, stripTaskPrefix, taskOfEvent, tasksByProject, waitingFirst } from './model'
 
 const q = (id: number, status: Question['status'] = 'pending'): Question => ({
   id,
@@ -162,4 +162,26 @@ test('an answer reaches a live session; a gone one waits; an outside CLI is unkn
   expect(reachOf({ id: 's3', agent: 'codex', terminal: 't1' }, [])).toBe('gone')
   expect(reachOf({ id: 's4', agent: 'codex', terminal: '' }, [])).toBe('unknown')
   expect(reachOf(undefined, [])).toBe('gone')
+})
+
+test('a task needs the person for a decision first, then a stall, then a dropped session', () => {
+  const base = { openQuestions: 0, stalled: false, offline: false, running: true }
+  expect(attentionOf(base)).toBe(null)
+  expect(attentionOf({ ...base, openQuestions: 1, stalled: true })).toBe('question')
+  expect(attentionOf({ ...base, stalled: true, offline: true })).toBe('stalled')
+  expect(attentionOf({ ...base, offline: true })).toBe('offline')
+  expect(attentionOf({ ...base, offline: true, running: false })).toBe(null)
+  expect(attentionOf({ ...base, openQuestions: 2, running: false })).toBe('question')
+})
+
+test('waiting tasks come first, strongest reason then newest', () => {
+  const tasks = [
+    { id: 1, updated_at: 10, why: null },
+    { id: 2, updated_at: 20, why: 'offline' },
+    { id: 3, updated_at: 5, why: 'question' },
+    { id: 4, updated_at: 30, why: 'question' },
+  ] as const
+  const { waiting, rest } = waitingFirst([...tasks], task => task.why)
+  expect(waiting.map(task => task.id)).toEqual([4, 3, 2])
+  expect(rest.map(task => task.id)).toEqual([1])
 })

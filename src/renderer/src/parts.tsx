@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useRef, useState } from 'react'
 import type { BridgeState, Question, Task } from '../../shared/types'
 import { taskStateLabel, taskState } from '../../shared/projects'
 import { eventKindLabel, stageLabel, t } from '../../shared/i18n'
-import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent } from './model'
+import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent, type Attention } from './model'
 import type { AgentTag } from '../../shared/agents'
 
 // Six task colors, cycled by task number (the round badge in the task list).
@@ -46,7 +46,8 @@ export function TaskItem({
   openQuestions,
   nodeCount,
   agent,
-  stalled = false,
+  attention = null,
+  project,
   onClick,
 }: {
   task: Task
@@ -54,7 +55,8 @@ export function TaskItem({
   openQuestions: number
   nodeCount: number
   agent?: AgentTag
-  stalled?: boolean // its session's turn shows no activity (src/shared/stall.ts)
+  attention?: Attention | null // why it needs the person now (model.ts attentionOf)
+  project?: string // shown in the waiting group, where tasks of every project mix
   onClick: () => void
 }) {
   const at = STAGES.indexOf(task.stage)
@@ -64,6 +66,7 @@ export function TaskItem({
       <div className="task-title">
         <span className={`status status-${state}`}>{taskStateLabel(state)}</span> <NumberBadge task={task} />{' '}
         {task.title} <AgentBadge tag={agent} />
+        {project && <span className="quiet small"> {project}</span>}
       </div>
       {task.now && <div className="quiet small">{t('task.now', { now: task.now })}</div>}
       <ol className="stages">
@@ -74,9 +77,14 @@ export function TaskItem({
         ))}
       </ol>
       <div className="task-tags">
-        {stalled && (
+        {attention === 'stalled' && (
           <span className="tag-chip warn" title={t('task.stalledTitle')}>
             {t('task.stalled')}
+          </span>
+        )}
+        {attention === 'offline' && (
+          <span className="tag-chip" title={t('task.offlineTitle')}>
+            {t('question.gone')}
           </span>
         )}
         {openQuestions > 0 && <span className="tag-chip warn">{t('task.openQuestions', { n: openQuestions })}</span>}
