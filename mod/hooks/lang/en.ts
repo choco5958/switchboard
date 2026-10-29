@@ -93,6 +93,8 @@ export const en: Dict = {
   'mod.syncPrompt':
     '[Switchboard] Request to sync the IDE. Post the tasks in progress again with set_task, the plans with plan_nodes, ' +
     'and the node statuses with update_node, so the IDE matches the actual state. If nothing changed, leave it and say so briefly.',
+  'mod.allowedRemote': 'The person allowed it in Switchboard (A{id}).',
+  'mod.deniedRemote': 'The person denied it in Switchboard (A{id}). Find a way without it, or ask with ask_decision.',
   'mod.restate': '[Switchboard] The conversation was compacted. Here is what this session put on Switchboard, again. Keep using the same task titles, node keys, Q numbers and wait ids.',
   'mod.restateTask': 'Task: {title} ({stage}, {status}) now: {now}',
   'mod.restateQuestion': 'Waiting for an answer: Q{id} {question}',

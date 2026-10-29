@@ -129,6 +129,38 @@ test('a reply answers with a memo; an answer from the app edits the message', as
   await until(() => sent('editMessageText').some(c => /다른 곳에서 답함: \(a\) 예/.test(c.body.text)))
 })
 
+test('a permission ask: allow takes a second press, deny one; an ask dies with its session', async () => {
+  const ask = async (summary: string, key: string) =>
+    (await call('POST', '/approvals', { sessionId: 'tg-1', tool: 'Bash', summary, cwd: '/w/shop', requestKey: key })).json.id as number
+  const id = await ask('rm -rf dist && pnpm build', 'toolu_a1')
+  assert.equal(await ask('rm -rf dist && pnpm build', 'toolu_a1'), id)
+  await until(() => sent('sendMessage').some(c => c.body.text?.includes(`권한 확인 A${id}`)))
+  const card = sent('sendMessage').find(c => c.body.text?.includes(`권한 확인 A${id}`))!
+  assert.match(card.body.text, /도구: Bash\n폴더: \/w\/shop\n\nrm -rf dist && pnpm build/)
+  const messageIdOf = messageId - 1
+  queued.push({ callback_query: { id: 'p1', from: { id: 42 }, data: `p:${id}:allow`, message: { message_id: messageIdOf, chat: { id: 42 } } } })
+  await until(() => sent('editMessageText').some(c => /정말 허용할까요/.test(c.body.text)))
+  assert.equal((await call('GET', `/approvals/${id}`)).json.status, 'pending')
+  queued.push({ callback_query: { id: 'p2', from: { id: 42 }, data: `P:${id}:allow`, message: { message_id: messageIdOf, chat: { id: 42 } } } })
+  await until(() => sent('editMessageText').some(c => /허용함/.test(c.body.text)))
+  assert.equal((await call('GET', `/approvals/${id}`)).json.status, 'allow')
+  assert.equal((await call('POST', `/approvals/${id}/answer`, { decision: 'deny' })).status, 409)
+
+  const second = await ask('git push --force', 'toolu_a2')
+  await until(() => sent('sendMessage').some(c => c.body.text?.includes(`권한 확인 A${second}`)))
+  assert.equal((await call('POST', `/approvals/${second}/answer`, { decision: 'deny' })).status, 200)
+  await until(() => sent('editMessageText').some(c => /거부함\n\(다른 곳에서 답함\)/.test(c.body.text)))
+
+  // The session's delivery stream closes: its open ask expires.
+  const stream = request({ socketPath, path: '/deliveries?session=tg-1' })
+  stream.on('error', () => undefined)
+  stream.end()
+  await new Promise(resolve => setTimeout(resolve, 50))
+  const third = await ask('npm publish', 'toolu_a3')
+  stream.destroy()
+  await until(() => (bridge.db.prepare('select status from approvals where id = ?').get(third) as { status: string }).status === 'expired')
+})
+
 test('at the desk nothing goes out; leaving sends what waits', async () => {
   const stream = request({ socketPath, path: '/stream' })
   stream.on('error', () => undefined)

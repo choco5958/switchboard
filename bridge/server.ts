@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
 import type { Activity } from '../src/shared/stall.ts'
 import { limitedUntil } from '../src/shared/limit.ts'
+import { maskSecrets } from '../src/shared/pageLog.ts'
 import { HELD_REPLY_MS, PEER_RECIPIENTS_MAX, clipText, forwardText, forwardedAnswer, peerText, routineText, shellText, waitText, type PeerRow } from './peer.ts'
 import { nextRun, parseSchedule, type Schedule } from './schedule.ts'
 import { TELEGRAM_API, createTelegram } from './telegram.ts'
@@ -45,6 +46,18 @@ type RunRow = {
   result: string
   finished_at: number | null
   opened: number
+}
+
+type ApprovalRow = {
+  id: number
+  session_id: string
+  project: string
+  tool: string
+  summary: string
+  cwd: string
+  reason: string
+  status: 'pending' | 'allow' | 'deny' | 'terminal' | 'expired'
+  created_at: number
 }
 
 type OutboxRow = PeerRow & {
@@ -142,6 +155,13 @@ create table if not exists routine_runs (
 );
 create index if not exists routine_runs_routine on routine_runs (routine_id, id);
 create table if not exists secrets (key text primary key, value text not null);
+create table if not exists approvals (
+  id integer primary key, session_id text not null, project text not null, tool text not null,
+  summary text not null, cwd text not null default '', reason text not null default '',
+  status text not null default 'pending', via text not null default '', request_key text not null default '',
+  created_at integer not null, answered_at integer
+);
+create table if not exists telegram_approvals (approval_id integer primary key, message_id integer not null);
 create table if not exists telegram_messages (question_id integer primary key, message_id integer not null, created_at integer not null);
 create table if not exists waits (
   id integer primary key, session_id text not null, note text not null,
@@ -415,6 +435,17 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     if (via !== 'telegram') telegram.answeredElsewhere(q, choice, memo)
   }
 
+  // A permission ask answered once, from wherever it was first.
+  const answerApproval = (row: ApprovalRow, decision: 'allow' | 'deny' | 'terminal' | 'expired', via: string): boolean => {
+    const result = db.prepare("update approvals set status = ?, via = ?, answered_at = ? where id = ? and status = 'pending'").run(decision, via, now(), row.id)
+    if (result.changes === 0) return false
+    const key = ({ allow: 'bridge.event.approvalAllow', deny: 'bridge.event.approvalDeny', terminal: 'bridge.event.approvalTerminal', expired: 'bridge.event.approvalExpired' } as const)[decision]
+    logEvent(row.session_id, '권한', say(key, { id: row.id, tool: row.tool }))
+    changed('approvals')
+    if (via !== 'telegram') telegram.approvalClosed(row, decision)
+    return true
+  }
+
   // The person's presence at the desk, from the app (POST /presence): away when the app is
   // closed, its report is old, or it says so (screen locked, idle). Telegram writes only then.
   let presence = { away: false, at: 0 }
@@ -447,6 +478,14 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     sentMessage: id => (db.prepare('select message_id from telegram_messages where question_id = ?').get(id) as { message_id: number } | undefined)?.message_id ?? null,
     saveMessage: (id, messageId) => db.prepare('insert or replace into telegram_messages (question_id, message_id, created_at) values (?, ?, ?)').run(id, messageId, now()),
     questionOf: messageId => (db.prepare('select question_id from telegram_messages where message_id = ?').get(messageId) as { question_id: number } | undefined)?.question_id ?? null,
+    pendingApprovals: () => db.prepare("select * from approvals where status = 'pending' order by id").all() as ApprovalRow[],
+    approval: id => db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow | undefined,
+    answerApproval: (id, decision) => {
+      const row = db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow | undefined
+      return row ? answerApproval(row, decision, 'telegram') : false
+    },
+    approvalMessage: id => (db.prepare('select message_id from telegram_approvals where approval_id = ?').get(id) as { message_id: number } | undefined)?.message_id ?? null,
+    saveApprovalMessage: (id, messageId) => db.prepare('insert or replace into telegram_approvals (approval_id, message_id) values (?, ?)').run(id, messageId),
     changed: () => changed('telegram'),
     log: text => console.log(text),
   })
@@ -717,6 +756,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     sessions: db.prepare('select * from sessions order by last_seen desc').all(),
     live: liveSessions(),
     routines: db.prepare('select * from routines order by id').all(),
+    approvals: db.prepare("select * from (select * from approvals order by id desc limit 30) order by id").all(),
     routineRuns: db.prepare('select * from (select * from routine_runs order by id desc limit 100) order by id').all(),
     activity: Object.fromEntries(activity),
     // Every running task, however many: the limit only trims waiting ones.
@@ -779,6 +819,44 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       return
     }
 
+    if (method === 'GET' && path === '/presence') return send(res, 200, { away: away() })
+
+    // A Claude Code permission ask while the person is away (the mod's tool.check hook):
+    // it waits for an answer here, from the app or Telegram. 'terminal' hands it back to
+    // the terminal's dialog; a session that drops takes its asks with it ('expired').
+    if (method === 'POST' && path === '/approvals') {
+      const body = await readJson(req)
+      const sessionId = str(body.sessionId)
+      if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
+      const requestKey = str(body.requestKey)
+      const same = requestKey ? (db.prepare('select id from approvals where session_id = ? and request_key = ?').get(sessionId, requestKey) as { id: number } | undefined) : undefined
+      if (same) return send(res, 200, { id: same.id, duplicate: true })
+      const tool = str(body.tool).slice(0, 200)
+      const summary = maskSecrets(str(body.summary)).slice(0, 4000)
+      const id = Number(
+        db
+          .prepare('insert into approvals (session_id, project, tool, summary, cwd, reason, request_key, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(sessionId, projectOf(sessionId), tool, summary, str(body.cwd), maskSecrets(str(body.reason)).slice(0, 500), requestKey, now()).lastInsertRowid,
+      )
+      logEvent(sessionId, '권한', `A${id} ${tool}: ${summary.split('\n')[0]?.slice(0, 160) ?? ''}`)
+      changed('approvals')
+      telegram.approvalPosted(db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow)
+      return send(res, 200, { id })
+    }
+    const approvalOne = path.match(/^\/approvals\/(\d+)(\/answer)?$/)
+    if (approvalOne) {
+      const row = db.prepare('select * from approvals where id = ?').get(Number(approvalOne[1])) as ApprovalRow | undefined
+      if (!row) return send(res, 404, { error: say('bridge.notFound') })
+      if (method === 'GET' && !approvalOne[2]) return send(res, 200, { id: row.id, status: row.status })
+      if (method === 'POST' && approvalOne[2]) {
+        const body = await readJson(req)
+        const decision = str(body.decision)
+        if (!['allow', 'deny', 'terminal'].includes(decision)) return send(res, 400, { error: say('bridge.needAnswer') })
+        if (!answerApproval(row, decision as 'allow' | 'deny' | 'terminal', 'app')) return send(res, 409, { error: say('bridge.alreadyAnswered', { id: row.id }) })
+        return send(res, 200, { id: row.id, status: decision })
+      }
+    }
+
     if (method === 'POST' && path === '/presence') {
       const body = await readJson(req)
       const wasAway = away()
@@ -826,7 +904,12 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       }
       req.on('close', () => {
         set.delete(res)
-        if (set.size === 0) changed('sessions')
+        if (set.size > 0) return
+        changed('sessions')
+        // Its process is gone, and the ask with it.
+        for (const row of db.prepare("select * from approvals where session_id = ? and status = 'pending'").all(sessionId) as ApprovalRow[]) {
+          answerApproval(row, 'expired', '')
+        }
       })
       db.prepare('update sessions set last_seen = ? where id = ?').run(now(), sessionId)
       pushDeliveries(sessionId, res)

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, restateText, staleKeys, toastText } from '../hooks/batch.ts'
+import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, restateText, staleKeys, approvalSummary, toastText } from '../hooks/batch.ts'
 
 test('one delivery goes in as it is', () => {
   assert.equal(batchText([{ id: 'q6', text: 'Q6 답' }]), 'Q6 답')
@@ -76,4 +76,12 @@ test('after a compaction the prompt restates the session tasks, nodes, open ques
   assert.match(text, /열린 대기: w3 CI가 끝나면 배포$/)
   assert.doesNotMatch(text, /옛 작업|남의 작업|끝난 질문/)
   assert.equal(restateText({ tasks: [] }, [], 's'), undefined)
+})
+
+test('a permission ask reads as what would run', () => {
+  assert.equal(approvalSummary('Bash', { command: 'rm -rf dist', description: '빌드 폴더 지우기' }), '빌드 폴더 지우기\nrm -rf dist')
+  assert.equal(approvalSummary('Edit', { file_path: '/a.ts', old_string: 'x', new_string: 'y' }), '/a.ts\n- x\n+ y')
+  assert.equal(approvalSummary('WebFetch', { url: 'https://x.dev' }), 'https://x.dev')
+  assert.match(approvalSummary('mcp__db__query', { sql: 'drop table t' }), /"sql": "drop table t"/)
+  assert.equal(approvalSummary('Bash', { command: 'x'.repeat(2000) }).length, 1500)
 })

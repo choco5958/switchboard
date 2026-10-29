@@ -667,3 +667,9 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .telegram-steps { margin: 4px 0 8px 18px; }
 .telegram-token { display: flex; gap: 8px; }
 .telegram-token input { flex: 1; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+
+.approval-item { border: 1px solid var(--warn); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.approval-summary { margin: 6px 0; padding: 6px; max-height: 6.5em; overflow: hidden; white-space: pre-wrap; word-break: break-all; font-family: var(--mono); font-size: 12px; background: var(--bg); border-radius: 4px; }
+.approval-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.approval-actions button:not(.link) { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--text); cursor: pointer; }
+.approval-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }

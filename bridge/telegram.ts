@@ -44,8 +44,37 @@ export type TelegramDeps = {
   sentMessage: (questionId: number) => number | null
   saveMessage: (questionId: number, messageId: number) => void
   questionOf: (messageId: number) => number | null
+  pendingApprovals: () => TelegramApproval[]
+  approval: (id: number) => TelegramApproval | undefined
+  answerApproval: (id: number, decision: 'allow' | 'deny' | 'terminal') => boolean
+  approvalMessage: (approvalId: number) => number | null
+  saveApprovalMessage: (approvalId: number, messageId: number) => void
   changed: () => void
   log: (text: string) => void
+}
+
+export type TelegramApproval = { id: number; project: string; tool: string; summary: string; cwd: string; reason: string; status: string }
+
+// A permission ask as it goes out: what would run and where. Allow asks once more (approvalConfirm).
+export function approvalMessage(a: TelegramApproval, lang: Lang): { text: string; keyboard: { text: string; callback_data: string }[][] } {
+  const text = [
+    tIn(lang, 'telegram.approvalHead', { project: a.project, id: a.id }),
+    tIn(lang, 'telegram.approvalTool', { tool: a.tool }),
+    a.cwd ? tIn(lang, 'telegram.approvalCwd', { cwd: a.cwd }) : '',
+    '',
+    a.summary.length > 1500 ? `${a.summary.slice(0, 1499)}…` : a.summary,
+    a.reason ? `\n${a.reason}` : '',
+  ].filter((line, i) => line !== '' || i === 3).join('\n')
+  return {
+    text: maskSecrets(text),
+    keyboard: [
+      [
+        { text: tIn(lang, 'telegram.allow'), callback_data: `p:${a.id}:allow` },
+        { text: tIn(lang, 'telegram.deny'), callback_data: `p:${a.id}:deny` },
+      ],
+      [{ text: tIn(lang, 'telegram.terminal'), callback_data: `p:${a.id}:terminal` }],
+    ],
+  }
 }
 
 type Update = {
@@ -120,9 +149,25 @@ export function createTelegram(deps: TelegramDeps) {
     deps.saveMessage(q.id, sent.message_id)
   }
 
+  const sendApproval = async (a: TelegramApproval) => {
+    if (!chat() || !deps.away() || deps.approvalMessage(a.id) !== null || a.status !== 'pending') return
+    const { text, keyboard } = approvalMessage(a, deps.lang())
+    const sent = (await call('sendMessage', { chat_id: chat(), text, reply_markup: { inline_keyboard: keyboard } })) as { message_id: number }
+    deps.saveApprovalMessage(a.id, sent.message_id)
+  }
+
   const sendPending = async () => {
+    for (const a of deps.pendingApprovals()) await sendApproval(a).catch(error => deps.log(`telegram send: ${String(error)}`))
     for (const q of deps.pending()) await send(q).catch(error => deps.log(`telegram send: ${String(error)}`))
   }
+
+  const approvalClosedText = (a: TelegramApproval, decision: string, where: 'telegram' | 'elsewhere') =>
+    maskSecrets(
+      [tIn(deps.lang(), 'telegram.approvalHead', { project: a.project, id: a.id }), tIn(deps.lang(), 'telegram.approvalTool', { tool: a.tool }), '', a.summary.slice(0, 1500), '',
+        say(`telegram.approvalDone.${decision === 'allow' ? 'allow' : decision === 'deny' ? 'deny' : decision === 'terminal' ? 'terminal' : 'expired'}` as 'telegram.approvalDone.allow'),
+        where === 'elsewhere' && decision !== 'expired' ? say('telegram.elsewhere') : '',
+      ].filter((line, i, all) => !(i === all.length - 1 && line === '')).join('\n'),
+    )
 
   const closeMessage = async (questionId: number, text: string) => {
     const messageId = deps.sentMessage(questionId)
@@ -178,6 +223,38 @@ export function createTelegram(deps: TelegramDeps) {
         return
       }
       const [kind, id, key] = (press.data ?? '').split(':')
+      // A permission ask: allow shows the command again and asks once more (P); deny and
+      // 'answer in the terminal' go at once; back returns to the first buttons.
+      if (kind === 'p' || kind === 'P') {
+        const a = deps.approval(Number(id))
+        const messageId = press.message?.message_id
+        if (!a || a.status !== 'pending') {
+          await call('answerCallbackQuery', { callback_query_id: press.id, text: say('telegram.approvalGone') })
+          return
+        }
+        if (kind === 'p' && key === 'allow') {
+          await call('answerCallbackQuery', { callback_query_id: press.id })
+          await call('editMessageText', {
+            chat_id: chat(),
+            message_id: messageId,
+            text: maskSecrets(`${say('telegram.approvalSure')}\n\n${a.tool}\n${a.summary.slice(0, 1500)}`),
+            reply_markup: { inline_keyboard: [[{ text: say('telegram.allowSure'), callback_data: `P:${a.id}:allow` }, { text: say('telegram.back'), callback_data: `p:${a.id}:back` }]] },
+          })
+          return
+        }
+        if (key === 'back') {
+          await call('answerCallbackQuery', { callback_query_id: press.id })
+          const { text, keyboard } = approvalMessage(a, deps.lang())
+          await call('editMessageText', { chat_id: chat(), message_id: messageId, text, reply_markup: { inline_keyboard: keyboard } })
+          return
+        }
+        const decision = kind === 'P' && key === 'allow' ? 'allow' : key === 'deny' ? 'deny' : key === 'terminal' ? 'terminal' : null
+        if (!decision) return
+        deps.answerApproval(a.id, decision)
+        await call('answerCallbackQuery', { callback_query_id: press.id, text: say('telegram.sent') })
+        await call('editMessageText', { chat_id: chat(), message_id: messageId, text: approvalClosedText(a, decision, 'telegram') })
+        return
+      }
       const q = deps.question(Number(id))
       if (!q || q.status === 'answered') {
         await call('answerCallbackQuery', { callback_query_id: press.id, text: say('telegram.already', { id: Number(id) }) })
@@ -236,6 +313,12 @@ export function createTelegram(deps: TelegramDeps) {
     posted: (q: TelegramQuestion) => void send(q).catch(error => deps.log(`telegram send: ${String(error)}`)),
     // Answered somewhere else (the app, the shell, another session): the message says so.
     answeredElsewhere: (q: TelegramQuestion, choice: string | null, memo: string | null) => void closeMessage(q.id, answeredText(q, choice, memo, 'elsewhere')),
+    approvalPosted: (a: TelegramApproval) => void sendApproval(a).catch(error => deps.log(`telegram send: ${String(error)}`)),
+    approvalClosed: (a: TelegramApproval, decision: string) => {
+      const messageId = deps.approvalMessage(a.id)
+      if (!messageId || !chat()) return
+      void call('editMessageText', { chat_id: chat(), message_id: messageId, text: approvalClosedText(a, decision, 'elsewhere') }).catch(error => deps.log(`telegram edit: ${String(error)}`))
+    },
     // The person left the desk: what waits goes out.
     away: () => void sendPending(),
     status: () => ({ configured: token() !== null, bot, paired: chat() !== 0, name: deps.secret('telegram.name') ?? '', code: Date.now() < pairUntil ? pairCode : '', codeUntil: pairUntil }),

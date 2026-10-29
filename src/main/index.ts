@@ -75,6 +75,7 @@ let seenPending: Set<number> | null = null
 let seenStalled = new Set<string>()
 let seenLimited = new Set<string>()
 let seenRuns: Set<number> | null = null
+let seenApprovals: Set<number> | null = null
 let scanTimer: ReturnType<typeof setTimeout> | null = null
 
 // Electron drops a notification's click handler once the object is collected, so live ones are held here.
@@ -100,9 +101,10 @@ async function scanQueue(): Promise<void> {
   notifyStalled(reply.json as unknown as BridgeState)
   notifyReleased(reply.json as unknown as BridgeState)
   notifyRuns(reply.json as unknown as BridgeState)
+  notifyApprovals(reply.json as unknown as BridgeState)
   const scan = scanPending((reply.json as unknown as BridgeState).questions ?? [], seenPending)
   seenPending = scan.ids
-  app.dock?.setBadge(badgeText(scan.count))
+  app.dock?.setBadge(badgeText(scan.count + ((reply.json as unknown as BridgeState).approvals ?? []).filter(a => a.status === 'pending').length))
   // A focused window already shows the queue; only the badge is kept current.
   const plan = win?.isFocused() ? null : planNotification(scan.fresh)
   if (!plan || !Notification.isSupported()) return
@@ -149,6 +151,24 @@ function notifyRuns(state: BridgeState): void {
     const routine = (state.routines ?? []).find(r => r.id === run.routine_id)
     const body = run.status === 'failed' ? t('notify.runFailed', { reason: run.failure }) : firstLine(run.result) || t('notify.runDone')
     const notification = new Notification({ title: routine?.name ?? 'Switchboard', body })
+    liveNotifications.add(notification)
+    notification.on('click', () => {
+      liveNotifications.delete(notification)
+      focusWindow()
+    })
+    notification.on('close', () => liveNotifications.delete(notification))
+    notification.show()
+  }
+}
+
+// A permission ask came while the person is away: the notification waits on the screen too.
+function notifyApprovals(state: BridgeState): void {
+  const pending = (state.approvals ?? []).filter(a => a.status === 'pending')
+  const fresh = seenApprovals === null ? [] : pending.filter(a => !seenApprovals!.has(a.id))
+  seenApprovals = new Set(pending.map(a => a.id))
+  if (!Notification.isSupported()) return
+  for (const a of fresh) {
+    const notification = new Notification({ title: a.project, body: t('notify.approval', { tool: a.tool, what: firstLine(a.summary) }) })
     liveNotifications.add(notification)
     notification.on('click', () => {
       liveNotifications.delete(notification)
@@ -317,6 +337,9 @@ ipcMain.handle('bridge:send', (_e, sessionId: string, text: string, kind: string
 ipcMain.handle('shots:save', (_e, dataUrl: string): string | null => saveShot(join(DIR, 'shots'), dataUrl))
 ipcMain.handle('bridge:hold', (_e, id: number) => call('POST', `/questions/${Number(id)}/hold`))
 ipcMain.handle('bridge:forward', (_e, id: number, to: string) => call('POST', `/questions/${Number(id)}/forward`, { to: String(to) }))
+ipcMain.handle('bridge:approve', (_e, id: number, decision: string) =>
+  call('POST', `/approvals/${Number(id)}/answer`, { decision: ['allow', 'deny', 'terminal'].includes(decision) ? decision : 'terminal' }),
+)
 // Dynamic debugging: screen comments, open_in_ide requests and live sessions (bridge/debug.ts).
 ipcMain.handle('debug:call', (_e, method: string, path: string, body?: unknown) => {
   if (!debugPathAllowed(path)) return { ok: false, status: 0, json: { error: `not allowed: ${String(path)}` } }

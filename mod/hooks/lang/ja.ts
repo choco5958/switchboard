@@ -91,6 +91,8 @@ export const ja: Dict = {
   'mod.syncPrompt':
     '[Switchboard] IDE 情報の更新依頼です。進行中のタスクを set_task で、計画を plan_nodes で、ノードの状態を update_node で改めて送り、' +
     'IDE を実際の状態と同じにしてください。変わったことがなければそのままにして、短く伝えてください。',
+  'mod.allowedRemote': 'ユーザーが Switchboard で許可しました (A{id})。',
+  'mod.deniedRemote': 'ユーザーが Switchboard で拒否しました (A{id})。これなしで進める方法を探すか、ask_decision で尋ねてください。',
   'mod.restate': '[Switchboard] 会話が圧縮されました。このセッションが Switchboard に登録した状態をもう一度お知らせします。同じ作業タイトル、ノード key、Q 番号、待機 ID を使い続けてください。',
   'mod.restateTask': '作業: {title} ({stage}, {status}) 今: {now}',
   'mod.restateQuestion': '回答待ちの質問: Q{id} {question}',

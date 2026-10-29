@@ -17,7 +17,7 @@ import { LogPage } from './pages/LogPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { isRunning, nameForFolder, pickSession, projectsOf, savedProjects, scopeFor, scopeState } from '../../shared/projects'
 import { Dock } from './Dock'
-import { AgentBadge, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
+import { AgentBadge, ApprovalItem, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
 import { stalledSessions } from '../../shared/stall'
 import { limitedUntil } from '../../shared/limit'
@@ -254,6 +254,7 @@ export function App() {
     [state.sessions, stalled],
   )
   const { pending, held } = useMemo(() => queueOf(view.questions), [view.questions])
+  const pendingApprovals = (state.approvals ?? []).filter(a => a.status === 'pending' && (scope === null || a.project === scope))
   const reachOfQuestion = (q: Question) => reachOf(state.sessions.find(s => s.id === q.session_id), state.live ?? [])
   const inScope = (tab: Tab): boolean => {
     if (scope === null) return true
@@ -460,7 +461,7 @@ export function App() {
               }}
             >
               <Icon name={item.icon} />
-              {item.section === 'questions' && pending.length > 0 && <span className="rail-badge">{pending.length}</span>}
+              {item.section === 'questions' && pending.length + pendingApprovals.length > 0 && <span className="rail-badge">{pending.length + pendingApprovals.length}</span>}
             </button>
           ))}
         </nav>
@@ -527,6 +528,23 @@ export function App() {
                     <h3>{project}</h3>
                     {list.map(task => taskItem(task, false))}
                   </div>
+                ))}
+              </section>
+            )}
+            {section === 'questions' && pendingApprovals.length > 0 && (
+              <section className="approvals">
+                <h2>
+                  {t('approval.title')} <span className="count warn">{pendingApprovals.length}</span>
+                </h2>
+                {pendingApprovals.map(a => (
+                  <ApprovalItem
+                    key={a.id}
+                    a={a}
+                    onAnswer={async decision => {
+                      const reply = await window.ide.approve(a.id, decision)
+                      if (!reply.ok) toast(String(reply.json.error ?? reply.status), 'bad')
+                    }}
+                  />
                 ))}
               </section>
             )}

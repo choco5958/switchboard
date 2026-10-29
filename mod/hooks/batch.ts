@@ -125,3 +125,17 @@ export function restateText(
   for (const w of waits) lines.push(t(lang, 'mod.restateWait', { id: w.id, note: w.note.split('\n')[0] ?? '' }))
   return lines.join('\n')
 }
+
+// What a permission ask would run, for the person deciding away from the terminal: the
+// command, the file and the change, the address, or the arguments of another tool.
+export function approvalSummary(tool: string, input: unknown): string {
+  const v = (input ?? {}) as Record<string, unknown>
+  const text = (value: unknown) => (typeof value === 'string' ? value : '')
+  const clip = (value: string, max = 1500) => (value.length > max ? `${value.slice(0, max - 1)}…` : value)
+  if (tool === 'Bash') return clip([text(v.description), text(v.command)].filter(Boolean).join('\n'))
+  if (tool === 'Write') return clip(`${text(v.file_path)}\n${text(v.content)}`)
+  if (tool === 'Edit') return clip(`${text(v.file_path)}\n- ${text(v.old_string)}\n+ ${text(v.new_string)}`)
+  if (tool === 'MultiEdit' || tool === 'NotebookEdit' || tool === 'Read') return clip(text(v.file_path) || text(v.notebook_path) || JSON.stringify(v))
+  if (tool === 'WebFetch') return clip(text(v.url))
+  return clip(JSON.stringify(v, null, 1))
+}

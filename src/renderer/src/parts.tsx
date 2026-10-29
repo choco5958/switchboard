@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react'
-import type { BridgeState, Question, Task } from '../../shared/types'
+import type { Approval, BridgeState, Question, Task } from '../../shared/types'
 import { taskStateLabel, taskState } from '../../shared/projects'
 import { eventKindLabel, stageLabel, t } from '../../shared/i18n'
 import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent, type Attention } from './model'
@@ -223,6 +223,32 @@ export function Toast({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (
           </button>
         </div>
       ))}
+    </div>
+  )
+}
+
+// A permission ask that came while the person was away (mod tool.check). Allow and deny answer
+// it here; 'in the terminal' hands it back to Claude Code's own dialog.
+export function ApprovalItem({ a, onAnswer }: { a: Approval; onAnswer: (decision: 'allow' | 'deny' | 'terminal') => void }) {
+  return (
+    <div className="approval-item">
+      <div>
+        <span className="qid">A{a.id}</span> <span className="tag">[{a.project}]</span> <strong>{a.tool}</strong>
+        <span className="quiet small"> {ago(a.created_at)}</span>
+      </div>
+      <pre className="approval-summary" title={a.summary}>
+        {a.summary}
+      </pre>
+      {a.cwd && <div className="quiet small">{t('approval.cwd', { cwd: a.cwd })}</div>}
+      <div className="approval-actions">
+        <button className="primary" onClick={() => onAnswer('allow')}>
+          {t('approval.allow')}
+        </button>
+        <button onClick={() => onAnswer('deny')}>{t('approval.deny')}</button>
+        <button className="link small" title={t('approval.terminalTitle')} onClick={() => onAnswer('terminal')}>
+          {t('approval.terminal')}
+        </button>
+      </div>
     </div>
   )
 }

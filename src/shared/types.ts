@@ -120,6 +120,7 @@ export type BridgeState = {
   live?: string[] // sessions whose delivery stream is open now
   activity?: Record<string, Activity> // what each session's turn is doing (src/shared/stall.ts)
   routines?: Routine[]
+  approvals?: Approval[] // the newest 30 permission asks (bridge: POST /approvals)
   routineRuns?: RoutineRun[] // the newest 100
   tasks: Task[]
   questions: Question[]
@@ -187,6 +188,7 @@ export type IdeApi = {
   answer: (id: number, choice: string, memo: string) => Promise<Reply>
   hold: (id: number) => Promise<Reply>
   forward: (id: number, to: string) => Promise<Reply> // hand a question to another session to answer
+  approve: (id: number, decision: 'allow' | 'deny' | 'terminal') => Promise<Reply>
   connected: () => Promise<boolean>
   send: (sessionId: string, text: string, kind: string, taskTitle: string) => Promise<Reply>
   saveShot: (dataUrl: string) => Promise<string | null>
@@ -276,4 +278,19 @@ export type RoutineRun = {
   failure: string
   result: string
   finished_at: number | null
+}
+
+// A Claude Code permission ask put to the person while away from the desk (mod tool.check).
+export type Approval = {
+  id: number
+  session_id: string
+  project: string
+  tool: string
+  summary: string
+  cwd: string
+  reason: string
+  status: 'pending' | 'allow' | 'deny' | 'terminal' | 'expired'
+  via: string
+  created_at: number
+  answered_at: number | null
 }

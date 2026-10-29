@@ -1,5 +1,5 @@
 import type { EngineInterface as Engine, Register } from 'claude-code'
-import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, restateText, staleKeys, toastText, type Delivery } from './batch'
+import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, restateText, staleKeys, toastText, approvalSummary, type Delivery } from './batch'
 import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
@@ -58,6 +58,8 @@ let restate = false
 let activitySentAt = 0
 let activitySent = ''
 const ACTIVITY_BEAT_MS = 15_000
+// How long a permission ask waits for the person away from the desk before the terminal asks.
+const APPROVAL_WAIT_MS = 6 * 3600_000
 
 function socketPath(): string {
   return socket || `${home}/.claude-ide/bridge.sock`
@@ -570,6 +572,34 @@ export const register: Register = on => {
     const extra = restate ? await restateContext($).catch(() => undefined) : await pendingContext($).catch(() => undefined)
     restate = false
     return next(extra ? { ...e, context: [...(e.context ?? []), extra] } : e)
+  }).catch(($, e, next) => next(e))
+
+  // A permission ask while the person is away (the bridge knows from the app): it goes to the
+  // app's decision queue and Telegram, and this hook waits for the answer. At the desk, or
+  // when the person picks 'answer in the terminal', the terminal's own dialog asks as before.
+  on('tool.check', async ($, e, next) => {
+    const verdict = await next(e)
+    if (verdict.decision !== 'ask' || !sessionId || !e.tool_use_id || e.approver !== 'person' || e.ceiling === 'ask') return verdict
+    const presence = await call($, 'GET', '/presence').catch(() => undefined)
+    if (presence?.json.away !== true) return verdict
+    const posted = await call($, 'POST', '/approvals', {
+      sessionId,
+      tool: e.tool,
+      summary: approvalSummary(e.tool, e.input),
+      cwd,
+      reason: verdict.reason ?? '',
+      requestKey: e.tool_use_id,
+    }).catch(() => undefined)
+    if (!posted?.ok) return verdict
+    const id = String(posted.json.id)
+    for (let waited = 0; waited < APPROVAL_WAIT_MS; waited += 1000) {
+      await $.clock.sleep(1000)
+      const status = (await call($, 'GET', `/approvals/${id}`).catch(() => undefined))?.json.status
+      if (status === 'allow') return { decision: 'allow', reason: t(currentLang(), 'mod.allowedRemote', { id }) }
+      if (status === 'deny') return { decision: 'deny', reason: t(currentLang(), 'mod.deniedRemote', { id }) }
+      if (status === 'terminal' || status === 'expired' || status === undefined) return verdict
+    }
+    return verdict
   }).catch(($, e, next) => next(e))
 
   // The summary is told to keep what Switchboard names; whatever it drops, the next prompt
