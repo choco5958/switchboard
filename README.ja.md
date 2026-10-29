@@ -113,7 +113,7 @@ Claude Code、Codex、Gemini CLI のセッションが判断を尋ね、互い�
 
 
 
-## 画面
+## スクリーンショット
 
 <table>
 <tr>
@@ -126,9 +126,9 @@ Claude Code、Codex、Gemini CLI のセッションが判断を尋ね、互い�
 
 ```mermaid
 flowchart LR
-  cc["Claude Code セッション"] -- "mod: ide-bridge" --> bridge
+  cc["Claude Code<br/>セッション"] -- "mod: ide-bridge" --> bridge
   cli["Codex、Gemini など"] -- "MCP: mcp/server.ts" --> bridge
-  cmd["switchboard コマンド"] --> bridge
+  cmd["switchboard<br/>コマンド"] --> bridge
   tg["Telegram ボット"] <-->|"long polling"| bridge
   bridge[("ブリッジ<br/>ローカルソケット + SQLite")] <--> app["Switchboard アプリ<br/>Electron"]
 ```

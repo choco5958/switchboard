@@ -113,7 +113,7 @@ Claude Code, Codex, Gemini CLI 세션이 결정을 묻고, 서로 일을 맡기�
 
 
 
-## 화면
+## 스크린샷
 
 <table>
 <tr>
@@ -126,9 +126,9 @@ Claude Code, Codex, Gemini CLI 세션이 결정을 묻고, 서로 일을 맡기�
 
 ```mermaid
 flowchart LR
-  cc["Claude Code 세션"] -- "mod: ide-bridge" --> bridge
-  cli["Codex, Gemini 등"] -- "MCP: mcp/server.ts" --> bridge
-  cmd["switchboard 명령"] --> bridge
+  cc["Claude Code<br/>세션"] -- "mod: ide-bridge" --> bridge
+  cli["Codex,<br/>Gemini 등"] -- "MCP: mcp/server.ts" --> bridge
+  cmd["switchboard<br/>명령"] --> bridge
   tg["Telegram 봇"] <-->|"long polling"| bridge
   bridge[("브리지<br/>로컬 소켓 + SQLite")] <--> app["Switchboard 앱<br/>Electron"]
 ```

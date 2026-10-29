@@ -113,7 +113,7 @@ Claude Code、Codex、Gemini CLI 会话会向你请求决定、彼此委派工�
 
 
 
-## 界面
+## 截图
 
 <table>
 <tr>
@@ -126,9 +126,9 @@ Claude Code、Codex、Gemini CLI 会话会向你请求决定、彼此委派工�
 
 ```mermaid
 flowchart LR
-  cc["Claude Code 会话"] -- "mod: ide-bridge" --> bridge
+  cc["Claude Code<br/>会话"] -- "mod: ide-bridge" --> bridge
   cli["Codex、Gemini 等"] -- "MCP: mcp/server.ts" --> bridge
-  cmd["switchboard 命令"] --> bridge
+  cmd["switchboard<br/>命令"] --> bridge
   tg["Telegram 机器人"] <-->|"long polling"| bridge
   bridge[("桥接服务<br/>本地套接字 + SQLite")] <--> app["Switchboard 应用<br/>Electron"]
 ```

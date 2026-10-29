@@ -113,7 +113,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 
 
 
-## Screens
+## Screenshots
 
 <table>
 <tr>
@@ -126,9 +126,9 @@ When a session needs a decision from you, it posts the question to a decision qu
 
 ```mermaid
 flowchart LR
-  cc["Claude Code session"] -- "mod: ide-bridge" --> bridge
+  cc["Claude Code<br/>session"] -- "mod: ide-bridge" --> bridge
   cli["Codex, Gemini, ..."] -- "MCP: mcp/server.ts" --> bridge
-  cmd["switchboard command"] --> bridge
+  cmd["switchboard<br/>command"] --> bridge
   tg["Telegram bot"] <-->|"long polling"| bridge
   bridge[("Bridge<br/>local socket + SQLite")] <--> app["Switchboard app<br/>Electron"]
 ```
