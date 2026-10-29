@@ -25,3 +25,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+
+  # Windows: the bridge over TCP, its start, the shell command and the MCP server reaching
+  # it, and the shell helpers. The rest of the suite talks over Unix sockets.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: node --import ./scripts/test-env.ts --test bridge/endpoint.test.ts bridge/schedule.test.ts
+      - run: pnpm exec vitest run src/main/shell.test.ts src/main/runtime.test.ts src/shared

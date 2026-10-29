@@ -31,6 +31,8 @@ export function accountDir(env: Record<string, string | undefined>, file: string
 export function ccrPath(env: Record<string, string | undefined> = process.env, exists: (path: string) => boolean = existsSync): string | null {
   if (env.SWITCHBOARD_NO_CCR) return null
   if (!exists(join(ccrPaths(env).root, 'state', 'current'))) return null
+  // ccr is a macOS and Linux tool.
+  if (process.platform === 'win32') return null
   const dirs = [...(env.PATH ?? '').split(':'), join(homedir(), '.local', 'bin')].filter(Boolean)
   const found = dirs.map(dir => join(dir, 'ccr')).find(exists)
   return found ? shellQuote(found) : null

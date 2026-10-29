@@ -8,6 +8,7 @@ import { request } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { requestTarget, resolveEndpoint, startCommand, usesTcp } from '../bridge/endpoint.ts'
 import { takenText } from '../mod/hooks/batch.ts'
 import { langFromLocale, langOfState, osLocale, t, type Key, type Lang, type Vars } from '../mod/hooks/i18n.ts'
 import { BROWSER_TOOLS, cancelText, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
@@ -34,7 +35,8 @@ export function parseOptions(argv: readonly string[], env: Record<string, string
     agent: (flag('agent') || env.SWITCHBOARD_AGENT || 'mcp').toLowerCase(),
     terminal: flag('terminal') || env.SWITCHBOARD_TERMINAL || '',
     cwd: flag('cwd') || cwd,
-    socket: flag('socket') || env.CLAUDE_IDE_SOCKET || join(home, '.claude-ide', 'bridge.sock'),
+    // Empty: Windows, where the bridge is on TCP and each call reads where (bridge/endpoint.ts).
+    socket: flag('socket') || env.CLAUDE_IDE_SOCKET || (usesTcp(env) ? '' : join(home, '.claude-ide', 'bridge.sock')),
     home,
   }
 }
@@ -94,7 +96,8 @@ export type Deps = {
 export function bridgeCall(socket: string): Deps['call'] {
   return (method, path, body) =>
     new Promise(resolve => {
-      const req = request({ socketPath: socket, method, path, headers: { 'content-type': 'application/json' } }, res => {
+      const target = requestTarget(socket ? { kind: 'socket', path: socket } : resolveEndpoint())
+      const req = request({ ...target, method, path, headers: { ...target.headers, 'content-type': 'application/json' } }, res => {
         let text = ''
         res.setEncoding('utf8')
         res.on('data', chunk => (text += chunk))
@@ -115,9 +118,9 @@ export function bridgeCall(socket: string): Deps['call'] {
     })
 }
 
-const runCommand: Run = (argv, cwd) =>
+const runCommand = (argv: string[], cwd?: string, env?: Record<string, string>): ReturnType<Run> =>
   new Promise(resolve => {
-    execFile(argv[0]!, argv.slice(1), { cwd, timeout: 120_000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) =>
+    execFile(argv[0]!, argv.slice(1), { cwd, env: env ? { ...process.env, ...env } : undefined, timeout: 120_000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) =>
       resolve({ code: error ? Number((error as { code?: number }).code ?? 1) || 1 : 0, stdout, stderr }),
     )
   })
@@ -368,10 +371,12 @@ export async function answerLine(line: string, handle: (m: Message) => Promise<R
 
 if (import.meta.main) {
   const options = parseOptions(process.argv.slice(2), process.env, process.cwd())
-  const startScript = join(options.home, '.claude-ide', 'start-bridge.sh')
   const session = createSession(options, {
     call: bridgeCall(options.socket),
-    startBridge: async () => (await runCommand(['sh', startScript])).code === 0,
+    startBridge: async () => {
+      const start = startCommand(options.home)
+      return (await runCommand(start.argv, undefined, start.env)).code === 0
+    },
     run: runCommand,
     log: line => process.stderr.write(`${line}\n`),
   })

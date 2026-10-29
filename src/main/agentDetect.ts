@@ -1,4 +1,5 @@
 import type { McpServer } from '../shared/agents'
+import { isAbsolutePath, whereScript } from './shell'
 
 // Pure pieces of opening an agent terminal (agentTerms.ts): finding installed CLIs and
 // the MCP server command a terminal's CLI starts.
@@ -7,8 +8,8 @@ const MARK = '__switchboard__'
 
 // One login shell that prints where each command is: the same PATH a dock terminal has,
 // including what .zshrc adds (nvm, Homebrew).
-export function detectScript(bins: readonly string[]): string {
-  return `for c in ${bins.join(' ')}; do printf '${MARK}%s=%s\\n' "$c" "$(command -v "$c" 2>/dev/null)"; done`
+export function detectScript(bins: readonly string[], platform: string = process.platform): string {
+  return whereScript(bins, MARK, platform)
 }
 
 export function parseDetect(out: string): Record<string, string> {
@@ -18,7 +19,7 @@ export function parseDetect(out: string): Record<string, string> {
     if (at === -1) continue
     const [bin, path] = line.slice(at + MARK.length).split(/=(.*)/s)
     // An alias or a shell function prints its definition, not a path.
-    if (bin && path?.startsWith('/')) found[bin] = path.trim()
+    if (bin && path && isAbsolutePath(path)) found[bin] = path.trim()
   }
   return found
 }

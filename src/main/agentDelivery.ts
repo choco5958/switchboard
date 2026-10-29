@@ -3,6 +3,7 @@ import { parseFrame, takenText } from '../../mod/hooks/batch.ts'
 import type { Reply, Session } from '../shared/types'
 import { getLang, type Lang } from '../shared/i18n'
 import { ENTER, ENTER_DELAY_MS, readyToType, typedInput, type TypingTarget } from './agentInput'
+import type { RequestTarget } from '../../bridge/endpoint.ts'
 
 // Answers for agent CLIs that run in one of the app's terminals. The mod types
 // answers into Claude Code itself; other CLIs have only their MCP server, which
@@ -14,7 +15,9 @@ const RETRY_MS = 500
 const RECONNECT_MS = 3000
 
 export type DeliveryOptions = {
-  socketPath: string
+  // Where the bridge is, read at each connection (bridge/endpoint.ts); `socketPath` alone in tests.
+  socketPath?: string
+  target?: () => RequestTarget
   call: (method: string, path: string, body?: unknown) => Promise<Reply>
   terminal: (key: string) => TypingTarget | undefined
   now?: () => number
@@ -72,7 +75,8 @@ export function startAgentDelivery(options: DeliveryOptions) {
   }
 
   const listen = (sessionId: string, sub: Sub) => {
-    const req = request({ socketPath: options.socketPath, path: `/deliveries?session=${encodeURIComponent(sessionId)}` }, res => {
+    const where = options.target?.() ?? { socketPath: options.socketPath, headers: {} }
+    const req = request({ ...where, path: `/deliveries?session=${encodeURIComponent(sessionId)}` }, res => {
       let buffer = ''
       res.setEncoding('utf8')
       res.on('data', (chunk: string) => {

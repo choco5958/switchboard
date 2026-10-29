@@ -3,6 +3,8 @@
 // Enter on its own a moment later. Codex, Gemini CLI and Qwen Code treat an Enter
 // that comes within 40 to 500 ms of pasted text as a newline, hence the pause.
 
+import { SHELL_NAMES } from './shell'
+
 export const PASTE_START = '\x1b[200~'
 export const PASTE_END = '\x1b[201~'
 export const ENTER = '\r'
@@ -37,9 +39,9 @@ export function pasteModeAfter(current: boolean, output: string): boolean {
 // The pty's foreground process is the login shell again once the CLI has quit:
 // typing then would run the answer as shell commands.
 export function cliInFront(foreground: string, shell: string): boolean {
-  const name = (path: string) => path.split('/').pop()?.replace(/^-/, '') ?? ''
+  const name = (path: string) => path.split(/[\\/]/).pop()?.replace(/^-/, '').toLowerCase() ?? ''
   const front = name(foreground)
-  return front !== '' && front !== name(shell) && !['login', 'sh', 'bash', 'zsh', 'fish'].includes(front)
+  return front !== '' && front !== name(shell) && !SHELL_NAMES.includes(front)
 }
 
 export function readyToType(t: { alive: boolean; foreground: string; shell: string; lastOutput: number }, now: number): boolean {

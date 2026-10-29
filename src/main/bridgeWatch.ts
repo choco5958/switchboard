@@ -1,4 +1,5 @@
 import { request } from 'node:http'
+import type { RequestTarget } from '../../bridge/endpoint.ts'
 
 // One SSE subscription to the bridge's /stream. On loss it reports the app as
 // disconnected at once, waits, runs beforeRetry (the app restarts the bridge
@@ -7,7 +8,9 @@ import { request } from 'node:http'
 // once per connection.
 
 export type WatchOptions = {
-  socketPath: string
+  // Where the bridge is, read at each connection (bridge/endpoint.ts); `socketPath` alone in tests.
+  socketPath?: string
+  target?: () => RequestTarget
   retryMs: number
   onConnection: (up: boolean) => void
   onEvent: (event: unknown) => void
@@ -48,7 +51,8 @@ export function watchBridge(options: WatchOptions): { stop: () => void } {
         void (options.beforeRetry?.() ?? Promise.resolve()).catch(() => undefined).then(connect)
       }, options.retryMs)
     }
-    const req = request({ socketPath: options.socketPath, path: '/stream' }, res => {
+    const where = options.target?.() ?? { socketPath: options.socketPath, headers: {} }
+    const req = request({ ...where, path: '/stream' }, res => {
       if ((res.statusCode ?? 0) !== 200) {
         res.resume()
         loss()

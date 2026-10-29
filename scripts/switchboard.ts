@@ -16,19 +16,17 @@
 // the session is unknown.
 
 import { request } from 'node:http'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { requestTarget, resolveEndpoint } from '../bridge/endpoint.ts'
 
 export const EXIT = { done: 0, failed: 1, usage: 2, person: 3, timeout: 4, unreachable: 5 } as const
 
 type Reply = { status: number; json: Record<string, unknown> }
 type Call = (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<Reply>
 
-const SOCKET = process.env.CLAUDE_IDE_SOCKET ?? join(homedir(), '.claude-ide', 'bridge.sock')
-
 const bridgeCall: Call = (method, path, body) =>
   new Promise((resolve, reject) => {
-    const req = request({ socketPath: SOCKET, method, path, headers: { 'content-type': 'application/json' } }, res => {
+    const target = requestTarget(resolveEndpoint())
+    const req = request({ ...target, method, path, headers: { ...target.headers, 'content-type': 'application/json' } }, res => {
       let text = ''
       res.on('data', chunk => (text += chunk))
       res.on('end', () => {

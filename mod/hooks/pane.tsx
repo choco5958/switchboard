@@ -3,6 +3,7 @@ import type { EngineInterface as Engine, On, Timer } from 'claude-code'
 
 import type { FlowAgent, FlowNode, FlowTask, PaneView, RefreshReason, Snapshot } from '../types'
 import { currentLang, sessionLang, setLang, t, taskStatusLabel, type Key, type Lang } from './i18n.ts'
+import { bridgeFetch } from './link.ts'
 import {
   ARROW_CELLS,
   agentLine,
@@ -71,9 +72,7 @@ const REASONS: Record<RefreshReason, Key | undefined> = {
   agentTurnEnd: 'reason.agentTurnEnd',
 }
 
-let home = ''
 let sessionId = ''
-let socket = ''
 let timer: Timer | undefined
 let isPolling = false
 // A refresh asked for while another runs: it runs once that one ends.
@@ -93,25 +92,9 @@ async function costOf($: Engine): Promise<number | null> {
   }
 }
 
-async function envOf($: Engine): Promise<string | undefined> {
-  try {
-    return await $.env.get('CLAUDE_IDE_SOCKET')
-  } catch {
-    return undefined
-  }
-}
-
-// The bridge's socket: CLAUDE_IDE_SOCKET when set, as the bridge itself reads it.
-async function socketPath($: Engine): Promise<string> {
-  if (socket) return socket
-  if (!home) home = (await $.process.run(['printenv', 'HOME'])).stdout.trim()
-  socket = (await envOf($)) || `${home}/.claude-ide/bridge.sock`
-  return socket
-}
-
 async function fetchSnapshot($: Engine): Promise<Snapshot> {
   if (!sessionId) sessionId = await $.session.id()
-  const res = await $.http.fetch('http://bridge/state', { socketPath: await socketPath($) })
+  const res = await bridgeFetch($, '/state')
   if (!res.ok) throw new Error(`bridge answered ${res.status}`)
   const snapshot = parseState(JSON.parse(res.text) as unknown, sessionId, await $.clock.now())
   const cost = await costOf($)

@@ -11,6 +11,7 @@ import { detectScript, parseDetect, serverFor } from './agentDetect'
 import { openTerminal } from './terminals'
 import { nodeRoot } from './appRoot'
 import { nodeLauncher } from './runtime'
+import { loginShell } from './shell'
 
 // Terminals for agent CLIs other than Claude Code: which ones are installed (on the
 // login-shell PATH the terminals get) and opening one with the Switchboard MCP server.
@@ -23,9 +24,11 @@ let cached: AgentDetect | null = null
 function detect(force = false): Promise<AgentDetect> {
   if (cached && !force) return Promise.resolve(cached)
   const bins = ['node', ...new Set(PRESETS.map(p => p.bin))]
-  const shell = process.env.SHELL || '/bin/zsh'
+  const shell = loginShell()
+  // Interactive on macOS and Linux, so what .zshrc adds to PATH counts.
+  const args = process.platform === 'win32' ? shell.command(detectScript(bins)) : ['-l', '-i', '-c', detectScript(bins)]
   return new Promise(resolve => {
-    execFile(shell, ['-l', '-i', '-c', detectScript(bins)], { env: terminalEnv(process.env), timeout: 15_000 }, (_error, stdout) => {
+    execFile(shell.file, args, { env: terminalEnv(process.env), timeout: 15_000 }, (_error, stdout) => {
       const found = parseDetect(String(stdout ?? ''))
       cached = { found, node: found.node ?? null, at: Date.now() }
       resolve(cached)

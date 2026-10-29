@@ -10,6 +10,7 @@ import type { DevGit, DevResult, DevStatus, DevTarget } from '../shared/types'
 import { appendLines, portOf } from '../shared/devtargets'
 import { killStale, removePid, stopGroup, writePid } from './procgroups'
 import { t } from '../shared/i18n'
+import { loginShell } from './shell'
 
 // Dev servers of the debugging page. The list itself lives in bridge settings
 // ('devTargets'); the renderer passes the target to run, this file only keeps
@@ -38,6 +39,11 @@ function home(path: string): string {
 
 function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   if (!child.pid) return
+  // Windows has no process groups: taskkill ends the server and what it started.
+  if (process.platform === 'win32') {
+    execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => undefined)
+    return
+  }
   try {
     process.kill(-child.pid, signal)
   } catch {
@@ -128,8 +134,8 @@ export function registerDevServers(ipcMain: IpcMain, onChange: (event: { id: str
     if (current?.alive) return { ok: true, out: t('devMain.alreadyUp') }
     const cwd = home(target.repo)
     if (!existsSync(cwd)) return { ok: false, out: t('devMain.noRepo', { path: cwd }) }
-    const shell = process.env.SHELL || '/bin/zsh'
-    const child = spawn(shell, ['-lc', target.command], {
+    const shell = loginShell()
+    const child = spawn(shell.file, shell.command(target.command), {
       cwd,
       detached: true,
       env: { ...process.env, FORCE_COLOR: '0', PYTHONUNBUFFERED: '1' },

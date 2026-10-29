@@ -12,6 +12,7 @@ import { pasteModeAfter, type TypingTarget } from './agentInput'
 import { t } from '../shared/i18n'
 import { writeOpenUrl } from './openUrl'
 import { nodeRoot } from './appRoot'
+import { loginShell } from './shell'
 
 // Terminals in the IDE's bottom dock. Each is a login shell in a project folder;
 // a Claude terminal types `claude --plugin-dir <this app's mod>` into it first,
@@ -99,11 +100,11 @@ export let openClaudeIn: (cwd: string) => TermInfo | { error: string } = () => (
 export function openTerminal(start: TermStart): TermInfo | { error: string } {
   const folder = start.cwd.startsWith('~/') ? homedir() + start.cwd.slice(1) : start.cwd
   if (!folder || !existsSync(folder)) return { error: t('term.noFolder', { path: start.cwd }) }
-  const shell = process.env.SHELL || '/bin/zsh'
+  const shell = loginShell()
   const id = `t${++seq}`
   const key = `${RUN}-${id}`
   const prepared = start.prepare?.(key) ?? {}
-  const proc = pty.spawn(shell, ['-l', '-i'], {
+  const proc = pty.spawn(shell.file, shell.interactive, {
     name: 'xterm-256color',
     cols: Math.max(20, start.cols || 100),
     rows: Math.max(5, start.rows || 30),
@@ -111,7 +112,8 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
     env: {
       ...terminalEnv(process.env, configDir),
       // Local links a CLI opens land in the in-app browser (openUrl.ts), unless the person set their own.
-      ...(browserScript && !process.env.BROWSER ? { BROWSER: browserScript } : {}),
+      // Not on Windows: a .js file there may open in Windows Script Host instead of Node.
+      ...(browserScript && !process.env.BROWSER && process.platform !== 'win32' ? { BROWSER: browserScript } : {}),
       ...(start.agent ? { SWITCHBOARD_AGENT: start.agent, SWITCHBOARD_TERMINAL: key } : {}),
       ...prepared.env,
     },
@@ -121,7 +123,7 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
   const title = `${start.title}${same > 0 ? ` ${same + 1}` : ''}`
   const term: Live = {
     id, project, cwd: folder, title, claude: start.claude === true, agent: start.agent, alive: true, exitCode: null,
-    proc, buffer: '', seq: 0, key, shell, lastOutput: Date.now(), paste: false,
+    proc, buffer: '', seq: 0, key, shell: shell.file, lastOutput: Date.now(), paste: false,
   }
   terms.set(id, term)
   proc.onData(data => {

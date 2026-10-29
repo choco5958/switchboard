@@ -1,30 +1,27 @@
 #!/bin/sh
-# Writes ~/.claude-ide/start-bridge.sh, which the mod and the IDE both call to
-# make sure one bridge is running. Run again after moving the repo.
+# For a run from the repo (pnpm dev): writes ~/.claude-ide/start-bridge.json and
+# start-bridge.sh, which the mod, other CLIs and the IDE call to make sure one bridge
+# runs (bridge/start.ts), and the switchboard command. The installed app writes its own
+# at each start (src/main/runtime.ts). Run again after moving the repo.
 set -eu
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 NODE=$(command -v node)
 DIR="$HOME/.claude-ide"
 mkdir -p "$DIR"
+chmod 700 "$DIR"
 
-cat > "$DIR/start-bridge.sh" <<EOF
+"$NODE" -e '
+const [dir, node, start] = process.argv.slice(1)
+require("node:fs").writeFileSync(dir + "/start-bridge.json", JSON.stringify({ argv: [node, start], env: {} }, null, 2) + "\n", { mode: 0o600 })
+' "$DIR" "$NODE" "$REPO/bridge/start.ts"
+
+cat > "$DIR/start-bridge.sh" <<EOF2
 #!/bin/sh
-SOCK="\${CLAUDE_IDE_SOCKET:-\$HOME/.claude-ide/bridge.sock}"
-healthy() { curl -sf --max-time 1 --unix-socket "\$SOCK" http://bridge/health >/dev/null 2>&1; }
-healthy && exit 0
-nohup "$NODE" "$REPO/bridge/server.ts" >> "\$HOME/.claude-ide/bridge.log" 2>&1 &
-i=0
-while [ \$i -lt 30 ]; do
-  healthy && exit 0
-  sleep 0.1
-  i=\$((i + 1))
-done
-echo "bridge did not start; see ~/.claude-ide/bridge.log" >&2
-exit 1
-EOF
+exec "$NODE" "$REPO/bridge/start.ts"
+EOF2
 chmod +x "$DIR/start-bridge.sh"
-echo "wrote $DIR/start-bridge.sh (node: $NODE, repo: $REPO)"
+echo "wrote $DIR/start-bridge.json and start-bridge.sh (node: $NODE, repo: $REPO)"
 
 # The switchboard command (scripts/switchboard.ts) for shells and scripts.
 BIN="$HOME/.local/bin"

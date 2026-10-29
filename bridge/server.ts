@@ -5,10 +5,13 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { connect } from 'node:net'
 import { DatabaseSync } from 'node:sqlite'
-import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
+import type { AddressInfo } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
+import { curlConfigFile, endpointFile, ideDir, usesTcp } from './endpoint.ts'
 import type { Activity } from '../src/shared/stall.ts'
 import { limitedUntil } from '../src/shared/limit.ts'
 import { maskSecrets } from '../src/shared/pageLog.ts'
@@ -312,7 +315,8 @@ export function systemLocale(): string {
   return Intl.DateTimeFormat().resolvedOptions().locale
 }
 
-export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch }
+// `token`: the bridge listens on TCP (bridge/endpoint.ts) and answers only requests that carry it.
+export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch; token?: string }
 
 export function createBridge(dbPath: string, locale = systemLocale(), options: BridgeOptions = {}) {
   privateDir(dirname(dbPath))
@@ -891,6 +895,11 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const method = req.method ?? 'GET'
     // Shared helpers (dev targets) word their errors through the module language.
     setLang(langNow())
+    // Over TCP only the token opens the bridge, and a web page (it sends Origin) never does.
+    if (options.token !== undefined) {
+      if (req.headers.origin !== undefined) return send(res, 403, { error: 'forbidden' })
+      if (!sameSecret(req.headers.authorization ?? '', `Bearer ${options.token}`)) return send(res, 401, { error: 'unauthorized' })
+    }
 
     // The installed app's start script names its version: an app updated since replaces this bridge.
     if (method === 'GET' && path === '/health') return send(res, 200, { ok: true, version: process.env.SWITCHBOARD_VERSION ?? '', pid: process.pid })
@@ -1802,6 +1811,61 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   return { server, db, prune, tickRoutines, checkNoReplies, close: () => { shuttingDown = true; telegram.stop(); clearInterval(pruning); clearInterval(releasing); clearInterval(routineTimer); server.close(); db.close() } }
 }
 
+function sameSecret(given: string, expected: string): boolean {
+  const a = Buffer.from(given)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+export function newToken(): string {
+  return randomBytes(24).toString('base64url')
+}
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+function writePrivate(path: string, text: string): void {
+  writeFileSync(path, text, { mode: 0o600 })
+  chmodSync(path, 0o600)
+}
+
+// Windows (bridge/endpoint.ts): a free port on 127.0.0.1, written with the token for the
+// clients. bridge.lock holds the pid of the bridge that serves, so a second one started at
+// the same moment (the IDE and a mod can both try) refuses instead of taking over.
+export async function listenTcp(server: Server, token: string, home = homedir()): Promise<number> {
+  const dir = ideDir(home)
+  privateDir(dir)
+  const lock = join(dir, 'bridge.lock')
+  try {
+    writeFileSync(lock, String(process.pid), { flag: 'wx', mode: 0o600 })
+  } catch {
+    const holder = Number(readFileSync(lock, 'utf8'))
+    if (holder && holder !== process.pid && alive(holder)) throw new Error(`다른 브리지(pid ${holder})가 이미 돌고 있습니다`)
+    writePrivate(lock, String(process.pid))
+  }
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => resolve())
+  })
+  const port = (server.address() as AddressInfo).port
+  writePrivate(endpointFile(home), JSON.stringify({ port, token, pid: process.pid }))
+  writePrivate(curlConfigFile(home), `header = "Authorization: Bearer ${token}"\n`)
+  process.once('exit', () => {
+    try {
+      if (readFileSync(lock, 'utf8') === String(process.pid)) unlinkSync(lock)
+    } catch {
+      // Gone already.
+    }
+  })
+  return port
+}
+
 function isAnswering(socketPath: string): Promise<boolean> {
   return new Promise(resolve => {
     const probe = connect(socketPath)
@@ -1826,11 +1890,13 @@ export async function listen(server: Server, socketPath: string): Promise<void> 
 }
 
 if (import.meta.main) {
-  const socketPath = defaultSocketPath()
-  const bridge = createBridge(defaultDbPath())
+  const token = usesTcp() ? newToken() : undefined
+  const bridge = createBridge(defaultDbPath(), undefined, { token })
   try {
-    await listen(bridge.server, socketPath)
-    console.log(`claude-ide bridge listening on ${socketPath}`)
+    let where = defaultSocketPath()
+    if (token === undefined) await listen(bridge.server, where)
+    else where = `127.0.0.1:${await listenTcp(bridge.server, token)}`
+    console.log(`claude-ide bridge listening on ${where}`)
   } catch (error) {
     console.log(`claude-ide bridge not started: ${error instanceof Error ? error.message : String(error)}`)
     bridge.close()

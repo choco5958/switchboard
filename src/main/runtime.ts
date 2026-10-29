@@ -16,49 +16,48 @@ export type RuntimeInput = {
   root: string // the folder holding bridge/, mcp/, mod/, scripts/ and src/shared/
   home: string
   version: string
+  platform?: string
 }
 
 const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
+const cmdLines = (...lines: string[]) => `${['@echo off', ...lines].join('\r\n')}\r\n`
 
-export function nodeLauncher(home: string): string {
-  return join(home, '.claude-ide', 'bin', 'switchboard-node')
+export function nodeLauncher(home: string, platform: string = process.platform): string {
+  return join(home, '.claude-ide', 'bin', platform === 'win32' ? 'switchboard-node.cmd' : 'switchboard-node')
 }
 
 export function runtimeFiles(input: RuntimeInput): RuntimeFile[] {
-  const node = nodeLauncher(input.home)
+  const platform = input.platform ?? process.platform
   const dir = join(input.home, '.claude-ide')
+  const start = join(input.root, 'bridge', 'start.ts')
+  const cli = join(input.root, 'scripts', 'switchboard.ts')
+  const env = { ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_VERSION: input.version }
+  // What the app, the MCP server and the mod run to start the bridge, with no shell between.
+  const startJson: RuntimeFile = { path: join(dir, 'start-bridge.json'), mode: 0o600, content: `${JSON.stringify({ argv: [input.execPath, start], env }, null, 2)}\n` }
+  if (platform === 'win32') {
+    const exe = `"${input.execPath}"`
+    return [
+      { path: nodeLauncher(input.home, platform), mode: 0o755, content: cmdLines('set ELECTRON_RUN_AS_NODE=1', `${exe} %*`) },
+      startJson,
+      { path: join(dir, 'start-bridge.cmd'), mode: 0o755, content: cmdLines('set ELECTRON_RUN_AS_NODE=1', `set SWITCHBOARD_VERSION=${input.version}`, `${exe} "${start}"`) },
+      // Not on PATH by itself: the README says to add this folder.
+      { path: join(dir, 'bin', 'switchboard.cmd'), mode: 0o755, content: cmdLines('set ELECTRON_RUN_AS_NODE=1', `${exe} "${cli}" %*`) },
+    ]
+  }
+  const node = nodeLauncher(input.home, platform)
   return [
     {
       path: node,
       mode: 0o755,
       content: `#!/bin/sh\n# Written by Switchboard ${input.version}: Node from the app itself (src/main/runtime.ts).\nELECTRON_RUN_AS_NODE=1 exec ${quote(input.execPath)} "$@"\n`,
     },
+    startJson,
     {
       path: join(dir, 'start-bridge.sh'),
       mode: 0o755,
-      content: [
-        '#!/bin/sh',
-        `# Written by Switchboard ${input.version} each time it starts (src/main/runtime.ts).`,
-        'SOCK="${CLAUDE_IDE_SOCKET:-$HOME/.claude-ide/bridge.sock}"',
-        'healthy() { curl -sf --max-time 1 --unix-socket "$SOCK" http://bridge/health >/dev/null 2>&1; }',
-        'healthy && exit 0',
-        `SWITCHBOARD_VERSION=${quote(input.version)} nohup ${quote(node)} ${quote(join(input.root, 'bridge', 'server.ts'))} >> "$HOME/.claude-ide/bridge.log" 2>&1 &`,
-        'i=0',
-        'while [ $i -lt 30 ]; do',
-        '  healthy && exit 0',
-        '  sleep 0.1',
-        '  i=$((i + 1))',
-        'done',
-        'echo "bridge did not start; see ~/.claude-ide/bridge.log" >&2',
-        'exit 1',
-        '',
-      ].join('\n'),
+      content: `#!/bin/sh\n# Written by Switchboard ${input.version} each time it starts (src/main/runtime.ts).\nSWITCHBOARD_VERSION=${quote(input.version)} exec ${quote(node)} ${quote(start)}\n`,
     },
-    {
-      path: join(input.home, '.local', 'bin', 'switchboard'),
-      mode: 0o755,
-      content: `#!/bin/sh\nexec ${quote(node)} ${quote(join(input.root, 'scripts', 'switchboard.ts'))} "$@"\n`,
-    },
+    { path: join(input.home, '.local', 'bin', 'switchboard'), mode: 0o755, content: `#!/bin/sh\nexec ${quote(node)} ${quote(cli)} "$@"\n` },
   ]
 }
 

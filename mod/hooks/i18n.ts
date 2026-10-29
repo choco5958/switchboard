@@ -3,6 +3,7 @@ import { ko, type Dict } from './lang/ko.ts'
 import { en } from './lang/en.ts'
 import { ja } from './lang/ja.ts'
 import { zhCN } from './lang/zh-CN.ts'
+import { bridgeFetch } from './link.ts'
 
 // The mod's UI language. It ships alone, so it keeps its own dictionaries
 // (lang/ko.ts is the source; the others are typed against it) and follows the
@@ -92,9 +93,7 @@ let starting: Promise<Lang> | undefined
 export function sessionLang($: Engine): Promise<Lang> {
   starting ??= (async () => {
     try {
-      const home = (await $.process.run(['printenv', 'HOME'])).stdout.trim()
-      const socketPath = (await $.env.get('CLAUDE_IDE_SOCKET').catch(() => undefined)) || `${home}/.claude-ide/bridge.sock`
-      const res = await $.http.fetch('http://bridge/state', { socketPath })
+      const res = await bridgeFetch($, '/state')
       if (!res.ok) return 'ko'
       const lang = langOfState(JSON.parse(res.text) as unknown)
       setLang(lang)

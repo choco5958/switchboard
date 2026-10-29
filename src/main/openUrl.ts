@@ -30,14 +30,28 @@ const { homedir } = require('node:os')
 const { join } = require('node:path')
 const url = process.argv[2] || ''
 const isLocalAddress = (${isLocalAddress.toString()})
+const opener = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]]
 const own = () => {
-  spawn('open', [url], { stdio: 'ignore', detached: true }).unref()
+  spawn(opener[0], opener[1], { stdio: 'ignore', detached: true }).unref()
   process.exit(0)
 }
-if (!isLocalAddress(url)) own()
+// Where the bridge is, as bridge/endpoint.ts reads it: on Windows TCP with a token.
+const where = () => {
+  const dir = join(homedir(), '.claude-ide')
+  if (process.env.CLAUDE_IDE_SOCKET || (process.env.CLAUDE_IDE_TCP !== '1' && process.platform !== 'win32')) {
+    return { socketPath: process.env.CLAUDE_IDE_SOCKET || join(dir, 'bridge.sock'), headers: {} }
+  }
+  try {
+    const saved = JSON.parse(require('node:fs').readFileSync(join(dir, 'bridge.json'), 'utf8'))
+    return { host: '127.0.0.1', port: saved.port, headers: { authorization: 'Bearer ' + saved.token } }
+  } catch {
+    return null
+  }
+}
+const target = isLocalAddress(url) ? where() : null
+if (!target) own()
 else {
-  const socketPath = process.env.CLAUDE_IDE_SOCKET || join(homedir(), '.claude-ide', 'bridge.sock')
-  const req = request({ socketPath, method: 'POST', path: '/dev/open', headers: { 'content-type': 'application/json' } }, res => {
+  const req = request({ ...target, method: 'POST', path: '/dev/open', headers: { ...target.headers, 'content-type': 'application/json' } }, res => {
     res.resume()
     res.on('end', () => (res.statusCode === 200 ? process.exit(0) : own()))
   })

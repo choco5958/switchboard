@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { AccountInfo, CcrSlot } from '../shared/types'
+import { loginShell } from './shell'
 
 // The signed-in Claude account for the top bar. Display only: the email never leaves this machine.
 
@@ -156,7 +157,8 @@ export function readAccountInfo(paths = ccrPaths(), now = Date.now()): AccountIn
 // usage-N.json. A login shell, since an app started from Finder has no PATH to claude or ccr.
 function measureCcr(ccr: string): Promise<void> {
   return new Promise(resolve => {
-    execFile(process.env.SHELL || '/bin/zsh', ['-l', '-c', `${ccr} status -s`], { timeout: 60_000 }, () => resolve())
+    const shell = loginShell()
+    execFile(shell.file, shell.command(`${ccr} status -s`), { timeout: 60_000 }, () => resolve())
   })
 }
 

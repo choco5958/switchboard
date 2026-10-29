@@ -1,5 +1,6 @@
 import type { EngineInterface as Engine, On } from 'claude-code'
 import { currentLang, sessionLang, t } from './i18n.ts'
+import { bridgeFetch } from './link.ts'
 import { openBody, openResultText, openToolDef, type OpenArgs, type Reply } from './tools.ts'
 
 export { openBody, openResultText, type OpenArgs }
@@ -10,15 +11,11 @@ export { openBody, openResultText, type OpenArgs }
 
 export const OPEN_TOOL = 'open_in_ide'
 
-let home = ''
-
 async function post($: Engine, path: string, body: unknown): Promise<Reply> {
-  if (!home) home = (await $.process.run(['printenv', 'HOME'])).stdout.trim()
-  const res = await $.http.fetch(`http://bridge${path}`, {
+  const res = await bridgeFetch($, path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    socketPath: `${home}/.claude-ide/bridge.sock`,
   })
   let json: Record<string, unknown> = {}
   try {

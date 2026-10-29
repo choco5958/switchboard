@@ -3,14 +3,14 @@ import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, 
 import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
+import { bridgeFetch, startArgv, streamArgv } from './link.ts'
 import { BROWSER_TOOLS, cancelText, peersText, sentText, toolDefs, type Peer } from './tools.ts'
 
 // The mod connects this Claude Code session to the Switchboard bridge:
-// questions and task state go out over the bridge's Unix socket, and answers
-// come back through a subscription the mod keeps open (curl over the socket),
-// each one entering the session as a prompt.
+// questions and task state go out over the bridge's socket (TCP on Windows: link.ts),
+// and answers come back through a subscription the mod keeps open (curl), each one
+// entering the session as a prompt.
 
-const BASE = 'http://bridge'
 // A prompt the session refused (a hook's drop) is tried again after this long.
 const SUBMIT_RETRY_MS = 30000
 // Store keys of a session not seen for two weeks are removed (it crashed before session.end).
@@ -29,8 +29,6 @@ function storeKey(kind: StoreKind, id = sessionId): string {
 
 type Reply = { ok: boolean; status: number; json: Record<string, unknown> }
 
-let home = ''
-let socket = ''
 let sessionId = ''
 let cwd = ''
 let subscribed = false
@@ -64,16 +62,11 @@ const ACTIVITY_BEAT_MS = 15_000
 // How long a permission ask waits for the person away from the desk before the terminal asks.
 const APPROVAL_WAIT_MS = 6 * 3600_000
 
-function socketPath(): string {
-  return socket || `${home}/.claude-ide/bridge.sock`
-}
-
 async function call($: Engine, method: string, path: string, body?: unknown): Promise<Reply> {
-  const res = await $.http.fetch(`${BASE}${path}`, {
+  const res = await bridgeFetch($, path, {
     method,
     headers: { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
-    socketPath: socketPath(),
   })
   let json: Record<string, unknown> = {}
   try {
@@ -128,7 +121,8 @@ async function createWorktree($: Engine, task: string, key: string, base?: strin
 }
 
 async function ensureBridge($: Engine): Promise<boolean> {
-  const started = await $.process.run(['sh', `${home}/.claude-ide/start-bridge.sh`], { timeoutMs: 10000 })
+  const start = await startArgv($)
+  const started = await $.process.run(start.argv, { timeoutMs: 10000, env: start.env })
   if (started.exitCode !== 0) $.ui.log(t(currentLang(), 'log.bridgeStart', { error: started.stderr }), { to: 'debug' })
   return started.exitCode === 0
 }
@@ -158,7 +152,7 @@ async function listenOnce($: Engine): Promise<boolean> {
   let connected = false
   try {
     const stream = $.process.spawn({
-      argv: ['curl', '-sN', '--unix-socket', socketPath(), `${BASE}/deliveries?session=${sessionId}`],
+      argv: await streamArgv($, `/deliveries?session=${sessionId}`),
     })
     let buffer = ''
     for await (const piece of stream) {
@@ -451,9 +445,6 @@ export const register: Register = on => {
   registerDevtool(on)
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    home = (await $.process.run(['printenv', 'HOME'])).stdout.trim()
-    // The IDE and start-bridge.sh honour CLAUDE_IDE_SOCKET; so does the mod.
-    socket = (await $.env.get('CLAUDE_IDE_SOCKET').catch(() => undefined)) || `${home}/.claude-ide/bridge.sock`
     sessionId = await $.session.id()
     cwd = e.cwd
     await restore($).catch(() => undefined)

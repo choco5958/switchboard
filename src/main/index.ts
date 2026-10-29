@@ -18,6 +18,7 @@ import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
 import { copyRuntime, staleBridge, writeRuntime } from './runtime'
 import { startUpdates } from './updater'
+import { requestTarget, resolveEndpoint, startCommand } from '../../bridge/endpoint.ts'
 import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled } from './notify'
 import { STALL_MS, stalledSessions } from '../shared/stall'
 import { limitedUntil } from '../shared/limit'
@@ -25,7 +26,8 @@ import { netEntry, type PageLogEntry } from '../shared/pageLog'
 import { resolveLang, setLang, t } from '../shared/i18n'
 
 const DIR = join(homedir(), '.claude-ide')
-const SOCKET = process.env.CLAUDE_IDE_SOCKET ?? join(DIR, 'bridge.sock')
+// Where the bridge is: a Unix socket, or TCP with a token on Windows (bridge/endpoint.ts).
+const target = () => requestTarget(resolveEndpoint())
 const RETRY_MS = 2000
 
 let win: BrowserWindow | null = null
@@ -38,8 +40,9 @@ const APP_URL = process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(join(import.m
 const ipcMain = guardIpc(rawIpcMain, event => isAppUrl(event.senderFrame?.url, APP_URL))
 
 function startBridge(): Promise<boolean> {
+  const start = startCommand()
   return new Promise(resolve => {
-    execFile('sh', [join(DIR, 'start-bridge.sh')], error => resolve(error === null))
+    execFile(start.argv[0]!, start.argv.slice(1), { env: { ...process.env, ...start.env } }, error => resolve(error === null))
   })
 }
 
@@ -68,7 +71,7 @@ async function prepareRuntime(): Promise<void> {
 function call(method: string, path: string, body?: unknown): Promise<Reply> {
   return new Promise(resolve => {
     const req = request(
-      { socketPath: SOCKET, method, path, headers: { 'content-type': 'application/json' } },
+      { ...target(), method, path, headers: { ...target().headers, 'content-type': 'application/json' } },
       res => {
         let text = ''
         res.setEncoding('utf8')
@@ -256,7 +259,7 @@ function watch(): void {
   powerMonitor.on('unlock-screen', reportPresence)
   powerMonitor.on('resume', reportPresence)
   watchBridge({
-    socketPath: SOCKET,
+    target,
     retryMs: RETRY_MS,
     onConnection: up => {
       connected = up
@@ -375,7 +378,7 @@ registerTerminals(ipcMain, send)
 registerAccount(ipcMain, () => ccrPath())
 // Feature area: agent CLIs other than Claude Code. Their terminals, and answers typed into them.
 registerAgentTerms(ipcMain, call)
-const agentDelivery = startAgentDelivery({ socketPath: SOCKET, call, terminal: typingTarget })
+const agentDelivery = startAgentDelivery({ target, call, terminal: typingTarget })
 onTerminalsChange(() => void agentDelivery.refresh())
 
 // Drawn by scripts/icon.mjs.
