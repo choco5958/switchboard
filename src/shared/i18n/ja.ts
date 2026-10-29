@@ -724,6 +724,7 @@ export const ja: Dict = {
   'bridge.peer.forwardNotOpen': 'Q{id} は回答済みか、回せない質問です',
   'bridge.peer.chainFull': 'この依頼から始まった委任はすでに {max} 回です。これ以上任せず、いまある結果でまとめるか、ask_decision で人に聞いてください',
   'bridge.peer.notYours': '{id} はこのセッションが送った依頼ではありません',
+  'bridge.appOnly': 'アプリからしかできない操作です (権限の確認への回答、不在、Telegram、予約、設定、セッション操作)',
   'bridge.peer.tooOften': '同じセッションへの依頼が 30 分で {max} 回を超えました。やり取りを止め、いまある結果でまとめるか人に聞いてください',
   'bridge.tooLarge': 'リクエストの本文が大きすぎます',
   'bridge.badPath': 'パスに . や .. 、エンコードされた区切り文字は使えません',

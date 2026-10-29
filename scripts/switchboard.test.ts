@@ -9,11 +9,11 @@ import { EXIT, duration, parseArgs, resolveSession, run } from './switchboard.ts
 
 const dir = mkdtempSync(join(tmpdir(), 'sb-cli-'))
 const socketPath = join(dir, 'b.sock')
-const bridge = createBridge(join(dir, 'ide.db'), 'ko-KR')
+const bridge = createBridge(join(dir, 'ide.db'), 'ko-KR', { appKey: 'a'.repeat(64) })
 
 function call(method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ status: number; json: any }> {
   return new Promise((resolve, reject) => {
-    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json' } }, res => {
+    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json', 'x-switchboard-app': 'a'.repeat(64) } }, res => {
       let text = ''
       res.on('data', chunk => (text += chunk))
       res.on('end', () => resolve({ status: res.statusCode ?? 0, json: text ? JSON.parse(text) : {} }))

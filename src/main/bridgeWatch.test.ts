@@ -7,13 +7,16 @@ import { takeFrames, watchBridge } from './bridgeWatch'
 
 const SERVER = join(import.meta.dirname, '../../bridge/server.ts')
 
-// A real bridge process on a short throwaway socket, as the app would see it.
+const APP_KEY = 'c'.repeat(64)
+
+// A real bridge process on a short throwaway socket, as the app starts it: its key on stdin.
 function startBridge(socketPath: string, db: string): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [SERVER], {
-      env: { ...process.env, CLAUDE_IDE_SOCKET: socketPath, CLAUDE_IDE_DB: db },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, CLAUDE_IDE_SOCKET: socketPath, CLAUDE_IDE_DB: db, SWITCHBOARD_APP_KEY_STDIN: '1' },
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
+    child.stdin?.end(`${APP_KEY}\n`)
     let out = ''
     child.stdout?.on('data', (chunk: Buffer) => {
       out += chunk.toString()
@@ -26,7 +29,7 @@ function startBridge(socketPath: string, db: string): Promise<ChildProcess> {
 
 function post(socketPath: string, path: string, body: unknown): Promise<number> {
   return new Promise(resolve => {
-    const req = request({ socketPath, method: 'POST', path, headers: { 'content-type': 'application/json' } }, res => {
+    const req = request({ socketPath, method: 'POST', path, headers: { 'content-type': 'application/json', 'x-switchboard-app': APP_KEY } }, res => {
       res.resume()
       res.on('end', () => resolve(res.statusCode ?? 0))
     })

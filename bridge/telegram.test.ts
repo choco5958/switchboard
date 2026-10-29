@@ -39,7 +39,7 @@ let bridge: ReturnType<typeof createBridge>
 
 function call(method: string, path: string, body?: unknown): Promise<{ status: number; json: any }> {
   return new Promise((resolve, reject) => {
-    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json' } }, res => {
+    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json', 'x-switchboard-app': 'a'.repeat(64) } }, res => {
       let text = ''
       res.on('data', chunk => (text += chunk))
       res.on('end', () => resolve({ status: res.statusCode ?? 0, json: text ? JSON.parse(text) : {} }))
@@ -58,7 +58,7 @@ const sent = (method: string) => calls.filter(c => c.method === method)
 
 before(async () => {
   await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', resolve))
-  bridge = createBridge(join(dir, 'ide.db'), 'ko-KR', { telegramApi: `http://127.0.0.1:${(fake.address() as AddressInfo).port}` })
+  bridge = createBridge(join(dir, 'ide.db'), 'ko-KR', { telegramApi: `http://127.0.0.1:${(fake.address() as AddressInfo).port}`, appKey: 'a'.repeat(64) })
   await listen(bridge.server, socketPath)
   await call('POST', '/sessions', { id: 'tg-1', cwd: '/w/shop' })
 })

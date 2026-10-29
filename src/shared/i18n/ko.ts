@@ -723,6 +723,7 @@ export const ko = {
   'bridge.peer.forwardNotOpen': 'Q{id}는 이미 답했거나 넘길 수 없는 질문입니다',
   'bridge.peer.chainFull': '이 요청에서 시작된 위임이 이미 {max}번입니다. 더 맡기지 말고 지금까지의 결과로 마무리하거나, ask_decision으로 사람에게 물어보세요',
   'bridge.peer.notYours': '{id}는 이 세션이 보낸 요청이 아닙니다',
+  'bridge.appOnly': '앱에서만 할 수 있는 일입니다 (권한 확인 답, 자리 비움, Telegram, 예약, 설정, 세션 제어)',
   'bridge.peer.tooOften': '같은 세션에 30분 동안 {max}번 넘게 요청했습니다. 주고받기를 멈추고 지금까지의 결과로 마무리하거나 사람에게 물어보세요',
   'bridge.tooLarge': '요청 본문이 너무 큽니다',
   'bridge.badPath': '경로에 . 이나 .. 또는 인코딩된 구분자를 쓸 수 없습니다',

@@ -724,6 +724,7 @@ export const en: Dict = {
   'bridge.peer.forwardNotOpen': 'Q{id} is answered already or cannot be handed on',
   'bridge.peer.chainFull': 'Work that started from this request has been handed to other sessions {max} times already. Do not hand it on again: finish with what you have, or ask a person with ask_decision',
   'bridge.peer.notYours': '{id} is not a request this session sent',
+  'bridge.appOnly': 'Only the app can do this (permission answers, away status, Telegram, schedules, settings, session control)',
   'bridge.peer.tooOften': 'More than {max} requests to the same session within 30 minutes. Stop the back and forth: finish with what you have, or ask a person',
   'bridge.tooLarge': 'The request body is too large',
   'bridge.badPath': 'A path may not hold . or .. segments or encoded separators',

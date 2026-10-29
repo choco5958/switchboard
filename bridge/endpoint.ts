@@ -9,6 +9,9 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+// The header the app proves itself with on the person-only routes (bridge/server.ts appOnly).
+export const APP_HEADER = 'x-switchboard-app'
+
 export type Endpoint = { kind: 'socket'; path: string } | { kind: 'tcp'; port: number; token: string }
 
 type Env = Record<string, string | undefined>

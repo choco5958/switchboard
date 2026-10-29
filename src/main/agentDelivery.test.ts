@@ -10,11 +10,11 @@ import { startAgentDelivery, typePrompt, typedSessions } from './agentDelivery'
 
 const dir = mkdtempSync(join(tmpdir(), 'sb-deliv-'))
 const socketPath = join(dir, 'bridge.sock')
-const bridge = createBridge(join(dir, 'ide.db'))
+const bridge = createBridge(join(dir, 'ide.db'), undefined, { appKey: 'a'.repeat(64) })
 
 function call(method: string, path: string, body?: unknown): Promise<Reply> {
   return new Promise(resolve => {
-    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json' } }, res => {
+    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json', 'x-switchboard-app': 'a'.repeat(64) } }, res => {
       let text = ''
       res.on('data', chunk => (text += chunk))
       res.on('end', () => resolve({ ok: (res.statusCode ?? 0) < 300, status: res.statusCode ?? 0, json: JSON.parse(text) }))

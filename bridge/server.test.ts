@@ -8,11 +8,13 @@ import { createBridge, deliveryText, listen, nodeEventText, projectName } from '
 
 const dir = mkdtempSync(join(tmpdir(), 'claude-ide-'))
 const socketPath = join(dir, 'bridge.sock')
-const bridge = createBridge(join(dir, 'ide.db'), 'ko-KR')
+// The app's key: the person-only routes (appOnly) answer only it.
+const APP_KEY = 'a'.repeat(64)
+const bridge = createBridge(join(dir, 'ide.db'), 'ko-KR', { appKey: APP_KEY })
 
 function call(method: string, path: string, body?: unknown): Promise<{ status: number; json: any }> {
   return new Promise((resolve, reject) => {
-    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json' } }, res => {
+    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json', 'x-switchboard-app': APP_KEY } }, res => {
       let text = ''
       res.on('data', chunk => (text += chunk))
       res.on('end', () => resolve({ status: res.statusCode ?? 0, json: JSON.parse(text) }))
@@ -874,6 +876,37 @@ describe('messages between sessions', () => {
 })
 
 describe('hardening', () => {
+  test('the person-only routes answer only the app key, whoever else reaches the socket', async () => {
+    const asOther = (method: string, path: string, body: unknown): Promise<number> =>
+      new Promise((resolve, reject) => {
+        const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json', 'x-switchboard-app': 'b'.repeat(64) } }, res => {
+          res.resume()
+          res.on('end', () => resolve(res.statusCode ?? 0))
+        })
+        req.on('error', reject)
+        req.end(JSON.stringify(body))
+      })
+    await call('POST', '/sessions', { id: 'ak', cwd: '/w/ak' })
+    const ask = (await call('POST', '/approvals', { sessionId: 'ak', tool: 'Bash', summary: 'rm -rf /tmp/x', requestKey: 'toolu_ak' })).json.id
+    for (const [method, path, body] of [
+      ['POST', `/approvals/${ask}/answer`, { decision: 'allow' }],
+      ['POST', '/presence', { away: true }],
+      ['POST', '/settings', { key: 'customAgents', value: [] }],
+      ['GET', '/telegram', undefined],
+      ['POST', '/telegram/token', { token: null }],
+      ['POST', '/routines', { name: 'x' }],
+      ['POST', '/commands', { sessionId: 'ak', kind: 'transcript' }],
+      ['GET', '/app/check', undefined],
+    ] as const) assert.equal(await asOther(method, path, body), 403, path)
+    assert.equal((await call('GET', `/approvals/${ask}`)).json.status, 'pending')
+    // Questions, messages and waits stay open to the switchboard command.
+    const q = (await call('POST', '/questions', { sessionId: 'ak', question: '계속?', options: [{ key: 'a', label: '예' }] })).json
+    assert.equal(await asOther('POST', `/questions/${q.id}/answer`, { choice: 'a' }), 200)
+    assert.equal((await call('GET', '/health')).json.app, true)
+    await call('POST', `/approvals/${ask}/answer`, { decision: 'deny' })
+    await call('POST', '/deliveries/take', { sessionId: 'ak' })
+  })
+
   const raw = (method: string, path: string, body?: string): Promise<number> =>
     new Promise((resolve, reject) => {
       const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json' } }, res => {

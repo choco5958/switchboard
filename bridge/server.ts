@@ -11,7 +11,7 @@ import type { AddressInfo } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
-import { curlConfigFile, endpointFile, ideDir, usesTcp } from './endpoint.ts'
+import { APP_HEADER, curlConfigFile, endpointFile, ideDir, usesTcp } from './endpoint.ts'
 import type { Activity } from '../src/shared/stall.ts'
 import { limitedUntil } from '../src/shared/limit.ts'
 import { maskSecrets } from '../src/shared/pageLog.ts'
@@ -329,7 +329,27 @@ export function systemLocale(): string {
 }
 
 // `token`: the bridge listens on TCP (bridge/endpoint.ts) and answers only requests that carry it.
-export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch; token?: string }
+// `appKey`: what the app proves itself with (appOnly); the app hands it over at the start.
+export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch; token?: string; appKey?: string }
+
+// What only the person may do, through the app: answer a permission ask, say they are away,
+// set up Telegram, schedule prompts, change settings, control sessions and read their
+// transcripts. Any program of the same user reaches the bridge, a session with a shell too;
+// without the app's key these refuse. Answers to decision questions, messages and waits stay
+// open to the switchboard command.
+export function appOnly(method: string, path: string): boolean {
+  if (path === '/telegram' || path.startsWith('/telegram/') || path === '/app/check') return true
+  if (method === 'GET') return /^\/commands\/\d+$/.test(path)
+  return (
+    /^\/approvals\/\d+\/answer$/.test(path) ||
+    path === '/presence' ||
+    path === '/settings' ||
+    path === '/commands' ||
+    path === '/routines' ||
+    /^\/routines\/\d+\/(run|delete)$/.test(path)
+  )
+}
+
 
 export function createBridge(dbPath: string, locale = systemLocale(), options: BridgeOptions = {}) {
   privateDir(dirname(dbPath))
@@ -921,7 +941,12 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     }
 
     // The installed app's start script names its version: an app updated since replaces this bridge.
-    if (method === 'GET' && path === '/health') return send(res, 200, { ok: true, version: process.env.SWITCHBOARD_VERSION ?? '', pid: process.pid })
+    // `app`: whether the app started it with its key; one started by a mod has none.
+    if (method === 'GET' && path === '/health') return send(res, 200, { ok: true, version: process.env.SWITCHBOARD_VERSION ?? '', pid: process.pid, app: options.appKey !== undefined })
+    if (appOnly(method, path) && !(options.appKey !== undefined && sameSecret(String(req.headers[APP_HEADER] ?? ''), options.appKey))) {
+      return send(res, 403, { error: say('bridge.appOnly') })
+    }
+    if (method === 'GET' && path === '/app/check') return send(res, 200, { ok: true })
     if (method === 'GET' && path === '/state') return send(res, 200, state())
 
     if (method === 'GET' && path === '/stream') {
@@ -1959,9 +1984,22 @@ export async function listen(server: Server, socketPath: string): Promise<void> 
   chmodSync(socketPath, 0o600)
 }
 
+// The app's key comes on standard input, never in the environment or a file another program reads.
+async function keyFromStdin(): Promise<string | undefined> {
+  if (process.env.SWITCHBOARD_APP_KEY_STDIN !== '1') return undefined
+  let text = ''
+  for await (const chunk of process.stdin) {
+    text += String(chunk)
+    if (text.includes('\n') || text.length > 200) break
+  }
+  const key = text.split('\n')[0]!.trim()
+  return /^[0-9a-f]{64}$/.test(key) ? key : undefined
+}
+
 if (import.meta.main) {
   const token = usesTcp() ? newToken() : undefined
-  const bridge = createBridge(defaultDbPath(), undefined, { token })
+  const appKey = await keyFromStdin()
+  const bridge = createBridge(defaultDbPath(), undefined, { token, appKey })
   try {
     let where = defaultSocketPath()
     if (token === undefined) await listen(bridge.server, where)

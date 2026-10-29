@@ -12,13 +12,13 @@ import { answerLine, mcpTools, createSession, parseOptions, takenText, type Repl
 
 const dir = mkdtempSync(join(tmpdir(), 'sb-mcp-'))
 const socketPath = join(dir, 'bridge.sock')
-const bridge = createBridge(join(dir, 'ide.db'))
+const bridge = createBridge(join(dir, 'ide.db'), undefined, { appKey: 'a'.repeat(64) })
 const SERVER = join(import.meta.dirname, 'server.ts')
 const children: ChildProcessWithoutNullStreams[] = []
 
 function call(method: string, path: string, body?: unknown): Promise<{ status: number; json: any }> {
   return new Promise((resolve, reject) => {
-    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json' } }, res => {
+    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json', 'x-switchboard-app': 'a'.repeat(64) } }, res => {
       let text = ''
       res.on('data', chunk => (text += chunk))
       res.on('end', () => resolve({ status: res.statusCode ?? 0, json: JSON.parse(text) }))

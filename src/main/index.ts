@@ -1,8 +1,8 @@
 import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, Notification, powerMonitor, session, shell } from 'electron'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { BridgeState, Reply, WorktreeCheck } from '../shared/types'
@@ -18,7 +18,8 @@ import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
 import { copyRuntime, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
 import { startUpdates } from './updater'
-import { requestTarget, resolveEndpoint, startCommand } from '../../bridge/endpoint.ts'
+import { APP_HEADER, requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
+import { loadAppKey } from './appKey'
 import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled } from './notify'
 import { STALL_MS, stalledSessions } from '../shared/stall'
 import { limitedUntil } from '../shared/limit'
@@ -39,11 +40,47 @@ let connected = false
 const APP_URL = process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(join(import.meta.dirname, '../renderer/index.html')).href
 const ipcMain = guardIpc(rawIpcMain, event => isAppUrl(event.senderFrame?.url, APP_URL))
 
-function startBridge(): Promise<boolean> {
-  const start = startCommand()
-  return new Promise(resolve => {
-    execFile(start.argv[0]!, start.argv.slice(1), { env: { ...process.env, ...start.env } }, error => resolve(error === null))
+// The app's key for the person-only routes (src/main/appKey.ts), read once the app is ready.
+let appKey = ''
+
+// A bridge of the app's own: run on the app's Node, the key on its standard input. One a mod
+// or the switchboard command started has no key, and one of another version is out of date;
+// either is replaced, which drops and brings back every session's stream once.
+async function launchBridge(): Promise<boolean> {
+  mkdirSync(DIR, { recursive: true, mode: 0o700 })
+  const log = openSync(join(DIR, 'bridge.log'), 'a')
+  const child = spawn(process.env.APPIMAGE ?? process.execPath, [join(nodeRoot(), 'bridge', 'server.ts')], {
+    detached: true,
+    windowsHide: true,
+    stdio: ['pipe', log, log],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_VERSION: app.isPackaged ? app.getVersion() : '', SWITCHBOARD_APP_KEY_STDIN: '1' },
   })
+  child.stdin?.end(`${appKey}\n`)
+  child.unref()
+  for (let i = 0; i < 50; i++) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+    if ((await call('GET', '/app/check')).ok) return true
+  }
+  return false
+}
+
+async function stopBridge(pid: number): Promise<void> {
+  try {
+    process.kill(pid)
+  } catch {
+    return
+  }
+  for (let i = 0; i < 30 && (await call('GET', '/health')).ok; i++) await new Promise(resolve => setTimeout(resolve, 100))
+}
+
+async function startBridge(): Promise<boolean> {
+  const health = await call('GET', '/health')
+  if (health.ok) {
+    const outdated = app.isPackaged && staleBridge(health.json, app.getVersion()) !== null
+    if (!outdated && (await call('GET', '/app/check')).ok) return true
+    if (typeof health.json.pid === 'number') await stopBridge(health.json.pid)
+  }
+  return launchBridge()
 }
 
 // The installed app writes the launchers for this copy of itself (src/main/runtime.ts) and
@@ -58,21 +95,12 @@ async function prepareRuntime(): Promise<void> {
   } catch (error) {
     console.error('could not write the launchers:', error)
   }
-  const health = await call('GET', '/health')
-  const pid = health.ok ? staleBridge(health.json, app.getVersion()) : null
-  if (pid === null) return
-  try {
-    process.kill(pid, 'SIGTERM')
-  } catch {
-    return
-  }
-  for (let i = 0; i < 30 && (await call('GET', '/health')).ok; i++) await new Promise(resolve => setTimeout(resolve, 100))
 }
 
 function call(method: string, path: string, body?: unknown): Promise<Reply> {
   return new Promise(resolve => {
     const req = request(
-      { ...target(), method, path, headers: { ...target().headers, 'content-type': 'application/json' } },
+      { ...target(), method, path, headers: { ...target().headers, 'content-type': 'application/json', [APP_HEADER]: appKey } },
       res => {
         let text = ''
         res.setEncoding('utf8')
@@ -465,6 +493,7 @@ app.whenReady().then(async () => {
   setLang(resolveLang(undefined, app.getLocale()))
   if (process.env.CLAUDE_IDE_CAPTURE) app.dock?.hide()
   else app.dock?.setIcon(nativeImage.createFromPath(ICON))
+  appKey = loadAppKey(join(app.getPath('userData'), 'app-key.bin'))
   await prepareRuntime()
   await startBridge()
   createWindow()

@@ -724,6 +724,7 @@ export const zhCN: Dict = {
   'bridge.peer.forwardNotOpen': 'Q{id} 已回答或无法转交',
   'bridge.peer.chainFull': '由这个请求开始的委派已达 {max} 次。不要再转交，用现有结果收尾，或用 ask_decision 询问用户',
   'bridge.peer.notYours': '{id} 不是本会话发出的请求',
+  'bridge.appOnly': '只能在应用中执行 (权限确认、离开状态、Telegram、定时、设置、会话控制)',
   'bridge.peer.tooOften': '30 分钟内向同一会话发出的请求超过 {max} 次。请停止来回转交，用现有结果收尾或询问用户',
   'bridge.tooLarge': '请求正文过大',
   'bridge.badPath': '路径中不能包含 . 或 .. 段或编码后的分隔符',
