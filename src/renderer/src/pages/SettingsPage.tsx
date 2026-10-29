@@ -4,6 +4,7 @@ import { LANGS, isLang, resolveLang, t, type Lang } from '../../../shared/i18n'
 import { useToast } from '../parts'
 import { AgentSettings } from './AgentSettings'
 import { RoutinesSection } from './RoutinesSection'
+import { TelegramSection } from './TelegramSection'
 import type { Routine, RoutineRun } from '../../../shared/types'
 import type { ProjectInfo } from '../../../shared/projects'
 
@@ -133,6 +134,7 @@ export function SettingsPage({
       </div>
       <AgentSettings settings={settings} />
       <RoutinesSection routines={routines} runs={runs} projects={projects} />
+      <TelegramSection />
       <section className="settings-row settings-dev">
         <h2>{t('settings.dev')}</h2>
         <label className="check-row">

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, Notification, session, shell } from 'electron'
+import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, Notification, powerMonitor, session, shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
@@ -193,16 +193,33 @@ function scheduleScan(): void {
 // and the renderer refetches /state (also on the 'connected' event after a
 // reconnect). On loss the app shows the bridge as down at once, restarts it and
 // subscribes again.
+// Away from the desk: the screen locked, or no keyboard and mouse for five minutes. The
+// bridge writes to Telegram only then (bridge/telegram.ts); an old report counts as away.
+const AWAY_IDLE_SECONDS = 300
+function reportPresence(): void {
+  const state = powerMonitor.getSystemIdleState(AWAY_IDLE_SECONDS)
+  void call('POST', '/presence', { away: state === 'idle' || state === 'locked' }).catch(() => undefined)
+}
+
 function watch(): void {
   // A stall is the absence of events, so the state is also read now and then without one.
-  setInterval(scheduleScan, 30_000).unref()
+  setInterval(() => {
+    scheduleScan()
+    reportPresence()
+  }, 30_000).unref()
+  powerMonitor.on('lock-screen', reportPresence)
+  powerMonitor.on('unlock-screen', reportPresence)
+  powerMonitor.on('resume', reportPresence)
   watchBridge({
     socketPath: SOCKET,
     retryMs: RETRY_MS,
     onConnection: up => {
       connected = up
       send('bridge:connection', up)
-      if (up) scheduleScan()
+      if (up) {
+        scheduleScan()
+        reportPresence()
+      }
       else app.dock?.setBadge('')
     },
     onEvent: event => {

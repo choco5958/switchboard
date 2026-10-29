@@ -13,6 +13,7 @@ import type { Activity } from '../src/shared/stall.ts'
 import { limitedUntil } from '../src/shared/limit.ts'
 import { HELD_REPLY_MS, PEER_RECIPIENTS_MAX, clipText, forwardText, forwardedAnswer, peerText, routineText, shellText, waitText, type PeerRow } from './peer.ts'
 import { nextRun, parseSchedule, type Schedule } from './schedule.ts'
+import { TELEGRAM_API, createTelegram } from './telegram.ts'
 import { eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
 
 export type Option = { key: string; label: string }
@@ -140,6 +141,8 @@ create table if not exists routine_runs (
   opened integer not null default 0
 );
 create index if not exists routine_runs_routine on routine_runs (routine_id, id);
+create table if not exists secrets (key text primary key, value text not null);
+create table if not exists telegram_messages (question_id integer primary key, message_id integer not null, created_at integer not null);
 create table if not exists waits (
   id integer primary key, session_id text not null, note text not null,
   created_at integer not null, fired_at integer, closed_at integer, payload text not null default ''
@@ -265,7 +268,9 @@ export function systemLocale(): string {
   return Intl.DateTimeFormat().resolvedOptions().locale
 }
 
-export function createBridge(dbPath: string, locale = systemLocale()) {
+export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch }
+
+export function createBridge(dbPath: string, locale = systemLocale(), options: BridgeOptions = {}) {
   privateDir(dirname(dbPath))
   const db = new DatabaseSync(dbPath)
   db.exec('pragma journal_mode = wal;')
@@ -400,14 +405,51 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       m => !heldReply(m),
     )
 
-  const answerQuestion = (q: QuestionRow, choice: string | null, memo: string | null) => {
+  const answerQuestion = (q: QuestionRow, choice: string | null, memo: string | null, via: 'app' | 'telegram' = 'app') => {
     db.prepare(
       "update questions set status = 'answered', choice = ?, memo = ?, answered_at = ?, delivered = 0 where id = ?",
     ).run(choice, memo, now(), q.id)
     logEvent(q.session_id, '답함', `Q${q.id} ${choice ? `(${choice})` : say('history.memo')} ${q.question}`, q.task_title)
     changed('questions')
     pushDeliveries(q.session_id)
+    if (via !== 'telegram') telegram.answeredElsewhere(q, choice, memo)
   }
+
+  // The person's presence at the desk, from the app (POST /presence): away when the app is
+  // closed, its report is old, or it says so (screen locked, idle). Telegram writes only then.
+  let presence = { away: false, at: 0 }
+  const away = () => watchers.size === 0 || presence.away || now() - presence.at > 90_000
+  const secret = (key: string) => (db.prepare('select value from secrets where key = ?').get(key) as { value: string } | undefined)?.value ?? null
+  const setSecret = (key: string, value: string | null) => {
+    if (value === null) db.prepare('delete from secrets where key = ?').run(key)
+    else db.prepare('insert into secrets (key, value) values (?, ?) on conflict (key) do update set value = excluded.value').run(key, value)
+  }
+  const telegram = createTelegram({
+    api: options.telegramApi ?? TELEGRAM_API,
+    fetch: options.fetch ?? fetch,
+    secret,
+    setSecret,
+    lang: langNow,
+    away,
+    pending: () => db.prepare("select * from questions where status = 'pending' order by id").all() as QuestionRow[],
+    question: id => db.prepare('select * from questions where id = ?').get(id) as QuestionRow | undefined,
+    answer: (id, choice, memo) => {
+      const q = db.prepare('select * from questions where id = ?').get(id) as QuestionRow | undefined
+      if (q && q.status !== 'answered') answerQuestion(q, choice, memo, 'telegram')
+    },
+    hold: id => {
+      const q = db.prepare('select * from questions where id = ?').get(id) as QuestionRow | undefined
+      if (!q || q.status !== 'pending') return
+      db.prepare("update questions set status = 'held' where id = ?").run(id)
+      logEvent(q.session_id, '보류', `Q${id} ${q.question}`, q.task_title)
+      changed('questions')
+    },
+    sentMessage: id => (db.prepare('select message_id from telegram_messages where question_id = ?').get(id) as { message_id: number } | undefined)?.message_id ?? null,
+    saveMessage: (id, messageId) => db.prepare('insert or replace into telegram_messages (question_id, message_id, created_at) values (?, ?, ?)').run(id, messageId, now()),
+    questionOf: messageId => (db.prepare('select question_id from telegram_messages where message_id = ?').get(messageId) as { question_id: number } | undefined)?.question_id ?? null,
+    changed: () => changed('telegram'),
+    log: text => console.log(text),
+  })
 
   // The answer a session gave to a question the person forwarded to it. The person may have
   // answered first; then the late answer only closes the forward.
@@ -666,6 +708,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     }
   }, 60_000)
   releasing.unref()
+  telegram.start()
   tickRoutines()
   const routineTimer = setInterval(() => tickRoutines(), 30_000)
   routineTimer.unref()
@@ -728,8 +771,45 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     if (method === 'GET' && path === '/stream') {
       sse(res)
       watchers.add(res)
-      req.on('close', () => watchers.delete(res))
+      req.on('close', () => {
+        watchers.delete(res)
+        // The app closed: the person is away from it, and what waits goes to Telegram.
+        if (watchers.size === 0) telegram.away()
+      })
       return
+    }
+
+    if (method === 'POST' && path === '/presence') {
+      const body = await readJson(req)
+      const wasAway = away()
+      presence = { away: body.away === true, at: now() }
+      if (!wasAway && away()) telegram.away()
+      return send(res, 200, { away: away() })
+    }
+
+    // Telegram (bridge/telegram.ts), from the app's settings. The token never leaves the bridge.
+    if (method === 'GET' && path === '/telegram') return send(res, 200, telegram.status())
+    if (method === 'POST' && path === '/telegram/token') {
+      const body = await readJson(req)
+      const value = body.token === null ? null : str(body.token).trim()
+      if (value !== null && !/^\d+:[A-Za-z0-9_-]{20,}$/.test(value)) return send(res, 400, { error: say('telegram.badToken') })
+      const result = await telegram.setToken(value)
+      changed('telegram')
+      return send(res, result.ok ? 200 : 400, result.ok ? telegram.status() : { error: result.error })
+    }
+    if (method === 'POST' && path === '/telegram/pair') return send(res, 200, await telegram.pair())
+    if (method === 'POST' && path === '/telegram/unpair') {
+      telegram.unpair()
+      changed('telegram')
+      return send(res, 200, telegram.status())
+    }
+    if (method === 'POST' && path === '/telegram/test') {
+      try {
+        await telegram.test()
+        return send(res, 200, { ok: true })
+      } catch (error) {
+        return send(res, 400, { error: String(error instanceof Error ? error.message : error) })
+      }
     }
 
     if (method === 'GET' && path === '/deliveries') {
@@ -852,6 +932,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       const id = Number(result.lastInsertRowid)
       logEvent(sessionId, '결정 대기', `Q${id} ${question}`, taskTitle)
       changed('questions')
+      telegram.posted(db.prepare('select * from questions where id = ?').get(id) as QuestionRow)
       return send(res, 200, { id })
     }
 
@@ -1450,7 +1531,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     })
   })
 
-  return { server, db, prune, tickRoutines, close: () => { clearInterval(pruning); clearInterval(releasing); clearInterval(routineTimer); server.close(); db.close() } }
+  return { server, db, prune, tickRoutines, close: () => { telegram.stop(); clearInterval(pruning); clearInterval(releasing); clearInterval(routineTimer); server.close(); db.close() } }
 }
 
 function isAnswering(socketPath: string): Promise<boolean> {

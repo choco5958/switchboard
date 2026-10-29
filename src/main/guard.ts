@@ -31,7 +31,7 @@ export function isExternalUrl(url: string): boolean {
 }
 
 // Plain bridge calls from screens that only read or write rows (archive, settings, command results, scheduled prompts).
-const BRIDGE_ROUTES = /^\/(tasks|settings|commands|routines)(\/|$)/
+const BRIDGE_ROUTES = /^\/(tasks|settings|commands|routines|telegram)(\/|$)/
 
 const DEBUG_ROUTES = /^\/(comments|dev\/open|sessions\/live)(\/|$)/
 
