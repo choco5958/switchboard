@@ -43,4 +43,4 @@ jobs:
       - run: pnpm typecheck
       - run: node --import ./scripts/test-env.ts --test bridge/endpoint.test.ts bridge/schedule.test.ts
       # agents.test.ts checks launch lines through /bin/sh.
-      - run: pnpm exec vitest run src/main/shell.test.ts src/main/runtime.test.ts src/shared --exclude src/shared/agents.test.ts
+      - run: pnpm exec vitest run src/main/shell.test.ts src/main/runtime.test.ts src/main/winLaunch.test.ts src/shared --exclude src/shared/agents.test.ts

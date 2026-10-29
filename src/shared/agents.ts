@@ -29,10 +29,23 @@ export type AgentPreset = {
 
 const json = (value: unknown) => JSON.stringify(value)
 
-// A shell word: as it is when it holds nothing the shell would read, else quoted.
-export function shellWord(word: string): string {
-  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : shellQuote(word)
+// A shell word: as it is when it holds nothing the shell would read, else quoted. On Windows
+// the terminals run PowerShell 5.1: a single quote inside is doubled, `@` and `,` mean
+// something bare, and a double quote reaches the program only written as \".
+export function shellWord(word: string, platform: string = process.platform): string {
+  if (platform !== 'win32') return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : shellQuote(word)
+  return /^[A-Za-z0-9_%+=:./\\-]+$/.test(word) ? word : `'${word.replace(/'/g, "''").replace(/"/g, '\\"')}'`
 }
+
+// How a launch line starts the CLI. PowerShell would pick an npm shim's .ps1, which the
+// default execution policy refuses; the .cmd or .exe beside it runs.
+export function commandWord(bin: string, platform: string = process.platform): string {
+  return platform === 'win32' ? `& (Get-Command ${bin} -CommandType Application | Select-Object -First 1).Source` : bin
+}
+
+// TOML for codex's -c: literal strings need no double quotes; a value holding a single quote
+// or a line break falls back to a basic string.
+const tomlString = (value: string) => (/['\r\n]/.test(value) ? json(value) : `'${value}'`)
 
 export const PRESETS: AgentPreset[] = [
   {
@@ -42,9 +55,9 @@ export const PRESETS: AgentPreset[] = [
     install: 'npm i -g @openai/codex',
     docs: 'https://developers.openai.com/codex/mcp',
     how: 'agents.how.codex',
-    // The value of -c is TOML; JSON strings and arrays of strings are valid TOML.
+    // The value of -c is TOML.
     mcp: server => ({
-      args: ['-c', `mcp_servers.${MCP_NAME}.command=${json(server.command)}`, '-c', `mcp_servers.${MCP_NAME}.args=${json(server.args)}`],
+      args: ['-c', `mcp_servers.${MCP_NAME}.command=${tomlString(server.command)}`, '-c', `mcp_servers.${MCP_NAME}.args=[${server.args.map(tomlString).join(',')}]`],
     }),
   },
   {
@@ -168,15 +181,18 @@ export const PLACEHOLDERS = ['server', 'command', 'args', 'args_json', 'config_f
 
 // Every placeholder becomes one or more shell words, already quoted. {server} is the
 // whole command as one word, for CLIs that take a command line and split it at spaces.
-export function fillTemplate(template: string, server: McpServer, configFile: string): string {
+export function fillTemplate(template: string, server: McpServer, configFile: string, platform: string = process.platform): string {
   const config = json({ mcpServers: { [MCP_NAME]: { command: server.command, args: server.args } } })
+  const word = (value: string) => shellWord(value, platform)
+  // Always quoted: these hold spaces or JSON.
+  const quoted = (value: string) => (platform === 'win32' ? `'${value.replace(/'/g, "''").replace(/"/g, '\\"')}'` : shellQuote(value))
   const values: Record<(typeof PLACEHOLDERS)[number], string> = {
-    server: shellQuote([server.command, ...server.args].join(' ')),
-    command: shellWord(server.command),
-    args: server.args.map(shellWord).join(' '),
-    args_json: shellQuote(json(server.args)),
-    config_file: shellWord(configFile),
-    config_json: shellQuote(config),
+    server: quoted([server.command, ...server.args].join(' ')),
+    command: word(server.command),
+    args: server.args.map(word).join(' '),
+    args_json: quoted(json(server.args)),
+    config_file: word(configFile),
+    config_json: quoted(config),
     name: MCP_NAME,
   }
   return template.replace(/\{([a-z_]+)\}/g, (whole, key: string) => (key in values ? values[key as keyof typeof values] : whole))
@@ -187,9 +203,9 @@ export function customConfig(server: McpServer): string {
   return json({ mcpServers: { [MCP_NAME]: { command: server.command, args: server.args } } })
 }
 
-export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string): Launch {
+export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform): Launch {
   const got = preset.mcp?.(server, configFile) ?? {}
-  const words = [preset.bin, ...(got.args ?? []).map(shellWord)]
+  const words = [commandWord(preset.bin, platform), ...(got.args ?? []).map(word => shellWord(word, platform))]
   return {
     line: words.join(' '),
     env: got.env ?? {},
@@ -197,9 +213,9 @@ export function presetLaunch(preset: AgentPreset, server: McpServer, configFile:
   }
 }
 
-export function customLaunch(entry: CustomAgent, server: McpServer, configFile: string): Launch {
+export function customLaunch(entry: CustomAgent, server: McpServer, configFile: string, platform: string = process.platform): Launch {
   if (entry.mcp === 'none') return { line: entry.command, env: {}, files: [] }
-  const filled = fillTemplate(entry.mcp, server, configFile)
+  const filled = fillTemplate(entry.mcp, server, configFile, platform)
   return {
     line: `${entry.command} ${filled}`,
     env: {},

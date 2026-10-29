@@ -30,9 +30,9 @@ describe('preset launch lines', () => {
     expect(words(launch.line)).toEqual([
       'codex',
       '-c',
-      'mcp_servers.switchboard.command="/opt/node/bin/node"',
+      "mcp_servers.switchboard.command='/opt/node/bin/node'",
       '-c',
-      'mcp_servers.switchboard.args=["/app/mcp/server.ts","--agent","codex","--terminal","a1b2c3-t1"]',
+      "mcp_servers.switchboard.args=['/app/mcp/server.ts','--agent','codex','--terminal','a1b2c3-t1']",
     ])
     expect([launch.env, launch.files]).toEqual([{}, []])
   })

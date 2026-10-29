@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { shellQuote } from '../shared/projects'
 import { ccrPaths } from './account'
+import { commandWord } from '../shared/agents'
 
 // The IDE started from an Orca or Claude Code terminal carries the account
 // folder (CLAUDE_CONFIG_DIR); remember it in file so a later start from Finder
@@ -39,14 +40,14 @@ export function ccrPath(env: Record<string, string | undefined> = process.env, e
 }
 
 export function claudeLauncher(env: Record<string, string | undefined> = process.env, exists: (path: string) => boolean = existsSync): string {
-  return ccrPath(env, exists) ?? 'claude'
+  return ccrPath(env, exists) ?? commandWord('claude')
 }
 
 // The command line that starts Claude, optionally on a chosen ccr slot. ccr takes no slot argument:
 // `ccr use N` pins the slot new runs start on, and the run right after starts there when it is free.
 // `use` rewrites the shared state/current, which ccr rewrites on every launch and rotation anyway.
 // Without ccr there are no slots, so the slot is ignored.
-export function claudeLine(launcher: string, pluginDir: string, slot?: number, slots = 4, hasCcr = launcher !== 'claude'): string {
+export function claudeLine(launcher: string, pluginDir: string, slot?: number, slots = 4, hasCcr = launcher !== 'claude' && launcher !== commandWord('claude')): string {
   const run = `${launcher} --plugin-dir ${pluginDir}`
   if (!hasCcr || slot === undefined || !Number.isInteger(slot) || slot < 1 || slot > slots) return run
   // `;` not `&&`: a failed `use` must still open Claude. Two quick launches can both start on the
