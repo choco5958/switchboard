@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import { toolDefs } from '../hooks/tools.ts'
 
 const SURFACES = ['terminal', 'desktop', 'vscode', 'mobile'] as const
 
@@ -560,8 +561,8 @@ test('with lang set to en, the pane, band, prompts and command speak English', a
     presentation: { isFullscreen: true, columns: 200 },
   })
   expect(ran.text).toBe('Opened the Switchboard pane.')
-  // Five tools of register.ts, open_in_ide and the /switchboard command.
-  expect(w.described.length).toBe(7)
+  // The tools of register.ts (toolDefs), open_in_ide and the /switchboard command.
+  expect(w.described.length).toBe(toolDefs('en').length + 2)
   expect(w.described.some(d => d.startsWith('Opens the Switchboard pane'))).toBe(true)
   // English all through, but for the Korean enum values the tools take.
   const enums = /오케스트레이터|작업자|검토자|사용자|하는 중|요구|설계|작업|완료|대기|보관|지금|끝|실패|시험|확인|구현|검토|기타/g

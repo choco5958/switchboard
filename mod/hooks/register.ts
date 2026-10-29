@@ -402,6 +402,12 @@ async function pendingContext($: Engine): Promise<string | undefined> {
   return `${t(lang, 'mod.pending')}\n${lines.join('\n')}`
 }
 
+// A tool whose whole work is one bridge call; its result reads `ok(json)` or the failure.
+async function bridgeTool($: Engine, path: string, body: unknown, ok: (json: Record<string, unknown>) => string): Promise<{ result: string }> {
+  const reply = await call($, 'POST', path, body).catch((error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }))
+  return { result: reply.ok ? ok(reply.json) : t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
+}
+
 async function restateContext($: Engine): Promise<string | undefined> {
   if (!sessionId) return undefined
   const [state, waits] = await Promise.all([
@@ -478,10 +484,6 @@ export const register: Register = on => {
     return { result: sentText(reply.json, expectsReply, currentLang()) }
   }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
 
-  const bridgeTool = async ($: Engine, path: string, body: unknown, ok: (json: Record<string, unknown>) => string) => {
-    const reply = await call($, 'POST', path, body).catch((error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }))
-    return { result: reply.ok ? ok(reply.json) : t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
-  }
   on('tool.call', { tool: 'mcp__ide-bridge__routine_no_update' }, async $ =>
     bridgeTool($, '/routines/report', { sessionId, kind: 'quiet' }, () => t(currentLang(), 'tool.quietOk')),
   ).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
