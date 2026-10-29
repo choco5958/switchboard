@@ -88,4 +88,24 @@ describe('typing for agent CLIs in app terminals', () => {
     expect(row.find(r => r.id === q.id)?.delivered).toBe(1)
     delivery.stop()
   })
+
+  it('an answer taken while the terminal closes stays undelivered', async () => {
+    await call('POST', '/sessions', { id: 'cx-gone', cwd: '/work/app', agent: 'codex', terminal: 'k-t2' })
+    const { target, written } = fakeTerminal()
+    const closing = (method: string, path: string, body?: unknown) =>
+      call(method, path, body).then(reply => {
+        if (path === '/deliveries/take') target.alive = false
+        return reply
+      })
+    const delivery = startAgentDelivery({ socketPath, call: closing, terminal: key => (key === 'k-t2' ? target : undefined), now: () => QUIET_MS * 10, lang: () => 'ko' })
+    await delivery.refresh()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const { json: q } = await call('POST', '/questions', { sessionId: 'cx-gone', question: '지울까', options: [{ key: 'a', label: '예' }] })
+    await call('POST', `/questions/${q.id}/answer`, { choice: 'a' })
+    await new Promise(resolve => setTimeout(resolve, 600))
+    expect(written).toEqual([])
+    const row = (await call('GET', '/state')).json.questions as { id: number; delivered: number }[]
+    expect(row.find(r => r.id === q.id)?.delivered).toBe(0)
+    delivery.stop()
+  })
 })

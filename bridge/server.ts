@@ -435,6 +435,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     if (via !== 'telegram') telegram.answeredElsewhere(q, choice, memo)
   }
 
+  let shuttingDown = false
+
   // A permission ask answered once, from wherever it was first.
   const answerApproval = (row: ApprovalRow, decision: 'allow' | 'deny' | 'terminal' | 'expired', via: string): boolean => {
     const result = db.prepare("update approvals set status = ?, via = ?, answered_at = ? where id = ? and status = 'pending'").run(decision, via, now(), row.id)
@@ -904,7 +906,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       }
       req.on('close', () => {
         set.delete(res)
-        if (set.size > 0) return
+        // Streams close as the bridge shuts down too, after its database.
+        if (set.size > 0 || shuttingDown) return
         changed('sessions')
         // Its process is gone, and the ask with it.
         for (const row of db.prepare("select * from approvals where session_id = ? and status = 'pending'").all(sessionId) as ApprovalRow[]) {
@@ -1580,6 +1583,12 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         ...answers.map(q => ({ id: `q${q.id}`, text: deliveryText(q, langNow()), at: q.answered_at ?? 0 })),
         ...messages.map(m => ({ id: `m${m.id}`, text: outboxText(m), at: m.created_at })),
       ].sort((a, b) => a.at - b.at)
+      // `hold`: the caller types the items first and acknowledges each one after
+      // (/deliveries/<id>/ack), so a terminal that closes in between loses nothing.
+      if (body.hold === true) {
+        answers.length = 0
+        messages.length = 0
+      }
       for (const q of answers) {
         db.prepare('update questions set delivered = 1 where id = ?').run(q.id)
         logEvent(sessionId, '전달', say('bridge.event.answerInjected', { id: q.id }), q.task_title)
@@ -1614,7 +1623,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     })
   })
 
-  return { server, db, prune, tickRoutines, close: () => { telegram.stop(); clearInterval(pruning); clearInterval(releasing); clearInterval(routineTimer); server.close(); db.close() } }
+  return { server, db, prune, tickRoutines, close: () => { shuttingDown = true; telegram.stop(); clearInterval(pruning); clearInterval(releasing); clearInterval(routineTimer); server.close(); db.close() } }
 }
 
 function isAnswering(socketPath: string): Promise<boolean> {
