@@ -928,6 +928,7 @@ export const zhCN: Dict = {
   'mobile.page.terminalHint': '在终端中询问: 把这个请求交还给电脑上的终端，在那里回答。',
   'mobile.page.needChoice': '请选择一个选项或填写备注。',
   'mobile.page.codeHint': '从主屏幕打开时: 请输入电脑应用中二维码旁边的连接码。',
+  'mobile.page.homeNeedsHttps': '添加到主屏幕的 iPhone 应用只能通过 Tailscale HTTPS 地址连接。在同一 Wi-Fi 下，请扫描二维码在 Safari 中打开使用。',
   'mobile.page.codeWrong': '连接码不正确或已过期。请在应用中显示新的二维码。',
   'mobile.page.connect': '连接',
   'mobile.code': '在主屏幕应用(iPhone)中输入此连接码: {code}(10 分钟内有效，仅限一次)',

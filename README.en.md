@@ -231,13 +231,18 @@ The bridge asks Telegram's servers for new messages itself, so there is no port 
 
 1. In Settings > Phone access, turn on `Turn on phone access`. If macOS asks whether to accept incoming connections, choose Allow.
 2. Pick the address the phone opens, type a name for the phone and press `Show a QR code`. On macOS the default is `This computer's name` (`name.local`), which stays when the router hands the computer another address, so the phone does not need pairing again.
-3. Scan the QR code with the phone's camera and open it. Add it to the home screen from the browser's share menu to open it like an app.
+3. Scan the QR code with the phone's camera and open it. The page works right there in the browser.
+
+There is no app store download. Add the page to the home screen and it gets an icon and opens like an app, without the address bar.
+
+- **iPhone**: in Safari, tap Share > Add to Home Screen > Add. The home screen app keeps its own storage apart from Safari, so it asks for a pairing code the first time: type the 8-character code shown next to the QR code in the app (it works once, within 10 minutes). Codes are handed out only over the Tailscale HTTPS address, so if you use the phone on the same Wi-Fi (HTTP) only, keep using the page in Safari instead of adding it to the home screen.
+- **Android**: in Chrome, tap the menu (⋮) > Add to Home screen (or Install app). It shares Chrome's storage, so it needs no pairing again.
 
 Each phone connects on its own, and `Disconnect` in Settings ends one at any time. A QR code nobody used within 10 minutes stops working.
 
 A page opened over the Wi-Fi (an HTTP address) can answer decisions, deny, and send an ask to the terminal. Allowing permission asks and writing to sessions take a page opened at the Tailscale HTTPS address, since whoever controls the network could swap a page sent over HTTP.
 
-**Notifications, and away from home**: with [Tailscale](https://tailscale.com) installed and signed in on the computer and the phone, Settings offers `Turn on Tailscale HTTPS`. It has Tailscale make an HTTPS address under this computer's name, open on your tailnet only. Pair through that address to use the page anywhere, and press `Get notifications on this phone` at the bottom to hear about new decisions and permission asks while you are away. On iPhone, add the page to the home screen and open it from there before turning notifications on. The home screen app keeps its own storage apart from Safari, so it asks for a pairing code the first time: type the 8-character code shown next to the QR code in the app. A page opened over plain HTTP announces new items only while it is open, with a buzz and a count in its title.
+**Notifications, and away from home**: with [Tailscale](https://tailscale.com) installed and signed in on the computer and the phone, Settings offers `Turn on Tailscale HTTPS`. It has Tailscale make an HTTPS address under this computer's name, open on your tailnet only. Pair through that address to use the page anywhere, and press `Get notifications on this phone` at the bottom to hear about new decisions and permission asks while you are away. On iPhone, add the page to the home screen and open it from there before turning notifications on. A page opened over plain HTTP announces new items only while it is open, with a buzz and a count in its title.
 
 Turn off `Accept phones on the same Wi-Fi` to listen on this computer only, for Tailscale HTTPS alone. macOS then does not ask about the firewall either.
 

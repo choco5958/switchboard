@@ -33,6 +33,7 @@ const drafts = new Map()
 // Until the words arrive (the computer may be out of reach), the few the first screens need.
 const FALLBACK = {
   notPaired: 'Scan the QR code in Switchboard on your computer (Settings > Phone access).',
+  homeNeedsHttps: 'A home screen app on iPhone connects only through the Tailscale HTTPS address. On the same Wi-Fi, open the QR link in Safari and use it there.',
   revoked: 'This phone was disconnected. Show a new QR code in the app to connect again.',
   offline: 'Cannot reach the computer. Check that it is on and on the same network.',
 }
@@ -222,7 +223,7 @@ function draw() {
         el('img', { src: 'icon.png', alt: '' }),
         el('h1', {}, 'Switchboard'),
         el('p', {}, say(state === 'revoked' ? 'revoked' : 'notPaired')),
-        strong() ? drawCode() : null,
+        strong() ? drawCode() : standalone() ? el('p', { className: 'small' }, say('homeNeedsHttps')) : null,
       ),
       notice ? el('div', { className: `notice ${notice.bad ? 'bad' : ''}` }, notice.text) : null,
     ].filter(Boolean)
@@ -260,8 +261,8 @@ function draw() {
         {},
         drawNotify(),
         say('refreshed', { time: new Date(view.now).toLocaleTimeString(view.lang, { hour: '2-digit', minute: '2-digit' }) }),
-        standalone() ? null : el('br'),
-        standalone() ? null : say('homeHint'),
+        homeHint() ? el('br') : null,
+        homeHint() ? say('homeHint') : null,
       ),
     )
   }
@@ -273,6 +274,9 @@ function draw() {
 const empty = key => [el('div', { className: 'empty' }, say(key))]
 
 const standalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches
+const ios = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+// An iPhone home screen app keeps storage of its own and pairs with a code, which only HTTPS hands out.
+const homeHint = () => !standalone() && (strong() || !ios())
 
 // The code the app shows next to the QR code, for a home screen app that cannot open the QR link itself.
 let codeDraft = ''

@@ -927,6 +927,7 @@ export const ko = {
   'mobile.page.terminalHint': '터미널에서 묻기: 이 요청을 PC의 터미널로 돌려 그곳에서 답하게 합니다.',
   'mobile.page.needChoice': '선택지를 고르거나 메모를 적으세요.',
   'mobile.page.codeHint': '홈 화면에서 연 경우: PC 앱의 QR 코드 옆에 있는 연결 코드를 입력하세요.',
+  'mobile.page.homeNeedsHttps': '홈 화면에 추가한 iPhone 앱은 Tailscale HTTPS 주소로만 연결됩니다. 같은 Wi-Fi에서는 QR 코드로 Safari에서 열어 쓰세요.',
   'mobile.page.codeWrong': '코드가 맞지 않거나 시간이 지났습니다. 앱에서 QR 코드를 새로 띄우세요.',
   'mobile.page.connect': '연결',
   'mobile.code': '홈 화면 앱(iPhone)에서는 이 코드를 입력합니다: {code} (10분 동안, 한 번만)',

@@ -928,6 +928,7 @@ export const en: Dict = {
   'mobile.page.terminalHint': 'Ask in the terminal: hands this ask back to the terminal on the computer, to answer there.',
   'mobile.page.needChoice': 'Pick an option or write a note.',
   'mobile.page.codeHint': 'Opened from the home screen: type the pairing code shown next to the QR code in the app.',
+  'mobile.page.homeNeedsHttps': 'A home screen app on iPhone connects only through the Tailscale HTTPS address. On the same Wi-Fi, open the QR link in Safari and use it there.',
   'mobile.page.codeWrong': 'The code is wrong or has expired. Show a new QR code in the app.',
   'mobile.page.connect': 'Connect',
   'mobile.code': 'In a home screen app (iPhone), type this code instead: {code} (for 10 minutes, once)',

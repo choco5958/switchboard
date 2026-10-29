@@ -928,6 +928,7 @@ export const ja: Dict = {
   'mobile.page.terminalHint': 'ターミナルで確認: この確認を PC のターミナルに戻し、そこで答えます。',
   'mobile.page.needChoice': '選択肢を選ぶか、メモを書いてください。',
   'mobile.page.codeHint': 'ホーム画面から開いた場合: PC アプリの QR コードの横にある接続コードを入力します。',
+  'mobile.page.homeNeedsHttps': 'ホーム画面に追加した iPhone アプリは Tailscale HTTPS のアドレスでのみ接続できます。同じ Wi-Fi では QR コードから Safari で開いて使ってください。',
   'mobile.page.codeWrong': 'コードが違うか、期限が切れています。アプリで新しい QR コードを表示してください。',
   'mobile.page.connect': '接続',
   'mobile.code': 'ホーム画面のアプリ(iPhone)では、このコードを入力します: {code}(10 分間、1 回だけ)',
