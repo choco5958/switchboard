@@ -2,7 +2,7 @@
 
 **한국어** | [English](README.en.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md)
 
-Claude Code, Codex, Gemini 같은 코딩 에이전트 세션 여러 개를 한 화면에서 지휘하는 macOS 데스크톱 앱입니다.
+Claude Code, Codex, Gemini 같은 코딩 에이전트 세션 여러 개를 한 화면에서 지휘하는 데스크톱 앱입니다. macOS, Windows, Linux에서 돕니다.
 
 세션은 사람의 결정이 필요하면 질문을 결정 대기 큐에 올리고, 답을 기다리지 않고 다른 일을 이어 갑니다. 키 하나로 답하면 그 답이 해당 세션에 프롬프트로 들어갑니다. 세션끼리 일을 주고받고, 자리를 비운 동안에는 결정 질문과 권한 확인이 내 Telegram으로 옵니다.
 
@@ -77,23 +77,45 @@ Telegram 봇 ──(long polling)─────────────┘
 
 ## 준비물
 
-- macOS (Apple Silicon에서 확인했습니다. Linux는 확인하지 않았고, Windows는 지원하지 않습니다.)
-- Node.js 24 이상 (브리지가 `node:sqlite`를 쓰고 `.ts` 파일을 바로 실행합니다)
-- pnpm
+- macOS, Windows, Linux. macOS(Apple Silicon)에서 확인했습니다. Windows와 Linux는 자동 테스트만 거쳤고 실제 기기에서는 아직 확인하지 않았습니다.
 - Claude Code 2.1.309 이상 (mod 기능을 씁니다)
 - 선택: Codex, Gemini CLI 같은 다른 코딩 CLI, Orca(워크트리, Linear), Telegram 계정, 터미널 한글 표시용 [D2Coding](https://github.com/naver/d2codingfont) 글꼴
+- 소스에서 실행할 때만: Node.js 24 이상, pnpm
 
 ## 설치
+
+### 설치 파일
+
+[Releases](https://github.com/choco5958/switchboard/releases/latest)에서 운영체제에 맞는 파일을 받습니다. 앱에 Node가 들어 있어서 따로 설치할 것이 없습니다.
+
+| 운영체제 | 파일 |
+| --- | --- |
+| macOS | Apple Silicon은 `Switchboard-<버전>-mac-arm64.dmg`, Intel은 `-mac-x64.dmg` |
+| Windows | `Switchboard-<버전>-win-x64.exe` (ARM 기기는 `-win-arm64.exe`) |
+| Linux | `.AppImage`(실행 권한을 주고 바로 실행) 또는 `.deb` |
+
+아직 코드 서명을 하지 않아서 처음 열 때 경고가 뜹니다.
+
+- macOS: 앱을 응용 프로그램 폴더로 옮긴 뒤 우클릭 > 열기를 누르고, 다시 뜨는 창에서 한 번 더 열기를 누릅니다.
+- Windows: "Windows의 PC 보호" 창에서 추가 정보 > 실행을 누릅니다.
+
+앱은 켤 때마다 `~/.claude-ide`에 브리지 시작 파일과 `switchboard` 명령을 이 앱 위치에 맞춰 다시 씁니다. `switchboard` 명령은 macOS와 Linux에서 `~/.local/bin`에, Windows에서 `%USERPROFILE%\.claude-ide\bin`에 생기므로 그 폴더를 PATH에 넣습니다.
+
+새 버전은 앱이 알아서 확인합니다. Windows와 Linux(AppImage)는 새 버전을 내려받아 두었다가 앱을 닫을 때 설치합니다. macOS는 서명이 없으면 자동 설치가 되지 않아서, 알림을 누르면 다운로드 페이지가 열립니다.
+
+### 소스에서 실행
 
 ```sh
 git clone https://github.com/choco5958/switchboard.git
 cd switchboard
 pnpm install
-pnpm run setup  # ~/.claude-ide/start-bridge.sh와 ~/.local/bin/switchboard를 만듭니다
+pnpm run setup  # ~/.claude-ide/start-bridge.json과 ~/.local/bin/switchboard를 만듭니다
 pnpm dev        # 앱 실행
 ```
 
-레포 폴더를 옮기면 `pnpm run setup`을 다시 실행합니다. `switchboard` 명령을 쓰려면 `~/.local/bin`이 PATH에 있어야 합니다.
+레포 폴더를 옮기면 `pnpm run setup`을 다시 실행합니다. 설치 파일은 `pnpm dist`로 만듭니다.
+
+### 다른 터미널의 Claude Code 연결
 
 앱의 `+ Claude` 터미널은 mod를 자동으로 불러옵니다. 다른 터미널에서 연 Claude Code 세션도 연결하려면 Claude Code 입력창에서 mod를 설치합니다.
 
@@ -103,7 +125,7 @@ pnpm dev        # 앱 실행
 
 `Add marketplace?`에 `y`를 누르고, 범위는 첫 번째인 user를 고릅니다. 셸에서는 `claude plugin install ide-bridge --marketplace choco5958/switchboard`로 설치합니다.
 
-설치한 뒤 새로 연 세션부터 브리지에 연결됩니다. 브리지가 꺼져 있으면 mod나 앱이 먼저 켭니다. mod는 `pnpm run setup`이 만든 `start-bridge.sh`로 브리지를 켜므로, 레포를 받지 않고 mod만 설치하면 동작하지 않습니다.
+설치한 뒤 새로 연 세션부터 브리지에 연결됩니다. 브리지가 꺼져 있으면 mod나 앱이 먼저 켭니다. mod는 앱이나 `pnpm run setup`이 만든 `~/.claude-ide/start-bridge.json`으로 브리지를 켜므로, 앱을 한 번 켜 두거나 setup을 실행해 두어야 합니다.
 
 ## 쓰는 법
 
@@ -172,6 +194,7 @@ pnpm test; switchboard fire w3 "테스트 끝남: 종료 코드 $?"
 - Telegram을 연결하면 결정 질문과 권한 확인 내용이 Telegram 서버를 거칩니다. 토큰처럼 보이는 값은 보내기 전에 가립니다. 봇 토큰은 화면 상태에 싣지 않고 DB에만 둡니다.
 - 화면 코멘트에 붙는 콘솔 기록과 요청 기록도 토큰처럼 보이는 값을 수집할 때 가립니다.
 - 세션의 브라우저 도구는 이 컴퓨터와 사설망 주소만 엽니다.
+- Windows에서는 브리지가 127.0.0.1에만 포트를 열고, 켤 때마다 새로 만든 토큰이 있는 요청에만 답합니다. 웹 페이지에서 온 요청은 거절합니다.
 - 작업 로그는 7일이 지나면 지웁니다. 계정 이메일은 화면에 가려서 보여 주고 어디에도 보내지 않습니다.
 
 ## 개발

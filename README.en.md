@@ -2,7 +2,7 @@
 
 [한국어](README.md) | **English** | [日本語](README.ja.md) | [简体中文](README.zh-CN.md)
 
-A macOS desktop app for directing several coding-agent sessions (Claude Code, Codex, Gemini and others) from one screen.
+A desktop app for macOS, Windows and Linux for directing several coding-agent sessions (Claude Code, Codex, Gemini and others) from one screen.
 
 When a session needs a decision from you, it posts the question to a decision queue and keeps working instead of stopping. You answer with a key press, and the answer goes back to that session as a prompt. Sessions can also hand work to each other, and while you are away, decisions and permission asks reach you on Telegram.
 
@@ -77,23 +77,45 @@ Telegram bot ──(long polling)───────────────�
 
 ## Requirements
 
-- macOS (tested on Apple Silicon; Linux is untested and Windows is not supported)
-- Node.js 24 or later (the bridge uses `node:sqlite` and runs `.ts` files directly)
-- pnpm
+- macOS, Windows or Linux. Tested on macOS (Apple Silicon); Windows and Linux have passed the automated tests but are not yet tried on a real machine.
 - Claude Code 2.1.309 or later (for mod support)
 - Optional: other coding CLIs such as Codex or Gemini CLI, Orca (worktrees, Linear), a Telegram account
+- Only to run from source: Node.js 24 or later, pnpm
 
 ## Install
+
+### Installers
+
+Download the file for your system from [Releases](https://github.com/choco5958/switchboard/releases/latest). The app carries its own Node, so there is nothing else to install.
+
+| System | File |
+| --- | --- |
+| macOS | `Switchboard-<version>-mac-arm64.dmg` for Apple Silicon, `-mac-x64.dmg` for Intel |
+| Windows | `Switchboard-<version>-win-x64.exe` (`-win-arm64.exe` on ARM devices) |
+| Linux | `.AppImage` (make it executable and run it) or `.deb` |
+
+The app is not code-signed yet, so the first open shows a warning.
+
+- macOS: move the app to Applications, right-click it and choose Open, then Open again in the dialog.
+- Windows: in the "Windows protected your PC" dialog, click More info, then Run anyway.
+
+At each start the app rewrites the bridge start files and the `switchboard` command in `~/.claude-ide` to match where it is. The `switchboard` command lands in `~/.local/bin` on macOS and Linux and in `%USERPROFILE%\.claude-ide\bin` on Windows; add that folder to your PATH.
+
+The app checks for new versions by itself. Windows and Linux (AppImage) download a new version and install it when the app quits. macOS cannot install an unsigned update, so there a notification opens the download page.
+
+### From source
 
 ```sh
 git clone https://github.com/choco5958/switchboard.git
 cd switchboard
 pnpm install
-pnpm run setup  # writes ~/.claude-ide/start-bridge.sh and ~/.local/bin/switchboard
+pnpm run setup  # writes ~/.claude-ide/start-bridge.json and ~/.local/bin/switchboard
 pnpm dev        # run the app
 ```
 
-Run `pnpm run setup` again if you move the repo folder. `~/.local/bin` must be on your PATH for the `switchboard` command.
+Run `pnpm run setup` again if you move the repo folder. `pnpm dist` builds the installers.
+
+### Claude Code in other terminals
 
 The app's `+ Claude` terminal loads the mod by itself. To connect Claude Code sessions started in other terminals too, install the mod from the Claude Code prompt:
 
@@ -103,7 +125,7 @@ The app's `+ Claude` terminal loads the mod by itself. To connect Claude Code se
 
 Answer `y` to `Add marketplace?` and choose the first scope, user. From a shell: `claude plugin install ide-bridge --marketplace choco5958/switchboard`.
 
-Sessions started after the install connect to the bridge. If the bridge is not running, the mod or the app starts it. The mod starts the bridge with the `start-bridge.sh` that `pnpm run setup` writes, so installing only the mod without the repo does not work.
+Sessions started after the install connect to the bridge. If the bridge is not running, the mod or the app starts it. The mod starts it with the `~/.claude-ide/start-bridge.json` that the app or `pnpm run setup` writes, so start the app once or run setup first.
 
 ## Usage
 
@@ -172,6 +194,7 @@ pnpm test; switchboard fire w3 "tests finished: exit code $?"
 - With Telegram connected, decision questions and permission asks pass through Telegram's servers. Values that look like credentials are masked before sending. The bot token is kept only in the database, never in the screen state.
 - Console and request logs attached to screen comments are masked the same way as they are collected.
 - The sessions' browser tools only open addresses on this computer or the private network.
+- On Windows the bridge opens a port on 127.0.0.1 only and answers only requests carrying the token it makes at each start. Requests from web pages are refused.
 - The work log is deleted after 7 days. Your account email is shown masked and is never sent anywhere.
 
 ## Development

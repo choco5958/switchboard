@@ -2,7 +2,7 @@
 
 [한국어](README.md) | [English](README.en.md) | [日本語](README.ja.md) | **简体中文**
 
-一款 macOS 桌面应用，在一个界面上同时指挥多个编码智能体会话 (Claude Code、Codex、Gemini 等)。
+一款桌面应用 (macOS、Windows、Linux)，在一个界面上同时指挥多个编码智能体会话 (Claude Code、Codex、Gemini 等)。
 
 会话需要人来做决定时，会把问题放进待决定队列，然后不等回答继续做别的事。你按一个键回答，答案就作为提示词回到该会话。会话之间也可以互相委派工作；你不在电脑前时，决定问题和权限确认会发到你自己的 Telegram。
 
@@ -77,23 +77,45 @@ Telegram 机器人 ──(long polling)─────────┘
 
 ## 环境要求
 
-- macOS (已在 Apple Silicon 上验证；Linux 未验证，不支持 Windows)
-- Node.js 24 及以上 (桥接服务使用 `node:sqlite` 并直接运行 `.ts` 文件)
-- pnpm
+- macOS、Windows、Linux。已在 macOS (Apple Silicon) 上验证；Windows 和 Linux 通过了自动测试，但尚未在真机上运行过。
 - Claude Code 2.1.309 及以上 (需要 mod 功能)
 - 可选: Codex、Gemini CLI 等其他编码 CLI，Orca (工作树、Linear)，Telegram 账号
+- 仅从源码运行时需要: Node.js 24 及以上、pnpm
 
 ## 安装
+
+### 安装包
+
+从 [Releases](https://github.com/choco5958/switchboard/releases/latest) 下载适合你系统的文件。应用自带 Node，无需另外安装。
+
+| 系统 | 文件 |
+| --- | --- |
+| macOS | Apple Silicon 用 `Switchboard-<版本>-mac-arm64.dmg`，Intel 用 `-mac-x64.dmg` |
+| Windows | `Switchboard-<版本>-win-x64.exe` (ARM 设备用 `-win-arm64.exe`) |
+| Linux | `.AppImage` (加上执行权限后直接运行) 或 `.deb` |
+
+应用尚未进行代码签名，第一次打开时会出现警告。
+
+- macOS: 把应用移到"应用程序"文件夹，右键点击并选择"打开"，在弹出的窗口中再点一次"打开"。
+- Windows: 在"Windows 已保护你的电脑"窗口中点击"更多信息"，再点"仍要运行"。
+
+应用每次启动时，都会按当前位置重写 `~/.claude-ide` 中的桥接启动文件和 `switchboard` 命令。`switchboard` 命令在 macOS 和 Linux 上位于 `~/.local/bin`，在 Windows 上位于 `%USERPROFILE%\.claude-ide\bin`，请把该文件夹加入 PATH。
+
+应用会自行检查新版本。Windows 和 Linux (AppImage) 会先下载新版本，在关闭应用时安装。macOS 没有签名无法自动安装，点击通知会打开下载页面。
+
+### 从源码运行
 
 ```sh
 git clone https://github.com/choco5958/switchboard.git
 cd switchboard
 pnpm install
-pnpm run setup  # 生成 ~/.claude-ide/start-bridge.sh 和 ~/.local/bin/switchboard
+pnpm run setup  # 生成 ~/.claude-ide/start-bridge.json 和 ~/.local/bin/switchboard
 pnpm dev        # 启动应用
 ```
 
-移动仓库文件夹后需要重新运行 `pnpm run setup`。要使用 `switchboard` 命令，`~/.local/bin` 必须在 PATH 中。
+移动仓库文件夹后需要重新运行 `pnpm run setup`。安装包用 `pnpm dist` 生成。
+
+### 连接其他终端中的 Claude Code
 
 应用的 `+ Claude` 终端会自动加载 mod。如果要让其他终端里打开的 Claude Code 会话也连接上，请在 Claude Code 输入框中安装 mod:
 
@@ -103,7 +125,7 @@ pnpm dev        # 启动应用
 
 `Add marketplace?` 处按 `y`，范围选择第一项 user。也可以在 Shell 中用 `claude plugin install ide-bridge --marketplace choco5958/switchboard` 安装。
 
-安装后新打开的会话会连接到桥接服务。桥接服务未运行时，mod 或应用会先启动它。mod 通过 `pnpm run setup` 生成的 `start-bridge.sh` 启动桥接服务，所以只安装 mod 而不获取仓库是无法工作的。
+安装后新打开的会话会连接到桥接服务。桥接服务未运行时，mod 或应用会先启动它。mod 通过应用或 `pnpm run setup` 生成的 `~/.claude-ide/start-bridge.json` 启动桥接服务，所以请先启动一次应用或运行 setup。
 
 ## 使用方法
 
@@ -172,6 +194,7 @@ pnpm test; switchboard fire w3 "测试结束: 退出码 $?"
 - 连接 Telegram 后，决定问题和权限确认的内容会经过 Telegram 服务器。看起来像令牌的值会在发送前遮盖。机器人令牌不放进界面状态，只保存在数据库中。
 - 附在界面评论上的控制台和请求记录，也会在收集时遮盖看起来像令牌的值。
 - 会话的浏览器工具只打开本机和私有网络中的地址。
+- 在 Windows 上，桥接服务只在 127.0.0.1 上开放端口，并且只响应带有每次启动时生成的令牌的请求。来自网页的请求会被拒绝。
 - 工作日志 7 天后删除。账号邮箱在界面上遮盖显示，不会发送到任何地方。
 
 ## 开发
