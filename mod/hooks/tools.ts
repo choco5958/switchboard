@@ -65,11 +65,17 @@ const KO = {
     '답은 다음 턴에 "[Switchboard] ...이(가) 보낸 메시지"로 들어온다. 받은 세션은 이 대화와 메모리를 볼 수 없으니, 혼자 읽어도 되는 메시지 하나로 쓴다: ' +
     '목표, 필요한 맥락, 시도한 것, 사용자가 승인한 위험한 작업과 하지 말아야 할 작업, 끝났다고 볼 기준. ' +
     '받은 요청에 답할 때는 replyTo에 그 메시지 id를 준다(to는 생략). 정보만 알릴 때는 expectsReply false. ' +
-    '같은 요청을 반복해 보내지 않고, 받은 요청을 보낸 세션에 되돌려 맡기지 않으며, 사용자의 제한이나 안전 확인을 피하려고 다른 세션을 쓰지 않는다.',
+    '같은 요청을 반복해 보내지 않고, 받은 요청을 보낸 세션에 되돌려 맡기지 않으며, 사용자의 제한이나 안전 확인을 피하려고 다른 세션을 쓰지 않는다. ' +
+    '한 요청에서 시작해 세션끼리 맡기는 요청은 모두 합쳐 8번까지다. 받은 세션의 연결이 끊기거나 턴이 중단되면 답이 오지 않는다는 알림이 들어온다.',
   sendTo: '받을 세션 id 목록 (list_sessions의 id). 답장이면 생략',
   sendText: '보낼 메시지',
   sendReplyTo: '답하는 메시지 id (예: m12)',
   sendExpects: '답을 바라면 true(기본값), 정보만 알리면 false',
+  cancel:
+    '이 세션이 send_to_session으로 맡긴 요청을 취소한다. 사용자가 방향을 바꿨거나 더 필요 없어졌을 때 쓴다. ' +
+    '아직 전달되지 않은 요청은 들어가지 않고, 받은 세션의 턴이 그 요청만 처리하고 있으면 턴을 멈춘다. 받은 세션은 다음 턴에 취소 사실과 이유를 읽는다. 자기가 보낸 요청만 취소할 수 있다.',
+  cancelIds: '취소할 요청 id 목록 (send_to_session이 돌려준 m번호)',
+  cancelReason: '받은 세션에 알릴 취소 이유 한 줄',
   noUpdate: '예약 프롬프트 실행에서 사람에게 알릴 것이 없을 때 부른다. 알림 없이 조용히 끝난 실행으로 기록된다. 예약 실행이 아닐 때는 부르지 않는다.',
   reportFailure: '예약 프롬프트 실행에서 할 일을 해내지 못했을 때 이유와 함께 부른다. 실패한 실행으로 기록되고 사람에게 알린다.',
   reportReason: '못 한 이유 한 줄',
@@ -157,11 +163,17 @@ const EN: typeof KO = {
     'The answer arrives in a later turn as "[Switchboard] A message from ...". The receiving session cannot see this conversation or your memory, so write one message that stands alone: ' +
     'the goal, the context it needs, what you tried, which risky actions the user approved and which it must not do, and what counts as finished. ' +
     'To answer a request you received, give its message id as replyTo (leave out to). For information only, set expectsReply false. ' +
-    'Do not send the same request again, do not hand a request back to the session that sent it, and never use another session to get around a user limit or a safety check.',
+    'Do not send the same request again, do not hand a request back to the session that sent it, and never use another session to get around a user limit or a safety check. ' +
+    'Requests handed between sessions that start from one request are capped at 8 in all. If the receiving session disconnects or its turn is interrupted, a notice says no answer is coming.',
   sendTo: 'Ids of the sessions to send to (ids from list_sessions). Leave out on a reply',
   sendText: 'The message',
   sendReplyTo: 'Id of the message this answers (e.g. m12)',
   sendExpects: 'true (the default) when you want an answer, false for information only',
+  cancel:
+    'Cancels requests this session gave with send_to_session, when the user changed course or the work is no longer needed. ' +
+    'A request not delivered yet never goes in; if the receiving session\'s turn is working on these requests alone, the turn stops. The receiving session reads the cancellation and its reason in its next turn. Only requests this session sent can be cancelled.',
+  cancelIds: 'Ids of the requests to cancel (the m numbers send_to_session returned)',
+  cancelReason: 'One line telling the receiving session why',
   noUpdate: 'Call it in a scheduled prompt run when there is nothing to tell the person. The run is recorded as ended quietly, with no notification. Do not call it outside a scheduled run.',
   reportFailure: 'Call it with the reason in a scheduled prompt run when the work could not be done. The run is recorded as failed and the person is told.',
   reportReason: 'Why it could not be done, in one line',
@@ -301,6 +313,18 @@ export function toolDefs(lang: Lang): ToolDef[] {
       },
     },
     {
+      name: 'cancel_request',
+      description: d.cancel,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: { type: 'array', items: { type: 'string' }, description: d.cancelIds },
+          reason: { type: 'string', description: d.cancelReason },
+        },
+        required: ['ids'],
+      },
+    },
+    {
       name: 'routine_no_update',
       description: d.noUpdate,
       inputSchema: { type: 'object', properties: {} },
@@ -432,6 +456,15 @@ export function sentText(json: Record<string, unknown>, expectsReply: boolean, l
   const ids = Array.isArray(json.ids) ? json.ids.join(', ') : ''
   if (json.duplicate) return t(lang, 'tool.sentAgain', { ids })
   return t(lang, expectsReply ? 'tool.sentRequest' : 'tool.sentInfo', { ids })
+}
+
+// cancel_request's result, one line per request (bridge POST /messages/cancel).
+export function cancelText(json: Record<string, unknown>, lang: Lang): string {
+  const results = (json.results ?? {}) as Record<string, string>
+  const key = { queued: 'tool.cancelQueued', noted: 'tool.cancelNoted', stopped: 'tool.cancelStopped', done: 'tool.cancelDone' } as const
+  return Object.entries(results)
+    .map(([id, result]) => t(lang, key[result as keyof typeof key] ?? 'tool.cancelDone', { id }))
+    .join('\n')
 }
 
 // The browser_* tools and the bridge action each asks for (bridge POST /browser/act).

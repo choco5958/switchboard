@@ -3,7 +3,7 @@ import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, 
 import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
-import { BROWSER_TOOLS, peersText, sentText, toolDefs, type Peer } from './tools.ts'
+import { BROWSER_TOOLS, cancelText, peersText, sentText, toolDefs, type Peer } from './tools.ts'
 
 // The mod connects this Claude Code session to the Switchboard bridge:
 // questions and task state go out over the bridge's Unix socket, and answers
@@ -53,6 +53,9 @@ let openTools = 0
 // Messages from other sessions that went in with the prompt now running: when its turn ends
 // without a reply to one, the bridge sends the turn's last answer back (POST /messages/turn-end).
 let answering: string[] = []
+// Every delivery that went in with the prompt now running: a cancel_request stops the turn
+// only when it is made of cancelled requests alone, never the person's own work.
+let turnItems: string[] = []
 // The main conversation was compacted: the next prompt restates this session's Switchboard state.
 let restate = false
 let activitySentAt = 0
@@ -213,6 +216,7 @@ async function flush($: Engine): Promise<void> {
       } else {
         await $.store.set(storeKey('sent'), remember(sent, batch.map(d => d.id), ID_CAP))
         answering = [...answering, ...batch.filter(d => d.id.startsWith('m')).map(d => d.id)]
+        turnItems = [...turnItems, ...batch.map(d => d.id)]
         $.ui.toast(toastText(batch, currentLang()))
       }
     }
@@ -291,7 +295,7 @@ async function touchSeen($: Engine): Promise<void> {
   await $.store.set('seen', { ...seen, [sessionId]: at })
 }
 
-type Command = { id: number; kind: string; payload?: { agentId?: string; text?: string } }
+type Command = { id: number; kind: string; payload?: { agentId?: string; text?: string; ids?: string[] } }
 
 // The IDE's control of this session: answered once, its result stored on the bridge.
 // The bridge sends a command again until it hears it is done (a new stream gets every
@@ -328,6 +332,15 @@ async function runCommand($: Engine, command: Command): Promise<void> {
     } else if (command.kind === 'transcript' && agentId) {
       const found = await $.session.messages({ agentId })
       result = 'deny' in found ? { error: String(found.deny) } : { messages: found.slice(-200).map(m => ({ role: m.role, text: m.text })) }
+    } else if (command.kind === 'cancel') {
+      // Requests their sender took back (bridge POST /messages/cancel): what has not gone in
+      // never does, and a turn working on these alone stops.
+      const ids = Array.isArray(payload.ids) ? payload.ids.map(String) : []
+      waiting = waiting.filter(d => !ids.includes(d.id))
+      await saveQueued($)
+      const stop = busy && mainTurnId !== '' && turnItems.length > 0 && turnItems.every(id => ids.includes(id))
+      if (stop) await $.turn.abort({ turnId: mainTurnId })
+      result = { stopped: stop }
     } else if (command.kind === 'report') {
       await queueDelivery($, { id: `c${command.id}`, text: t(currentLang(), 'mod.reportPrompt') })
     } else if (command.kind === 'sync') {
@@ -408,6 +421,20 @@ async function bridgeTool($: Engine, path: string, body: unknown, ok: (json: Rec
   return { result: reply.ok ? ok(reply.json) : t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
 }
 
+// The person wrote in the terminal: replies the bridge held for a later turn (an answer to a
+// request sent to several sessions, a cancelled request's note) go in with this prompt.
+async function releaseHeld($: Engine): Promise<string[]> {
+  if (!sessionId) return []
+  const reply = await call($, 'POST', '/messages/release', { sessionId })
+  const items = (reply.ok ? (reply.json.items ?? []) : []) as Delivery[]
+  if (items.length === 0) return []
+  const ids = items.map(d => d.id)
+  waiting = waiting.filter(d => !ids.includes(d.id))
+  const sent = normalizeIds(((await $.store.get(storeKey('sent'))) as (string | number)[] | undefined) ?? [])
+  await $.store.set(storeKey('sent'), remember(sent, ids, ID_CAP))
+  return items.map(d => d.text)
+}
+
 async function restateContext($: Engine): Promise<string | undefined> {
   if (!sessionId) return undefined
   const [state, waits] = await Promise.all([
@@ -483,6 +510,14 @@ export const register: Register = on => {
     if (!reply.ok) return { result: t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
     return { result: sentText(reply.json, expectsReply, currentLang()) }
   }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+
+  on('tool.call', { tool: 'mcp__ide-bridge__cancel_request' }, async ($, e) => {
+    const reply = await call($, 'POST', '/messages/cancel', { sessionId, ids: e.ids, reason: e.reason }).catch(
+      (error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }),
+    )
+    if (!reply.ok) return { result: t(currentLang(), 'tool.cancelFailed', { error: String(reply.json.error) }) }
+    return { result: cancelText(reply.json, currentLang()) }
+  }).catch(() => ({ result: t(currentLang(), 'tool.cancelFailed', { error: '' }) }))
 
   on('tool.call', { tool: 'mcp__ide-bridge__routine_no_update' }, async $ =>
     bridgeTool($, '/routines/report', { sessionId, kind: 'quiet' }, () => t(currentLang(), 'tool.quietOk')),
@@ -586,7 +621,9 @@ export const register: Register = on => {
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return next(e)
     const extra = restate ? await restateContext($).catch(() => undefined) : await pendingContext($).catch(() => undefined)
     restate = false
-    return next(extra ? { ...e, context: [...(e.context ?? []), extra] } : e)
+    const held = await releaseHeld($).catch(() => [])
+    const context = [...(e.context ?? []), ...(extra ? [extra] : []), ...held]
+    return next(context.length > (e.context ?? []).length ? { ...e, context } : e)
   }).catch(($, e, next) => next(e))
 
   // A permission ask while the person is away (the bridge knows from the app): it goes to the
@@ -646,6 +683,7 @@ export const register: Register = on => {
         void call($, 'POST', '/messages/turn-end', { sessionId, ids: answering, answer: e.answer, aborted: e.isAborted }).catch(() => undefined)
       }
       answering = []
+      turnItems = []
       void flush($)
       void reportUsage($)
       void touchSeen($).catch(() => undefined)

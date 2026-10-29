@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { takenText } from '../mod/hooks/batch.ts'
 import { langFromLocale, langOfState, osLocale, t, type Key, type Lang, type Vars } from '../mod/hooks/i18n.ts'
-import { BROWSER_TOOLS, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
+import { BROWSER_TOOLS, cancelText, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
 
 export { takenText }
 
@@ -243,6 +243,11 @@ export function createSession(options: Options, deps: Deps) {
       const reply = await call('POST', '/messages', { sessionId, to: a.to, text: a.text, replyTo: a.replyTo, expectsReply })
       if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
       return { text: sentText(reply.json, expectsReply, lang) }
+    }
+    if (name === 'cancel_request') {
+      const reply = await call('POST', '/messages/cancel', { sessionId, ids: a.ids, reason: a.reason })
+      if (!reply.ok) return { text: say('tool.cancelFailed', { error: errorText(reply) }), isError: true }
+      return { text: cancelText(reply.json, lang) }
     }
     if (name === 'routine_no_update' || name === 'routine_report_failure' || name === 'await_event' || name === 'close_wait') {
       const waitId = String(a.id ?? '').replace(/^w/, '')

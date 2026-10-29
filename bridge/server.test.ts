@@ -743,6 +743,121 @@ describe('messages between sessions', () => {
     await take('pa')
   })
 
+  test('the sender is told when no answer will come: an interrupted turn, a session gone, one missing too long', async () => {
+    for (const [id, cwd] of [['na', '/w/na'], ['nb', '/w/nb'], ['nc', '/w/nc']]) await call('POST', '/sessions', { id, cwd })
+    // Interrupted: the turn carrying the request ended aborted.
+    const one = (await call('POST', '/messages', { sessionId: 'na', to: ['nb'], text: '빌드 고쳐줘' })).json
+    await take('nb')
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'nb', ids: one.ids, answer: '', aborted: true })).json.relayed, 0)
+    const [interrupted] = await take('na')
+    assert.match(interrupted!.text, new RegExp(`요청 ${one.ids[0]}: 그 세션의 턴이 중단되어 답이 오지 않습니다`))
+    await call('POST', '/messages/turn-end', { sessionId: 'nb', ids: one.ids, answer: '', aborted: true })
+    assert.equal((await take('na')).length, 0)
+
+    // Gone: a recipient with no stream for OFFLINE_NOTE_MS, told once.
+    const two = (await call('POST', '/messages', { sessionId: 'na', to: ['nc'], text: '로그 봐줘' })).json
+    bridge.checkNoReplies(Date.now() + 3 * 60_000)
+    bridge.checkNoReplies(Date.now() + 4 * 60_000)
+    const offline = await take('na')
+    assert.equal(offline.length, 1)
+    assert.match(offline[0]!.text, new RegExp(`요청 ${two.ids[0]}: 그 세션의 연결이 끊겨`))
+
+    // Missing too long from a request to several: told only once some answer came.
+    const streams = [hold('nb'), hold('nc')]
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const three = (await call('POST', '/messages', { sessionId: 'na', to: ['nb', 'nc'], text: '각자 의견' })).json
+    bridge.checkNoReplies(Date.now() + 16 * 60_000)
+    assert.equal((await take('na')).length, 0)
+    await call('POST', '/messages', { sessionId: 'nb', replyTo: three.ids[0], text: 'b 의견' })
+    bridge.checkNoReplies(Date.now() + 16 * 60_000)
+    for (const stream of streams) stream.destroy()
+    const late = await take('na')
+    assert.equal(late.length, 2)
+    assert.match(late[0]!.text, /b 의견$/)
+    assert.match(late[1]!.text, new RegExp(`요청 ${three.ids[1]}: 15분 안에 답이 없어 먼저 온 답부터`))
+    await take('nb')
+    await take('nc')
+  })
+
+  test('held answers go in with a turn that starts anyway, or with what the person types', async () => {
+    for (const [id, cwd] of [['ha', '/w/ha'], ['hb', '/w/hb'], ['hc', '/w/hc']]) await call('POST', '/sessions', { id, cwd })
+    const streams = [hold('hb'), hold('hc')]
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const sent = (await call('POST', '/messages', { sessionId: 'ha', to: ['hb', 'hc'], text: '각자 의견' })).json
+    await call('POST', '/messages', { sessionId: 'hb', replyTo: sent.ids[0], text: 'b 의견' })
+    assert.equal((await take('ha')).length, 0)
+    // The person writes from the app: that turn takes the held answer along.
+    await call('POST', '/outbox', { sessionId: 'ha', text: '진행 상황 알려줘' })
+    const items = await take('ha')
+    assert.equal(items.length, 2)
+    assert.match(items[0]!.text, /b 의견$/)
+
+    // The person types in the terminal: the mod takes what is held for that prompt.
+    const again = (await call('POST', '/messages', { sessionId: 'ha', to: ['hb', 'hc'], text: '다시 의견' })).json
+    await call('POST', '/messages', { sessionId: 'hc', replyTo: again.ids[1], text: 'c 의견' })
+    const released = (await call('POST', '/messages/release', { sessionId: 'ha' })).json.items
+    assert.equal(released.length, 1)
+    assert.match(released[0].text, /c 의견$/)
+    assert.equal((await call('POST', '/messages/release', { sessionId: 'ha' })).json.items.length, 0)
+    for (const stream of streams) stream.destroy()
+    await take('hb')
+    await take('hc')
+  })
+
+  test('hand-offs that start from one request stop at eight', async () => {
+    const ids = ['da', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9']
+    for (const id of ids) await call('POST', '/sessions', { id, cwd: `/w/${id}` })
+    // da asks d1 and d2; d1, working on it, hands on to five more: seven in this run.
+    const root = (await call('POST', '/messages', { sessionId: 'da', to: ['d1', 'd2'], text: '조사해줘' })).json
+    await take('d1')
+    assert.equal((await call('POST', '/messages', { sessionId: 'd1', to: ['d3', 'd4', 'd5', 'd6', 'd7'], text: '나눠서 조사' })).status, 200)
+    await take('d3')
+    // d3 may add one, not two; a reply is never counted.
+    const full = await call('POST', '/messages', { sessionId: 'd3', to: ['d8', 'd9'], text: '더 나눠서' })
+    assert.equal(full.status, 400)
+    assert.match(full.json.error, /이미 8번입니다/)
+    assert.equal((await call('POST', '/messages', { sessionId: 'd3', to: ['d8'], text: '마지막 하나' })).status, 200)
+    assert.equal((await call('POST', '/messages', { sessionId: 'd1', replyTo: root.ids[0], text: '상태: 완료' })).status, 200)
+    // A session that works on nothing starts a run of its own.
+    assert.equal((await call('POST', '/messages', { sessionId: 'd9', to: ['d8'], text: '새 일' })).status, 200)
+    for (const id of ids) await take(id)
+  })
+
+  test('a sender cancels its own requests: one not delivered never goes in, one delivered is closed and told', async () => {
+    for (const [id, cwd] of [['ca', '/w/ca'], ['cb', '/w/cb']]) await call('POST', '/sessions', { id, cwd })
+    const queued = (await call('POST', '/messages', { sessionId: 'ca', to: ['cb'], text: '나중 일' })).json
+    assert.equal((await call('POST', '/messages/cancel', { sessionId: 'cb', ids: queued.ids })).status, 400)
+    assert.deepEqual((await call('POST', '/messages/cancel', { sessionId: 'ca', ids: queued.ids })).json.results, { [queued.ids[0]]: 'queued' })
+    assert.equal((await take('cb')).length, 0)
+
+    const working = (await call('POST', '/messages', { sessionId: 'ca', to: ['cb'], text: '긴 일' })).json
+    await take('cb')
+    assert.deepEqual((await call('POST', '/messages/cancel', { sessionId: 'ca', ids: working.ids, reason: '방향이 바뀜' })).json.results, { [working.ids[0]]: 'noted' })
+    assert.deepEqual((await call('POST', '/messages/cancel', { sessionId: 'ca', ids: working.ids })).json.results, { [working.ids[0]]: 'done' })
+    // The turn's end relays nothing for it, and the note waits for the next turn.
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'cb', ids: working.ids, answer: '반쯤 함', aborted: true })).json.relayed, 0)
+    assert.equal((await take('ca')).length, 0)
+    assert.equal((await take('cb')).length, 0)
+    await call('POST', '/outbox', { sessionId: 'cb', text: '다음 일' })
+    const items = await take('cb')
+    assert.equal(items.length, 2)
+    assert.match(items[0]!.text, new RegExp(`요청 ${working.ids[0]}를 취소했습니다.\n취소 이유: 방향이 바뀜`))
+  })
+
+  test("a Claude Code recipient's mod is asked to stop, and its answer decides 'stopped'", async () => {
+    await call('POST', '/sessions', { id: 'cc', cwd: '/w/cc' })
+    const working = (await call('POST', '/messages', { sessionId: 'ca', to: ['cc'], text: '긴 일' })).json
+    await take('cc')
+    const command = frames('cc', 'command', 1)
+    const cancelled = call('POST', '/messages/cancel', { sessionId: 'ca', ids: working.ids })
+    const [got] = await command
+    assert.equal(got.kind, 'cancel')
+    assert.deepEqual(got.payload.ids, working.ids)
+    // The stream above closed once it read the command; the cancel still waits for the answer.
+    await call('POST', `/commands/${got.id}/done`, { result: { stopped: true } })
+    assert.deepEqual((await cancelled).json.results, { [working.ids[0]]: 'stopped' })
+  })
+
   test('peers list the other sessions with their task, connected first', async () => {
     await call('POST', '/tasks', { sessionId: 'pb', title: '주문 API', now: '응답 형식 정리' })
     const stream = hold('pb')

@@ -20,6 +20,9 @@ When a session needs a decision from you, it posts the question to a decision qu
 ### Sessions working together
 
 - **Ask and answer**: a session finds others with `list_sessions` and sends a request with `send_to_session`. If the receiving session ends its turn without replying, its last answer goes back as the result.
+- **Asking several sessions**: answers to a question sent to several sessions are gathered into one turn. If the person writes to the asking session from the app or its terminal in the meantime, the answers so far go in with that turn; after 15 minutes, the answers that came go in without the rest.
+- **When no answer is coming**: if the receiving session disconnects or its turn is interrupted, the sender is told no answer is coming, so it carries on instead of waiting.
+- **Cancelling and the hand-off cap**: a session takes back requests it gave with `cancel_request`. One not delivered yet never goes in; if the receiving session's turn works on that request alone, the turn stops. Requests handed between sessions that start from one request are capped at 8 in all.
 - **Forward a decision**: you can forward a decision question to another session and let it answer.
 - **Usage limits**: answers and messages for a session that has hit its usage limit are held until the limit resets, then delivered.
 
@@ -157,6 +160,7 @@ pnpm test; switchboard fire w3 "tests finished: exit code $?"
 | `node_worktree` | Creates an Orca worktree for a node. Requires Orca. |
 | `open_in_ide` | Opens a page or dev server in the Live debugging tab. |
 | `list_sessions`, `send_to_session` | Sees other sessions and sends them a request or information. The reply arrives on a later turn. |
+| `cancel_request` | Cancels requests this session gave. If the receiving session's turn works on that request alone, the turn stops. |
 | `await_event`, `close_wait` | Opens and closes a wait for outside work such as a build or a deploy. |
 | `routine_no_update`, `routine_report_failure` | Records that a scheduled run had nothing to report, or that it failed. |
 | `browser_snapshot`, `browser_click`, `browser_type`, `browser_navigate`, `browser_console`, `browser_screenshot` | Read and drive local pages in the in-app browser. A click with a stale ref is refused. |

@@ -89,7 +89,7 @@ describe('the MCP server against a test bridge', () => {
 
     const list = await c.request('tools/list')
     const names = list.result.tools.map((t: { name: string }) => t.name)
-    assert.deepEqual(names, ['ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'list_sessions', 'send_to_session', 'routine_no_update', 'routine_report_failure', 'await_event', 'close_wait', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_navigate', 'browser_console', 'browser_screenshot', 'update_node', 'open_in_ide', 'check_answers'])
+    assert.deepEqual(names, ['ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'list_sessions', 'send_to_session', 'cancel_request', 'routine_no_update', 'routine_report_failure', 'await_event', 'close_wait', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_navigate', 'browser_console', 'browser_screenshot', 'update_node', 'open_in_ide', 'check_answers'])
     assert.deepEqual(list.result.tools[0].inputSchema, toolDefs('ko')[0]!.inputSchema)
     assert.deepEqual(list.result.tools[1].inputSchema, toolDefs('ko')[1]!.inputSchema)
     assert.equal(list.result.tools[1].description, toolDefs('ko')[1]!.description)
@@ -152,6 +152,12 @@ describe('the MCP server against a test bridge', () => {
     assert.match(got.text, new RegExp(`이 세션이 보낸 요청 ${id}에 대한 답`))
     assert.match(got.text, /결과: id, name/)
     assert.ok(self)
+    // A request it no longer needs: taken back before the other session got it.
+    const again = await c.tool('send_to_session', { to: ['peer-claude'], text: '인덱스도 알려줘' })
+    const second = /m(\d+)/.exec(again.text)?.[0]
+    const cancelled = await c.tool('cancel_request', { ids: [second], reason: '필요 없어짐' })
+    assert.match(cancelled.text, new RegExp(`${second}: 전달 전이라 들어가지 않습니다`))
+    assert.match((await c.tool('cancel_request', { ids: ['m999999'] })).text, /이 세션이 보낸 요청이 아닙니다/)
     assert.equal(await c.close(), 0)
   })
 

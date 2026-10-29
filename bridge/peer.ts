@@ -13,6 +13,15 @@ export const PEER_TEXT_MAX = 20_000
 export const PEER_RECIPIENTS_MAX = 8
 // Answers to a request sent to several sessions wait for each other this long at most.
 export const HELD_REPLY_MS = 15 * 60_000
+// Requests one person's request may lead to between sessions, all hand-offs counted: a
+// session that hands work on and on stops here instead of circling.
+export const DELEGATION_MAX = 8
+// A session gone this long gets its sender told not to wait (a bridge restart is shorter).
+export const OFFLINE_NOTE_MS = 2 * 60_000
+// A request a session got this long ago no longer makes what it sends part of that run.
+export const CHAIN_WINDOW_MS = 6 * 3600_000
+
+export type NoReply = 'offline' | 'interrupted' | 'late'
 
 export type PeerRow = {
   id: number
@@ -113,5 +122,19 @@ export function waitText(wait: { id: number; note: string; payload: string }, la
   const lines = [tIn(lang, 'peer.waitHead', { id: wait.id }), tIn(lang, 'peer.waitNote', { note: wait.note })]
   if (wait.payload) lines.push(tIn(lang, 'peer.waitPayload'), wait.payload)
   lines.push(tIn(lang, 'peer.waitGo'))
+  return lines.join('\n')
+}
+
+// The sender of a request that will not be answered, or not in time: it should stop waiting.
+export function noReplyText(id: number, recipient: string, reason: NoReply, lang: Lang): string {
+  const key = ({ offline: 'peer.noReplyOffline', interrupted: 'peer.noReplyInterrupted', late: 'peer.noReplyLate' } as const)[reason]
+  return tIn(lang, key, { id, recipient, minutes: Math.round(HELD_REPLY_MS / 60_000) })
+}
+
+// The session working on a request its sender cancelled (cancel_request).
+export function cancelledText(id: number, sender: string, reason: string, lang: Lang): string {
+  const lines = [tIn(lang, 'peer.cancelled', { id, sender })]
+  if (reason.trim()) lines.push(tIn(lang, 'peer.cancelReason', { reason: reason.trim().slice(0, 500) }))
+  lines.push(tIn(lang, 'peer.cancelRules', { id }))
   return lines.join('\n')
 }
