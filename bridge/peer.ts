@@ -96,3 +96,22 @@ export function shellText(row: { id: number; text: string }, lang: Lang, autoRep
     row.text,
   ].join('\n')
 }
+
+function hhmm(at: number): string {
+  const d = new Date(at)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// A scheduled prompt (bridge/schedule.ts) as the session reads it: nobody may be at the
+// screen, so it says how to end quietly and how to report a failure.
+export function routineText(name: string, prompt: string, scheduledFor: number, lang: Lang): string {
+  return [tIn(lang, 'peer.routineHead', { name, time: hhmm(scheduledFor) }), tIn(lang, 'peer.routineRules'), tIn(lang, 'peer.body'), prompt].join('\n')
+}
+
+// await_event: the event a session waited for came (switchboard fire).
+export function waitText(wait: { id: number; note: string; payload: string }, lang: Lang): string {
+  const lines = [tIn(lang, 'peer.waitHead', { id: wait.id }), tIn(lang, 'peer.waitNote', { note: wait.note })]
+  if (wait.payload) lines.push(tIn(lang, 'peer.waitPayload'), wait.payload)
+  lines.push(tIn(lang, 'peer.waitGo'))
+  return lines.join('\n')
+}

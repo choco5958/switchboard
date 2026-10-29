@@ -125,3 +125,13 @@ test('no bridge: 5', async () => {
   })
   assert.equal(code, EXIT.unreachable)
 })
+
+test('fire puts the wait back into its session; waits lists the open ones', async () => {
+  const { json } = await call('POST', '/waits', { sessionId: 'c1', note: '배포 끝나면 스모크 테스트' })
+  assert.match((await cli(['waits'])).out, new RegExp(`${json.id} \\[web\\] 배포 끝나면 스모크 테스트`))
+  assert.equal((await cli(['fire', json.id, '배포', '완료'])).code, EXIT.done)
+  assert.equal((await cli(['fire', json.id])).code, EXIT.unreachable)
+  assert.equal((await cli(['waits'])).out, 'no open waits')
+  const items = (await call('POST', '/deliveries/take', { sessionId: 'c1' })).json.items as { text: string }[]
+  assert.ok(items.some(item => /함께 온 내용:\n배포 완료/.test(item.text)))
+})

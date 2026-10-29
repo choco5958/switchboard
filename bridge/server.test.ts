@@ -731,3 +731,92 @@ describe('messages between sessions', () => {
     stream.destroy()
   })
 })
+
+describe('scheduled prompts and waits', () => {
+  const take = async (sessionId: string) => (await call('POST', '/deliveries/take', { sessionId })).json.items as { id: string; text: string }[]
+  const runs = async (routineId: number) =>
+    ((await call('GET', '/state')).json.routineRuns as { routine_id: number; status: string; failure: string; result: string }[]).filter(r => r.routine_id === routineId)
+  const open = (sessionId: string) => {
+    const req = request({ socketPath, path: `/deliveries?session=${sessionId}` })
+    req.on('error', () => undefined)
+    req.end()
+    return req
+  }
+
+  test('a run waits for a session of its project, goes in, and ends quiet', async () => {
+    assert.equal((await call('POST', '/routines', { name: 'x', prompt: 'y', project: 'p', cwd: '/w', schedule: { kind: 'interval', every: 1 } })).status, 400)
+    const { json: r } = await call('POST', '/routines', {
+      name: '의존성 점검', prompt: 'pnpm outdated를 보고 올릴 것만 알려줘', project: 'sched', cwd: '/w/sched', schedule: { kind: 'daily', time: '09:00' },
+    })
+    assert.equal(typeof r.next_at, 'number')
+    await call('POST', `/routines/${r.id}/run`)
+    assert.deepEqual((await runs(r.id)).map(run => run.status), ['waiting'])
+
+    await call('POST', '/sessions', { id: 'sch-1', cwd: '/w/sched' })
+    const stream = open('sch-1')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.deepEqual((await runs(r.id)).map(run => run.status), ['sent'])
+    const [got] = await take('sch-1')
+    assert.match(got!.text, /예약 프롬프트 '의존성 점검'/)
+    assert.match(got!.text, /routine_no_update/)
+    assert.match(got!.text, /pnpm outdated를 보고 올릴 것만 알려줘$/)
+
+    // A second run while the first one still runs is skipped.
+    await call('POST', `/routines/${r.id}/run`)
+    assert.deepEqual((await runs(r.id)).map(run => run.status), ['sent', 'skipped'])
+
+    assert.equal((await call('POST', '/routines/report', { sessionId: 'sch-1', kind: 'quiet' })).status, 200)
+    await call('POST', '/messages/turn-end', { sessionId: 'sch-1', ids: [got!.id], answer: '새로 올릴 것 없음' })
+    assert.equal((await runs(r.id))[0]!.status, 'quiet')
+    assert.equal((await call('POST', '/routines/report', { sessionId: 'sch-1', kind: 'quiet' })).status, 400)
+
+    // Failed, and interrupted.
+    await call('POST', `/routines/${r.id}/run`)
+    const [second] = await take('sch-1')
+    await call('POST', '/routines/report', { sessionId: 'sch-1', kind: 'failed', reason: '레지스트리에 닿지 못함' })
+    await call('POST', '/messages/turn-end', { sessionId: 'sch-1', ids: [second!.id], answer: '실패' })
+    await call('POST', `/routines/${r.id}/run`)
+    const [third] = await take('sch-1')
+    await call('POST', '/messages/turn-end', { sessionId: 'sch-1', ids: [third!.id], answer: '', aborted: true })
+    const last = await runs(r.id)
+    assert.deepEqual(last.map(run => run.status), ['quiet', 'skipped', 'failed', 'failed'])
+    assert.equal(last[2]!.failure, '레지스트리에 닿지 못함')
+    assert.equal(last[3]!.failure, '턴이 중단됨')
+    stream.destroy()
+    await call('POST', `/routines/${r.id}/delete`)
+    assert.equal((await runs(r.id)).length, 0)
+  })
+
+  test('a run due long ago follows the missed policy; a once switches itself off', async () => {
+    const make = async (missed: string, schedule: object) =>
+      (await call('POST', '/routines', { name: missed, prompt: 'p', project: 'gone', cwd: '/w/gone', schedule, missed })).json
+    const skip = await make('skip', { kind: 'daily', time: '09:00' })
+    const once = await make('run-once', { kind: 'daily', time: '09:00' })
+    const at = Date.now()
+    bridge.db.prepare('update routines set next_at = ? where id in (?, ?)').run(at - 3600_000, skip.id, once.id)
+    bridge.tickRoutines(at)
+    assert.deepEqual((await runs(skip.id)).map(run => run.status), ['missed'])
+    assert.deepEqual((await runs(once.id)).map(run => run.status), ['waiting'])
+    const later = new Date(at + 3600_000)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const one = await make('skip', { kind: 'once', at: `${later.getFullYear()}-${pad(later.getMonth() + 1)}-${pad(later.getDate())}T${pad(later.getHours())}:${pad(later.getMinutes())}` })
+    bridge.tickRoutines(one.next_at)
+    const row = (await call('GET', '/state')).json.routines.find((r: { id: number }) => r.id === one.id)
+    assert.deepEqual([row.enabled, row.next_at], [0, null])
+    for (const r of [skip, once, one]) await call('POST', `/routines/${r.id}/delete`)
+  })
+
+  test('a wait goes back into its session when it fires', async () => {
+    await call('POST', '/sessions', { id: 'wt-1', cwd: '/w/wait' })
+    const { json } = await call('POST', '/waits', { sessionId: 'wt-1', note: 'CI가 끝나면 결과를 보고 배포 여부 판단' })
+    assert.match(json.id, /^w\d+$/)
+    assert.equal((await call('GET', '/waits?session=wt-1')).json.waits.length, 1)
+    await call('POST', `/waits/${json.id}/fire`, { payload: 'CI 통과 (12분)' })
+    const [got] = await take('wt-1')
+    assert.match(got!.text, new RegExp(`기다리던 일 ${json.id}가 일어났습니다`))
+    assert.match(got!.text, /기다린 이유: CI가 끝나면/)
+    assert.match(got!.text, /함께 온 내용:\nCI 통과 \(12분\)/)
+    assert.equal((await call('POST', `/waits/${json.id}/fire`, {})).status, 404)
+    assert.equal((await call('GET', '/waits?session=wt-1')).json.waits.length, 0)
+  })
+})

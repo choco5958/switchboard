@@ -70,6 +70,15 @@ const KO = {
   sendText: '보낼 메시지',
   sendReplyTo: '답하는 메시지 id (예: m12)',
   sendExpects: '답을 바라면 true(기본값), 정보만 알리면 false',
+  noUpdate: '예약 프롬프트 실행에서 사람에게 알릴 것이 없을 때 부른다. 알림 없이 조용히 끝난 실행으로 기록된다. 예약 실행이 아닐 때는 부르지 않는다.',
+  reportFailure: '예약 프롬프트 실행에서 할 일을 해내지 못했을 때 이유와 함께 부른다. 실패한 실행으로 기록되고 사람에게 알린다.',
+  reportReason: '못 한 이유 한 줄',
+  awaitEvent:
+    '빌드, 배포, 다른 사람의 확인처럼 이번 턴 밖에서 일어날 일을 기다려야 할 때 대기를 연다. 대기 id(w번호)를 사용자에게 알리고 턴을 끝낸다. 폴링하거나 sleep하지 않는다. ' +
+    '그 일이 일어나면 셸의 "switchboard fire w번호"로 이 요청이 다시 들어온다(예: long-job; switchboard fire w3).',
+  awaitNote: '무엇을 기다리고, 일어나면 무엇을 할지 한두 줄',
+  closeWait: '더 기다릴 필요가 없어진 대기를 닫는다.',
+  closeWaitId: '닫을 대기 id (예: w3)',
 }
 
 const EN: typeof KO = {
@@ -141,6 +150,15 @@ const EN: typeof KO = {
   sendText: 'The message',
   sendReplyTo: 'Id of the message this answers (e.g. m12)',
   sendExpects: 'true (the default) when you want an answer, false for information only',
+  noUpdate: 'Call it in a scheduled prompt run when there is nothing to tell the person. The run is recorded as ended quietly, with no notification. Do not call it outside a scheduled run.',
+  reportFailure: 'Call it with the reason in a scheduled prompt run when the work could not be done. The run is recorded as failed and the person is told.',
+  reportReason: 'Why it could not be done, in one line',
+  awaitEvent:
+    'Opens a wait when the work needs something that happens outside this turn, such as a build, a deploy or someone else\'s check. Tell the user the wait id (w number) and end your turn; do not poll or sleep. ' +
+    'When it happens, "switchboard fire w<number>" in a shell puts this request back into the session (for example: long-job; switchboard fire w3).',
+  awaitNote: 'What you wait for and what to do when it happens, in a line or two',
+  closeWait: 'Closes a wait that is no longer needed.',
+  closeWaitId: 'Id of the wait to close (e.g. w3)',
 }
 
 const STAGES = ['요구', '설계', '작업', '완료']
@@ -257,6 +275,26 @@ export function toolDefs(lang: Lang): ToolDef[] {
         },
         required: ['text'],
       },
+    },
+    {
+      name: 'routine_no_update',
+      description: d.noUpdate,
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'routine_report_failure',
+      description: d.reportFailure,
+      inputSchema: { type: 'object', properties: { reason: { type: 'string', description: d.reportReason } }, required: ['reason'] },
+    },
+    {
+      name: 'await_event',
+      description: d.awaitEvent,
+      inputSchema: { type: 'object', properties: { note: { type: 'string', description: d.awaitNote } }, required: ['note'] },
+    },
+    {
+      name: 'close_wait',
+      description: d.closeWait,
+      inputSchema: { type: 'object', properties: { id: { type: 'string', description: d.closeWaitId } }, required: ['id'] },
     },
     {
       name: 'update_node',

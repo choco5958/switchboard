@@ -87,6 +87,10 @@ export type TermStart = {
   prepare?: (key: string) => { env?: Record<string, string>; line?: string }
 }
 
+// A `+ Claude` terminal opened by the app itself (a scheduled prompt with no session to go
+// to); set once the terminal handlers are registered.
+export let openClaudeIn: (cwd: string) => TermInfo | { error: string } = () => ({ error: 'terminals not ready' })
+
 // A login shell in the folder, the way every dock terminal starts.
 export function openTerminal(start: TermStart): TermInfo | { error: string } {
   const folder = start.cwd.startsWith('~/') ? homedir() + start.cwd.slice(1) : start.cwd
@@ -145,6 +149,15 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
       prepare: () => ({ line: claude ? claudeLine(claudeLauncher(), shellQuote(modDir), slot, ccrPaths().count) : undefined }),
     }),
   )
+  openClaudeIn = cwd =>
+    openTerminal({
+      cwd,
+      cols: 100,
+      rows: 30,
+      claude: true,
+      title: 'claude',
+      prepare: () => ({ line: claudeLine(claudeLauncher(), shellQuote(modDir), undefined, ccrPaths().count) }),
+    })
 
   ipcMain.handle('term:buffer', (_e, id: string) => {
     const t = terms.get(id)

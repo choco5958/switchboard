@@ -119,6 +119,8 @@ export type BridgeState = {
   sessions: Session[]
   live?: string[] // sessions whose delivery stream is open now
   activity?: Record<string, Activity> // what each session's turn is doing (src/shared/stall.ts)
+  routines?: Routine[]
+  routineRuns?: RoutineRun[] // the newest 100
   tasks: Task[]
   questions: Question[]
   answeredCount: number
@@ -242,3 +244,36 @@ export type CcrSlot = {
 // Feature area: agent CLIs other than Claude Code. found maps a command to its path
 // on the login-shell PATH; a command missing from it is not installed.
 export type AgentDetect = { found: Record<string, string>; node: string | null; at: number }
+
+// A scheduled prompt (bridge/schedule.ts) and one of its runs, as GET /state returns them.
+export type RoutineSchedule =
+  | { kind: 'daily'; time: string }
+  | { kind: 'weekdays'; time: string }
+  | { kind: 'interval'; every: number; anchor: number }
+  | { kind: 'once'; at: string }
+
+export type Routine = {
+  id: number
+  project: string
+  cwd: string
+  name: string
+  prompt: string
+  schedule: string // JSON of RoutineSchedule
+  missed: 'skip' | 'run-once'
+  enabled: number
+  next_at: number | null
+  created_at: number
+  updated_at: number
+}
+
+export type RoutineRun = {
+  id: number
+  routine_id: number
+  scheduled_for: number
+  created_at: number
+  session_id: string
+  status: 'waiting' | 'sent' | 'done' | 'quiet' | 'failed' | 'skipped' | 'missed'
+  failure: string
+  result: string
+  finished_at: number | null
+}

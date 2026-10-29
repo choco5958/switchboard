@@ -7,6 +7,8 @@
 //   switchboard status <m12>
 //   switchboard decisions [--json]
 //   switchboard answer <Q12> <key | -> [memo]
+//   switchboard waits
+//   switchboard fire <w3> [what happened | -]     (a session's await_event)
 //
 // Exit codes, as in OpenBot's script CLI: 0 done, 1 failed, 2 wrong command line or two
 // sessions match, 3 the session waits for a person (a decision question it posted since the
@@ -79,7 +81,9 @@ const USAGE = `switchboard sessions
 switchboard send <session|project> <text | -> [--wait] [--timeout 30m] [--info] [--json]
 switchboard status <m12>
 switchboard decisions [--json]
-switchboard answer <Q12> <key | -> [memo]`
+switchboard answer <Q12> <key | -> [memo]
+switchboard waits
+switchboard fire <w3> [what happened | -]`
 
 type Io = { out: (text: string) => void; err: (text: string) => void; stdin: () => Promise<string>; sleep: (ms: number) => Promise<void>; now: () => number }
 
@@ -133,6 +137,25 @@ export async function run(argv: readonly string[], call: Call, io: Io): Promise<
     if (!r) return fail(EXIT.unreachable, 'the bridge is not running')
     if (r.status !== 200) return fail(r.status === 404 ? EXIT.unreachable : EXIT.failed, String(r.json.error ?? r.status))
     print({ ok: true, id }, `answered Q${id}`)
+    return EXIT.done
+  }
+
+  if (command === 'waits') {
+    const r = await ask('GET', '/waits')
+    if (!r) return fail(EXIT.unreachable, 'the bridge is not running')
+    const waits = (r.json.waits ?? []) as { id: number; project: string | null; session_id: string; note: string }[]
+    print(waits, waits.map(w => `w${w.id} [${w.project ?? w.session_id}] ${w.note.split('\n')[0]}`).join('\n') || 'no open waits')
+    return EXIT.done
+  }
+
+  if (command === 'fire') {
+    const id = (args[0] ?? '').replace(/^w/, '')
+    if (!/^\d+$/.test(id)) return fail(EXIT.usage, USAGE)
+    const payload = args.length === 2 && args[1] === '-' ? await io.stdin() : args.slice(1).join(' ')
+    const r = await ask('POST', `/waits/${id}/fire`, { payload })
+    if (!r) return fail(EXIT.unreachable, 'the bridge is not running')
+    if (r.status !== 200) return fail(EXIT.unreachable, String(r.json.error ?? r.status))
+    print({ ok: true, id: `w${id}` }, `fired w${id}`)
     return EXIT.done
   }
 

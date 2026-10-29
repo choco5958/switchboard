@@ -463,6 +463,24 @@ export const register: Register = on => {
     return { result: sentText(reply.json, expectsReply, currentLang()) }
   }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
 
+  const bridgeTool = async ($: Engine, path: string, body: unknown, ok: (json: Record<string, unknown>) => string) => {
+    const reply = await call($, 'POST', path, body).catch((error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }))
+    return { result: reply.ok ? ok(reply.json) : t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
+  }
+  on('tool.call', { tool: 'mcp__ide-bridge__routine_no_update' }, async $ =>
+    bridgeTool($, '/routines/report', { sessionId, kind: 'quiet' }, () => t(currentLang(), 'tool.quietOk')),
+  ).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+  on('tool.call', { tool: 'mcp__ide-bridge__routine_report_failure' }, async ($, e) =>
+    bridgeTool($, '/routines/report', { sessionId, kind: 'failed', reason: e.reason }, () => t(currentLang(), 'tool.failureOk')),
+  ).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+  on('tool.call', { tool: 'mcp__ide-bridge__await_event' }, async ($, e) =>
+    bridgeTool($, '/waits', { sessionId, note: e.note }, json => t(currentLang(), 'tool.waitOpened', { id: String(json.id) })),
+  ).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+  on('tool.call', { tool: 'mcp__ide-bridge__close_wait' }, async ($, e) => {
+    const id = String(e.id ?? '').replace(/^w/, '')
+    return bridgeTool($, `/waits/${id}/close`, {}, () => t(currentLang(), 'tool.waitClosed', { id: `w${id}` }))
+  }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+
   on('tool.call', { tool: 'mcp__ide-bridge__set_task' }, async ($, e) => {
     const reply = await call($, 'POST', '/tasks', {
       sessionId,
@@ -553,9 +571,10 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       busy = false
       openTools = 0
-      // An interrupted turn answered nothing: its requests get no result in its place.
-      if (answering.length > 0 && sessionId && !e.isAborted) {
-        void call($, 'POST', '/messages/turn-end', { sessionId, ids: answering, answer: e.answer }).catch(() => undefined)
+      // An interrupted turn answered nothing: the bridge sends no result for its requests and
+      // ends a scheduled run it carried as failed.
+      if (answering.length > 0 && sessionId) {
+        void call($, 'POST', '/messages/turn-end', { sessionId, ids: answering, answer: e.answer, aborted: e.isAborted }).catch(() => undefined)
       }
       answering = []
       void flush($)

@@ -655,3 +655,12 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .waiting-group h3 { color: var(--warn); }
 .card .forward { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .card .forward select { max-width: 320px; }
+
+.routine-row { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+.routine-row.off { opacity: 0.6; }
+.routine-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.routine-last { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.routine-form { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+.routine-form input:not([type='checkbox']), .routine-form textarea { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+.routine-when { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.routine-when input[type='number'] { width: 64px; }

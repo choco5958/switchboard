@@ -12,10 +12,10 @@ import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
 import { bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
-import { onTerminalsChange, registerTerminals, typingTarget } from './terminals'
+import { onTerminalsChange, openClaudeIn, registerTerminals, typingTarget } from './terminals'
 import { registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
-import { badgeText, planNotification, scanPending, scanReleased, scanStalled } from './notify'
+import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled } from './notify'
 import { STALL_MS, stalledSessions } from '../shared/stall'
 import { limitedUntil } from '../shared/limit'
 import { netEntry, type PageLogEntry } from '../shared/pageLog'
@@ -74,6 +74,7 @@ function send(channel: string, payload: unknown): void {
 let seenPending: Set<number> | null = null
 let seenStalled = new Set<string>()
 let seenLimited = new Set<string>()
+let seenRuns: Set<number> | null = null
 let scanTimer: ReturnType<typeof setTimeout> | null = null
 
 // Electron drops a notification's click handler once the object is collected, so live ones are held here.
@@ -98,6 +99,7 @@ async function scanQueue(): Promise<void> {
   if (!reply.ok) return
   notifyStalled(reply.json as unknown as BridgeState)
   notifyReleased(reply.json as unknown as BridgeState)
+  notifyRuns(reply.json as unknown as BridgeState)
   const scan = scanPending((reply.json as unknown as BridgeState).questions ?? [], seenPending)
   seenPending = scan.ids
   app.dock?.setBadge(badgeText(scan.count))
@@ -127,6 +129,26 @@ function notifyStalled(state: BridgeState): void {
   for (const id of scan.fresh) {
     const project = state.sessions.find(s => s.id === id)?.project ?? id
     const notification = new Notification({ title: project, body: t('notify.stalled', { minutes: STALL_MS / 60_000 }) })
+    liveNotifications.add(notification)
+    notification.on('click', () => {
+      liveNotifications.delete(notification)
+      focusWindow()
+    })
+    notification.on('close', () => liveNotifications.delete(notification))
+    notification.show()
+  }
+}
+
+// A scheduled prompt run that ended with something to say, or failed. A quiet run, one that
+// was skipped and the runs already over at launch notify nothing.
+function notifyRuns(state: BridgeState): void {
+  const scan = scanRuns(state.routineRuns ?? [], seenRuns)
+  seenRuns = scan.ids
+  if (!Notification.isSupported()) return
+  for (const run of scan.fresh) {
+    const routine = (state.routines ?? []).find(r => r.id === run.routine_id)
+    const body = run.status === 'failed' ? t('notify.runFailed', { reason: run.failure }) : firstLine(run.result) || t('notify.runDone')
+    const notification = new Notification({ title: routine?.name ?? 'Switchboard', body })
     liveNotifications.add(notification)
     notification.on('click', () => {
       liveNotifications.delete(notification)
@@ -184,6 +206,9 @@ function watch(): void {
       else app.dock?.setBadge('')
     },
     onEvent: event => {
+      // A scheduled prompt found no Claude session of its project: start one there.
+      const change = event as { type?: string; cwd?: string }
+      if (change.type === 'routine-open' && change.cwd) openClaudeIn(change.cwd)
       send('bridge:change', event)
       scheduleScan()
       agentDelivery.onBridgeEvent(event)

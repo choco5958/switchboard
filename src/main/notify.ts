@@ -1,4 +1,4 @@
-import type { Question } from '../shared/types'
+import type { Question, RoutineRun } from '../shared/types'
 
 export type PendingScan = {
   // Ids to remember for the next comparison.
@@ -46,4 +46,12 @@ export function scanStalled(stalled: readonly string[], previous: Set<string>): 
 export function scanReleased(limited: readonly string[], previous: Set<string>): { ids: Set<string>; released: string[] } {
   const ids = new Set(limited)
   return { ids, released: [...previous].filter(id => !ids.has(id)) }
+}
+
+// Runs that ended since the last pass and have something to say: done with an answer, or
+// failed. The first pass after launch is only a baseline.
+export function scanRuns(runs: readonly RoutineRun[], previous: Set<number> | null): { ids: Set<number>; fresh: RoutineRun[] } {
+  const ended = runs.filter(run => run.status === 'done' || run.status === 'failed')
+  const ids = new Set(ended.map(run => run.id))
+  return { ids, fresh: previous === null ? [] : ended.filter(run => !previous.has(run.id)) }
 }

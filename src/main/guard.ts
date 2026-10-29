@@ -30,8 +30,8 @@ export function isExternalUrl(url: string): boolean {
   return parsed?.protocol === 'http:' || parsed?.protocol === 'https:'
 }
 
-// Plain bridge calls from screens that only read or write rows (archive, settings, command results).
-const BRIDGE_ROUTES = /^\/(tasks|settings|commands)(\/|$)/
+// Plain bridge calls from screens that only read or write rows (archive, settings, command results, scheduled prompts).
+const BRIDGE_ROUTES = /^\/(tasks|settings|commands|routines)(\/|$)/
 
 const DEBUG_ROUTES = /^\/(comments|dev\/open|sessions\/live)(\/|$)/
 

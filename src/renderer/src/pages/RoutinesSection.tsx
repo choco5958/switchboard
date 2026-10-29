@@ -1,0 +1,182 @@
+import { useState } from 'react'
+import type { Routine, RoutineRun, RoutineSchedule } from '../../../shared/types'
+import type { ProjectInfo } from '../../../shared/projects'
+import { t, type Key } from '../../../shared/i18n'
+import { useToast } from '../parts'
+import { clock } from '../model'
+
+// Settings: scheduled prompts (bridge/schedule.ts). Each goes to a connected Claude Code
+// session of its project at its time; with none, the app opens one there.
+
+type Draft = { id: number; name: string; project: string; prompt: string; kind: RoutineSchedule['kind']; time: string; every: string; at: string; runMissed: boolean }
+
+const EMPTY: Draft = { id: 0, name: '', project: '', prompt: '', kind: 'daily', time: '09:00', every: '60', at: '', runMissed: false }
+
+const STATUS_KEYS: Record<RoutineRun['status'], Key> = {
+  waiting: 'routines.status.waiting',
+  sent: 'routines.status.sent',
+  done: 'routines.status.done',
+  quiet: 'routines.status.quiet',
+  failed: 'routines.status.failed',
+  skipped: 'routines.status.skipped',
+  missed: 'routines.status.missed',
+}
+
+function parse(routine: Routine): RoutineSchedule | null {
+  try {
+    return JSON.parse(routine.schedule) as RoutineSchedule
+  } catch {
+    return null
+  }
+}
+
+export function scheduleLabel(schedule: RoutineSchedule | null): string {
+  if (!schedule) return '-'
+  if (schedule.kind === 'daily') return t('routines.daily', { time: schedule.time })
+  if (schedule.kind === 'weekdays') return t('routines.weekdays', { time: schedule.time })
+  if (schedule.kind === 'interval') return t('routines.interval', { n: schedule.every })
+  return t('routines.once', { at: schedule.at.replace('T', ' ') })
+}
+
+function draftOf(routine: Routine): Draft {
+  const s = parse(routine)
+  return {
+    id: routine.id,
+    name: routine.name,
+    project: routine.project,
+    prompt: routine.prompt,
+    kind: s?.kind ?? 'daily',
+    time: s && 'time' in s ? s.time : '09:00',
+    every: s?.kind === 'interval' ? String(s.every) : '60',
+    at: s?.kind === 'once' ? s.at : '',
+    runMissed: routine.missed === 'run-once',
+  }
+}
+
+export function RoutinesSection({ routines, runs, projects }: { routines: Routine[]; runs: RoutineRun[]; projects: ProjectInfo[] }) {
+  const toast = useToast()
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [deleting, setDeleting] = useState<number | null>(null)
+  const folders = projects.filter(p => p.cwd)
+  const set = (patch: Partial<Draft>) => setDraft(current => (current ? { ...current, ...patch } : current))
+
+  const call = async (path: string, body?: unknown) => {
+    const reply = await window.ide.bridge('POST', path, body)
+    if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
+    return reply.ok
+  }
+
+  const save = async () => {
+    if (!draft) return
+    const project = folders.find(p => p.name === draft.project)
+    const schedule =
+      draft.kind === 'interval' ? { kind: 'interval', every: Number(draft.every) } : draft.kind === 'once' ? { kind: 'once', at: draft.at } : { kind: draft.kind, time: draft.time }
+    const ok = await call('/routines', {
+      id: draft.id || undefined,
+      name: draft.name,
+      prompt: draft.prompt,
+      project: draft.project,
+      cwd: project?.cwd ?? '',
+      schedule,
+      missed: draft.runMissed ? 'run-once' : 'skip',
+    })
+    if (ok) setDraft(null)
+  }
+
+  const toggle = (r: Routine) => {
+    const s = parse(r)
+    void call('/routines', { ...r, schedule: s, enabled: r.enabled !== 1 })
+  }
+
+  return (
+    <section className="settings-row routines">
+      <h2>{t('routines.title')}</h2>
+      <p className="quiet small">{t('routines.hint')}</p>
+      {routines.length === 0 && !draft && <p className="quiet">{t('routines.empty')}</p>}
+      {routines.map(r => {
+        const last = [...runs].reverse().find(run => run.routine_id === r.id)
+        return (
+          <div key={r.id} className={`routine-row ${r.enabled ? '' : 'off'}`}>
+            <div className="routine-head">
+              <strong>{r.name}</strong>
+              <span className="quiet small">
+                {r.project}, {scheduleLabel(parse(r))}
+                {r.enabled && r.next_at ? `, ${t('routines.next', { at: clock(r.next_at) })}` : ''}
+              </span>
+              <span className="spacer" />
+              <label className="check-row small">
+                <input type="checkbox" checked={r.enabled === 1} onChange={() => toggle(r)} />
+                {t('routines.enabled')}
+              </label>
+              <button className="link small" onClick={() => void call(`/routines/${r.id}/run`)}>
+                {t('routines.runNow')}
+              </button>
+              <button className="link small" onClick={() => setDraft(draftOf(r))}>
+                {t('routines.edit')}
+              </button>
+              <button
+                className={`link small ${deleting === r.id ? 'error' : ''}`}
+                onClick={() => {
+                  if (deleting !== r.id) return setDeleting(r.id)
+                  setDeleting(null)
+                  void call(`/routines/${r.id}/delete`)
+                }}
+              >
+                {deleting === r.id ? t('routines.deleteConfirm') : t('routines.delete')}
+              </button>
+            </div>
+            {last && (
+              <div className="quiet small routine-last" title={last.result || last.failure}>
+                {t('routines.last', { at: clock(last.scheduled_for), status: t(STATUS_KEYS[last.status]) })}
+                {(last.failure || last.result) && `: ${(last.failure || last.result).split('\n')[0]}`}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {draft ? (
+        <div className="routine-form">
+          <input placeholder={t('routines.name')} value={draft.name} onChange={e => set({ name: e.target.value })} />
+          <select className="session-select inline" value={draft.project} onChange={e => set({ project: e.target.value })}>
+            <option value="">{t('routines.pickProject')}</option>
+            {folders.map(p => (
+              <option key={p.name} value={p.name}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <textarea className="memo" placeholder={t('routines.prompt')} value={draft.prompt} onChange={e => set({ prompt: e.target.value })} />
+          <div className="routine-when">
+            <select className="session-select inline" value={draft.kind} onChange={e => set({ kind: e.target.value as Draft['kind'] })}>
+              <option value="daily">{t('routines.kind.daily')}</option>
+              <option value="weekdays">{t('routines.kind.weekdays')}</option>
+              <option value="interval">{t('routines.kind.interval')}</option>
+              <option value="once">{t('routines.kind.once')}</option>
+            </select>
+            {(draft.kind === 'daily' || draft.kind === 'weekdays') && <input type="time" value={draft.time} onChange={e => set({ time: e.target.value })} />}
+            {draft.kind === 'interval' && (
+              <label className="small">
+                <input type="number" min={5} value={draft.every} onChange={e => set({ every: e.target.value })} /> {t('routines.minutes')}
+              </label>
+            )}
+            {draft.kind === 'once' && <input type="datetime-local" value={draft.at} onChange={e => set({ at: e.target.value })} />}
+            <label className="check-row small" title={t('routines.runMissedTitle')}>
+              <input type="checkbox" checked={draft.runMissed} onChange={e => set({ runMissed: e.target.checked })} />
+              {t('routines.runMissed')}
+            </label>
+          </div>
+          <div className="actions">
+            <button className="primary" disabled={!draft.name.trim() || !draft.project || !draft.prompt.trim()} onClick={() => void save()}>
+              {t('routines.save')}
+            </button>
+            <button onClick={() => setDraft(null)}>{t('common.cancel')}</button>
+          </div>
+        </div>
+      ) : (
+        <button className="link" disabled={folders.length === 0} onClick={() => setDraft({ ...EMPTY, project: folders[0]?.name ?? '' })}>
+          {t('routines.add')}
+        </button>
+      )}
+    </section>
+  )
+}

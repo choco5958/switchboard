@@ -11,14 +11,46 @@ import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
 import type { Activity } from '../src/shared/stall.ts'
 import { limitedUntil } from '../src/shared/limit.ts'
-import { HELD_REPLY_MS, PEER_RECIPIENTS_MAX, clipText, forwardText, forwardedAnswer, peerText, shellText, type PeerRow } from './peer.ts'
+import { HELD_REPLY_MS, PEER_RECIPIENTS_MAX, clipText, forwardText, forwardedAnswer, peerText, routineText, shellText, waitText, type PeerRow } from './peer.ts'
+import { nextRun, parseSchedule, type Schedule } from './schedule.ts'
 import { eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
 
 export type Option = { key: string; label: string }
 
+type RoutineRow = {
+  id: number
+  project: string
+  cwd: string
+  name: string
+  prompt: string
+  schedule: string
+  missed: 'skip' | 'run-once'
+  enabled: number
+  next_at: number | null
+  created_at: number
+  updated_at: number
+}
+
+type RunRow = {
+  id: number
+  routine_id: number
+  scheduled_for: number
+  created_at: number
+  session_id: string
+  message_id: number | null
+  status: 'waiting' | 'sent' | 'done' | 'quiet' | 'failed' | 'skipped' | 'missed'
+  quiet: number
+  failure: string
+  result: string
+  finished_at: number | null
+  opened: number
+}
+
 type OutboxRow = PeerRow & {
   session_id: string
   delivered: number
+  routine_run: number | null
+  wait_id: number | null
   kind: string
   task_title: string
   created_at: number
@@ -94,6 +126,23 @@ create table if not exists nodes (
   round integer not null default 1, note text not null default '',
   updated_at integer not null,
   unique (task_id, key)
+);
+create table if not exists routines (
+  id integer primary key, project text not null, cwd text not null, name text not null,
+  prompt text not null, schedule text not null, missed text not null default 'skip',
+  enabled integer not null default 1, next_at integer, created_at integer not null, updated_at integer not null
+);
+create table if not exists routine_runs (
+  id integer primary key, routine_id integer not null, scheduled_for integer not null,
+  created_at integer not null, session_id text not null default '', message_id integer,
+  status text not null default 'waiting', quiet integer not null default 0,
+  failure text not null default '', result text not null default '', finished_at integer,
+  opened integer not null default 0
+);
+create index if not exists routine_runs_routine on routine_runs (routine_id, id);
+create table if not exists waits (
+  id integer primary key, session_id text not null, note text not null,
+  created_at integer not null, fired_at integer, closed_at integer, payload text not null default ''
 );
 `
 
@@ -250,6 +299,9 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     // A request from the shell (switchboard send --wait): the session's reply waits here.
     ['reply_text', 'text'],
     ['replied_at', 'integer'],
+    // A scheduled prompt's run (bridge/schedule.ts) and a fired wait (await_event).
+    ['routine_run', 'integer'],
+    ['wait_id', 'integer'],
   ])
   // Which agent CLI a session runs in (sessions before this were all Claude Code)
   // and the app terminal it runs in, when it does.
@@ -303,6 +355,16 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
   // What a session reads for one outbox row: a message from another session, or a question
   // the person forwarded, gets its header in the reader's language; the rest is the text sent.
   const outboxText = (m: OutboxRow): string => {
+    if (m.routine_run) {
+      const run = db.prepare('select r.name, r.prompt, rr.scheduled_for from routine_runs rr join routines r on r.id = rr.routine_id where rr.id = ?').get(m.routine_run) as
+        | { name: string; prompt: string; scheduled_for: number }
+        | undefined
+      if (run) return routineText(run.name, run.prompt, run.scheduled_for, langNow())
+    }
+    if (m.wait_id) {
+      const wait = db.prepare('select * from waits where id = ?').get(m.wait_id) as { id: number; note: string; payload: string; created_at: number } | undefined
+      if (wait) return waitText(wait, langNow())
+    }
     if (m.question_id) {
       const q = db.prepare('select * from questions where id = ?').get(m.question_id) as QuestionRow | undefined
       if (q) return forwardText(m.id, q, sessionLabel(q.session_id), langNow(), autoReplies(m.session_id))
@@ -381,6 +443,95 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     for (const recipient of to) pushDeliveries(recipient)
     // The reply may release answers the sender of the request held back (heldReply).
     return ids
+  }
+
+  // Scheduled prompts (bridge/schedule.ts). A run goes to an idle connected Claude Code
+  // session of its project; with none, the app opens a `+ Claude` terminal there (the
+  // 'routine-open' event) and the run waits for it. A run that comes while the previous one
+  // still runs is skipped, so a laptop waking up does not get a burst. It ends at the turn's
+  // end, quiet when the session called routine_no_update, failed with routine_report_failure.
+  const RUN_WAIT_MS = 30 * 60_000
+  const RUN_RESULT_MS = 6 * 3600_000
+  const MISSED_GRACE_MS = 2 * 60_000
+
+  const scheduleOf = (r: RoutineRow): Schedule => JSON.parse(r.schedule) as Schedule
+  const advanceRoutine = (r: RoutineRow, after: number) => {
+    const next = nextRun(scheduleOf(r), after)
+    // A once that ran is done: it stays in the list, switched off.
+    db.prepare('update routines set next_at = ?, enabled = ? where id = ?').run(next, next === null ? 0 : r.enabled, r.id)
+  }
+  const addRun = (r: RoutineRow, scheduledFor: number, status: RunRow['status'], failure = '') =>
+    Number(
+      db
+        .prepare('insert into routine_runs (routine_id, scheduled_for, created_at, status, failure, finished_at) values (?, ?, ?, ?, ?, ?)')
+        .run(r.id, scheduledFor, now(), status, failure, status === 'waiting' ? null : now()).lastInsertRowid,
+    )
+  const startRun = (r: RoutineRow, scheduledFor: number) => {
+    if (db.prepare("select 1 from routine_runs where routine_id = ? and status in ('waiting', 'sent')").get(r.id)) {
+      addRun(r, scheduledFor, 'skipped', say('routine.skippedLive'))
+      return
+    }
+    addRun(r, scheduledFor, 'waiting')
+  }
+  const routineSession = (project: string): string | null => {
+    const live = liveSessions()
+    const rows = db.prepare("select id from sessions where project = ? and agent = 'claude' order by last_seen desc").all(project) as { id: string }[]
+    const ready = rows.filter(row => live.includes(row.id) && !limitedSession(row.id))
+    return (ready.find(row => activity.get(row.id)?.state !== 'working') ?? ready[0])?.id ?? null
+  }
+  const assignRuns = () => {
+    const waiting = db
+      .prepare("select rr.*, r.project, r.cwd, r.name from routine_runs rr join routines r on r.id = rr.routine_id where rr.status = 'waiting' order by rr.id")
+      .all() as (RunRow & { project: string; cwd: string; name: string })[]
+    for (const run of waiting) {
+      const sessionId = routineSession(run.project)
+      if (!sessionId) {
+        // Only the app opens terminals: with it away the run asks again on the next tick.
+        if (!run.opened && watchers.size > 0) {
+          db.prepare('update routine_runs set opened = 1 where id = ?').run(run.id)
+          for (const res of watchers) sseSend(res, 'change', { type: 'routine-open', cwd: run.cwd, project: run.project })
+        }
+        continue
+      }
+      const row = db
+        .prepare("insert into outbox (session_id, kind, text, created_at, expects_reply, routine_run) values (?, '예약', '', ?, 1, ?)")
+        .run(sessionId, now(), run.id)
+      db.prepare("update routine_runs set status = 'sent', session_id = ?, message_id = ? where id = ?").run(sessionId, Number(row.lastInsertRowid), run.id)
+      logEvent(sessionId, '예약', say('bridge.event.routineSent', { name: run.name }))
+      changed('routines')
+      pushDeliveries(sessionId)
+    }
+  }
+  const finishRun = (runId: number, answerText: string, interrupted = false) => {
+    const run = db.prepare('select * from routine_runs where id = ?').get(runId) as RunRow | undefined
+    if (!run || run.status !== 'sent') return
+    const status = interrupted || run.failure ? 'failed' : run.quiet ? 'quiet' : 'done'
+    const failure = run.failure || (interrupted ? say('routine.interrupted') : '')
+    db.prepare('update routine_runs set status = ?, failure = ?, result = ?, finished_at = ? where id = ?').run(status, failure, clipText(answerText).slice(0, 4000), now(), run.id)
+    if (run.message_id) db.prepare('update outbox set answered = 1 where id = ?').run(run.message_id)
+    changed('routines')
+  }
+  const tickRoutines = (at = now()) => {
+    const due = db.prepare('select * from routines where enabled = 1 and next_at is not null and next_at <= ?').all(at) as RoutineRow[]
+    for (const r of due) {
+      // Due long ago (the bridge was down): the routine's missed policy decides.
+      if (r.next_at! < at - MISSED_GRACE_MS && r.missed === 'skip') addRun(r, r.next_at!, 'missed')
+      else startRun(r, r.next_at!)
+      advanceRoutine(r, at)
+    }
+    // A run nobody took, or one whose turn never reported back, ends instead of blocking the next.
+    const stale = db
+      .prepare("select id, status from routine_runs where (status = 'waiting' and created_at < ?) or (status = 'sent' and created_at < ?)")
+      .all(at - RUN_WAIT_MS, at - RUN_RESULT_MS) as { id: number; status: string }[]
+    for (const run of stale) {
+      db.prepare("update routine_runs set status = 'failed', failure = ?, finished_at = ? where id = ?").run(
+        say(run.status === 'waiting' ? 'routine.noSession' : 'routine.noResult'),
+        at,
+        run.id,
+      )
+    }
+    assignRuns()
+    if (due.length > 0 || stale.length > 0) changed('routines')
   }
 
   // Everything waiting for a session, oldest first: answers ("q<id>") and
@@ -515,10 +666,15 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     }
   }, 60_000)
   releasing.unref()
+  tickRoutines()
+  const routineTimer = setInterval(() => tickRoutines(), 30_000)
+  routineTimer.unref()
 
   const state = () => ({
     sessions: db.prepare('select * from sessions order by last_seen desc').all(),
     live: liveSessions(),
+    routines: db.prepare('select * from routines order by id').all(),
+    routineRuns: db.prepare('select * from (select * from routine_runs order by id desc limit 100) order by id').all(),
     activity: Object.fromEntries(activity),
     // Every running task, however many: the limit only trims waiting ones.
     tasks: db
@@ -584,7 +740,10 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       set.add(res)
       deliveryWatchers.set(sessionId, set)
       // The app shows which sessions can take an answer now (state().live).
-      if (set.size === 1) changed('sessions')
+      if (set.size === 1) {
+        changed('sessions')
+        assignRuns()
+      }
       req.on('close', () => {
         set.delete(res)
         if (set.size === 0) changed('sessions')
@@ -1086,11 +1245,16 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       const body = await readJson(req)
       const sessionId = str(body.sessionId)
       const answerText = str(body.answer).trim()
+      const aborted = body.aborted === true
       const ids = Array.isArray(body.ids) ? body.ids.map(id => Number(str(id).replace(/^m/, ''))).filter(Boolean) : []
       let relayed = 0
       for (const id of ids) {
         const row = db.prepare('select * from outbox where id = ? and session_id = ?').get(id, sessionId) as OutboxRow | undefined
-        if (!row || !row.expects_reply || row.answered || !answerText) continue
+        if (row?.routine_run) {
+          finishRun(row.routine_run, answerText, aborted)
+          continue
+        }
+        if (!row || aborted || !row.expects_reply || row.answered || !answerText) continue
         if (row.question_id) answerForwarded(row, sessionId, answerText)
         else if (!row.from_session) keepShellReply(row, answerText)
         else if (row.from_session) {
@@ -1117,6 +1281,102 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       })
       peers.sort((a, b) => Number(b.live) - Number(a.live))
       return send(res, 200, { peers })
+    }
+
+    // Scheduled prompts, from the app's settings. A new or changed one counts its next run from now.
+    if (method === 'POST' && path === '/routines') {
+      const body = await readJson(req)
+      const schedule = parseSchedule(body.schedule, now())
+      if ('error' in schedule) return send(res, 400, { error: schedule.error })
+      const name = str(body.name).trim()
+      const prompt = str(body.prompt).trim()
+      const project = str(body.project).trim()
+      const cwd = str(body.cwd).trim()
+      if (!name || !prompt || !project || !cwd) return send(res, 400, { error: say('bridge.needText') })
+      const missed = str(body.missed) === 'run-once' ? 'run-once' : 'skip'
+      const enabled = body.enabled === false ? 0 : 1
+      const next = nextRun(schedule, now())
+      const id = Number(body.id) || 0
+      if (id) {
+        db.prepare('update routines set project = ?, cwd = ?, name = ?, prompt = ?, schedule = ?, missed = ?, enabled = ?, next_at = ?, updated_at = ? where id = ?').run(
+          project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), id,
+        )
+      }
+      const saved = id
+        ? id
+        : Number(
+            db
+              .prepare('insert into routines (project, cwd, name, prompt, schedule, missed, enabled, next_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+              .run(project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), now()).lastInsertRowid,
+          )
+      changed('routines')
+      return send(res, 200, db.prepare('select * from routines where id = ?').get(saved))
+    }
+    const routineAction = path.match(/^\/routines\/(\d+)\/(run|delete)$/)
+    if (method === 'POST' && routineAction) {
+      const r = db.prepare('select * from routines where id = ?').get(Number(routineAction[1])) as RoutineRow | undefined
+      if (!r) return send(res, 404, { error: say('bridge.notFound') })
+      if (routineAction[2] === 'delete') {
+        db.prepare('delete from routine_runs where routine_id = ?').run(r.id)
+        db.prepare('delete from routines where id = ?').run(r.id)
+      } else {
+        startRun(r, now())
+        assignRuns()
+      }
+      changed('routines')
+      return send(res, 200, { ok: true })
+    }
+
+    // routine_no_update / routine_report_failure: the run this session is on ends quiet or failed
+    // when its turn ends.
+    if (method === 'POST' && path === '/routines/report') {
+      const body = await readJson(req)
+      const run = db
+        .prepare("select id from routine_runs where session_id = ? and status = 'sent' order by id desc limit 1")
+        .get(str(body.sessionId)) as { id: number } | undefined
+      if (!run) return send(res, 400, { error: say('routine.notInRun') })
+      if (str(body.kind) === 'failed') db.prepare('update routine_runs set failure = ? where id = ?').run(str(body.reason).trim().slice(0, 1000) || '-', run.id)
+      else db.prepare('update routine_runs set quiet = 1 where id = ?').run(run.id)
+      return send(res, 200, { ok: true, run: run.id })
+    }
+
+    // await_event: a session parks what it waits for and ends its turn; `switchboard fire w<id>`
+    // later puts the request back into it with what came.
+    if (method === 'POST' && path === '/waits') {
+      const body = await readJson(req)
+      const sessionId = str(body.sessionId)
+      const note = str(body.note).trim()
+      if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
+      if (!note) return send(res, 400, { error: say('bridge.needText') })
+      const open = (db.prepare('select count(*) n from waits where session_id = ? and fired_at is null and closed_at is null').get(sessionId) as { n: number }).n
+      if (open >= 20) return send(res, 400, { error: say('bridge.waitLimit', { max: 20 }) })
+      const id = Number(db.prepare('insert into waits (session_id, note, created_at) values (?, ?, ?)').run(sessionId, note.slice(0, 2000), now()).lastInsertRowid)
+      logEvent(sessionId, '대기', `w${id} ${note.split('\n')[0]?.slice(0, 160) ?? ''}`)
+      changed('waits')
+      return send(res, 200, { id: `w${id}` })
+    }
+    if (method === 'GET' && path === '/waits') {
+      const session = url.searchParams.get('session')
+      const rows = db
+        .prepare(`select w.*, s.project from waits w left join sessions s on s.id = w.session_id where w.fired_at is null and w.closed_at is null ${session ? 'and w.session_id = ?' : ''} order by w.id`)
+        .all(...(session ? [session] : []))
+      return send(res, 200, { waits: rows })
+    }
+    const waitAction = path.match(/^\/waits\/w?(\d+)\/(fire|close)$/)
+    if (method === 'POST' && waitAction) {
+      const body = await readJson(req)
+      const wait = db.prepare('select * from waits where id = ?').get(Number(waitAction[1])) as { id: number; session_id: string; fired_at: number | null; closed_at: number | null } | undefined
+      if (!wait || wait.fired_at || wait.closed_at) return send(res, 404, { error: say('bridge.notFound') })
+      if (waitAction[2] === 'close') {
+        db.prepare('update waits set closed_at = ? where id = ?').run(now(), wait.id)
+      } else {
+        db.prepare('update waits set fired_at = ?, payload = ? where id = ?').run(now(), clipText(str(body.payload)), wait.id)
+        db.prepare("insert into outbox (session_id, kind, text, created_at, wait_id) values (?, '메시지', '', ?, ?)").run(wait.session_id, now(), wait.id)
+        changed('outbox')
+        pushDeliveries(wait.session_id)
+      }
+      changed('waits')
+      return send(res, 200, { ok: true })
     }
 
     // A turn started or ended, or a tool call opened or closed. The app is told only when
@@ -1190,7 +1450,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     })
   })
 
-  return { server, db, prune, close: () => { clearInterval(pruning); clearInterval(releasing); server.close(); db.close() } }
+  return { server, db, prune, tickRoutines, close: () => { clearInterval(pruning); clearInterval(releasing); clearInterval(routineTimer); server.close(); db.close() } }
 }
 
 function isAnswering(socketPath: string): Promise<boolean> {

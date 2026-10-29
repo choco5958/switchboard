@@ -239,6 +239,20 @@ export function createSession(options: Options, deps: Deps) {
       if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
       return { text: sentText(reply.json, expectsReply, lang) }
     }
+    if (name === 'routine_no_update' || name === 'routine_report_failure' || name === 'await_event' || name === 'close_wait') {
+      const waitId = String(a.id ?? '').replace(/^w/, '')
+      const [path, body, done] =
+        name === 'routine_no_update'
+          ? ['/routines/report', { sessionId, kind: 'quiet' }, () => say('tool.quietOk')]
+          : name === 'routine_report_failure'
+            ? ['/routines/report', { sessionId, kind: 'failed', reason: a.reason }, () => say('tool.failureOk')]
+            : name === 'await_event'
+              ? ['/waits', { sessionId, note: a.note }, (json: Record<string, unknown>) => say('tool.waitOpened', { id: String(json.id) })]
+              : [`/waits/${waitId}/close`, {}, () => say('tool.waitClosed', { id: `w${waitId}` })]
+      const reply = await call('POST', path as string, body)
+      if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
+      return { text: (done as (json: Record<string, unknown>) => string)(reply.json) }
+    }
     if (name === 'set_task') {
       const fields = ['title', 'stage', 'status', 'now', 'why', 'what', 'result', 'artifact', 'tests', 'branch']
       const reply = await call('POST', '/tasks', { sessionId, ...Object.fromEntries(fields.map(f => [f, a[f]])) })
