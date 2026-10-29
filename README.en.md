@@ -198,7 +198,7 @@ Sessions started after the install connect to the bridge. If the bridge is not r
 
 1. Start the app and click `+ Claude` in the dock. The first time, choose a project folder with `+ Folder` at the top left.
 2. Give Claude Code work as usual. The tool descriptions say when to use them, so the session posts its task on its own and asks when it needs a decision.
-3. A number on the question-mark icon on the left means a decision is waiting. Open it and answer with a key.
+3. A number on the question-mark icon on the left means a decision or a permission ask is waiting; permission asks also show on the home screen. Open it and answer with a key.
 
 ### Keys
 
@@ -206,9 +206,9 @@ Sessions started after the install connect to the bridge. If the bridge is not r
 | --- | --- |
 | `a`, `b`, `1`, `2` | Pick an option |
 | `Enter` | Send |
-| `H` | Hold |
+| `H` twice | Hold (one press only says what the next does) |
 | `M` | Write a note (`Cmd+Enter` to send, `Esc` to leave) |
-| `Cmd+K` | Find (open a task, ask for a progress report, and so on) |
+| `Cmd+K` (`Ctrl+K` on Windows and Linux) | Find (open a task, ask for a progress report, and so on) |
 
 ### Connecting Telegram
 
@@ -224,9 +224,11 @@ The bridge asks Telegram's servers for new messages itself, so there is no port 
 2. Pick the address the phone opens, type a name for the phone and press `Show a QR code`. On macOS the default is `This computer's name` (`name.local`), which stays when the router hands the computer another address, so the phone does not need pairing again.
 3. Scan the QR code with the phone's camera and open it. Add it to the home screen from the browser's share menu to open it like an app.
 
-Each phone connects on its own, and `Disconnect` in Settings ends one at any time.
+Each phone connects on its own, and `Disconnect` in Settings ends one at any time. A QR code nobody used within 10 minutes stops working.
 
-**Notifications, and away from home**: with [Tailscale](https://tailscale.com) installed and signed in on the computer and the phone, Settings offers `Turn on Tailscale HTTPS`. It has Tailscale make an HTTPS address under this computer's name, open on your tailnet only. Pair through that address to use the page anywhere, and press `Get notifications on this phone` at the bottom to hear about new decisions and permission asks while you are away. On iPhone, add the page to the home screen and open it from there before turning notifications on. A page opened over plain HTTP announces new items only while it is open, with a buzz and a count in its title.
+A page opened over the Wi-Fi (an HTTP address) can answer decisions, deny, and send an ask to the terminal. Allowing permission asks and writing to sessions take a page opened at the Tailscale HTTPS address, since whoever controls the network could swap a page sent over HTTP.
+
+**Notifications, and away from home**: with [Tailscale](https://tailscale.com) installed and signed in on the computer and the phone, Settings offers `Turn on Tailscale HTTPS`. It has Tailscale make an HTTPS address under this computer's name, open on your tailnet only. Pair through that address to use the page anywhere, and press `Get notifications on this phone` at the bottom to hear about new decisions and permission asks while you are away. On iPhone, add the page to the home screen and open it from there before turning notifications on. The home screen app keeps its own storage apart from Safari, so it asks for a pairing code the first time: type the 8-character code shown next to the QR code in the app. A page opened over plain HTTP announces new items only while it is open, with a buzz and a count in its title.
 
 Turn off `Accept phones on the same Wi-Fi` to listen on this computer only, for Tailscale HTTPS alone. macOS then does not ask about the firewall either.
 
@@ -280,7 +282,7 @@ pnpm test; switchboard fire w3 "tests finished: exit code $?"
 - A dev server command a session named through `open_in_ide` runs only after the app shows the command and its folder and you confirm, the first time and whenever it changes.
 - Remote approvals show the command first. Asks that cannot be shown whole (cut, hidden characters, edits in several places) are asked in the terminal only, and asks with masked values cannot be allowed from Telegram.
 - On Windows the bridge opens a port on 127.0.0.1 only and answers only requests carrying the token it makes at each start. Requests from web pages are refused.
-- Phone access stays closed until you turn it on. Then it answers only this computer, the private network and Tailscale addresses. Every request and answer is encrypted with the key each phone got from its QR code (ChaCha20-Poly1305), and each request carries its time and a value used once, so it cannot be sent again. Someone else on the Wi-Fi can neither read it nor answer in your place. A phone can only answer decisions and permission asks, write to sessions and read the view.
+- Phone access stays closed until you turn it on. Then it answers only this computer, the private network and Tailscale addresses. Every request and answer is encrypted with the key each phone got from its QR code (ChaCha20-Poly1305), and each request carries its time and a value used once, so it cannot be sent again. Someone else on the Wi-Fi can neither read it nor answer in your place. A phone can only answer decisions and permission asks, write to sessions and read the view, and allowing or writing to a session is accepted only from requests that came over Tailscale. An address with many failed requests waits a while, and a request whose Host is not this server's address or name is refused.
 - Phone notifications pass through the phone browser's push service (Apple, Google and others). They are encrypted with that browser's key (RFC 8291), so the service cannot read them, and they carry only the project name and the question's first line, or for a permission ask the tool name and the masked first line of the command.
 - The work log is deleted after 7 days. Your account email is shown masked and is never sent anywhere.
 

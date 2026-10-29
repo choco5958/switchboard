@@ -68,6 +68,27 @@ async function restoreTurn($: Engine): Promise<void> {
   mainTurnId = kept.turnId
   answering = kept.answering
   turnItems = kept.turnItems
+  if (busy) void settleRestored($)
+}
+
+// When the main loop last showed it runs (a turn starting or ending, a tool call).
+let turnSignalAt = 0
+const RESTORED_IDLE_MS = 5 * 60_000
+// A turn that ended while the mod was being reloaded left `busy` set with no turn.complete to
+// clear it, and what waits would never go in. With no sign of a running turn for
+// RESTORED_IDLE_MS after the reload, it counts as over.
+async function settleRestored($: Engine): Promise<void> {
+  const since = Date.now()
+  while (busy) {
+    await $.clock.sleep(60_000).catch(() => undefined)
+    if (!busy || turnSignalAt > since) return
+    if (Date.now() - since >= RESTORED_IDLE_MS) {
+      busy = false
+      await keepTurn($)
+      void flush($)
+      return
+    }
+  }
 }
 // The main conversation was compacted: the next prompt restates this session's Switchboard state.
 let restate = false
@@ -623,10 +644,12 @@ export const register: Register = on => {
     if (agentId && stopped.has(agentId)) return { deny: t(currentLang(), 'mod.denyStopped') }
     if (agentId && paused.has(agentId)) return { deny: t(currentLang(), 'mod.denyPaused') }
     openTools += 1
+    turnSignalAt = Date.now()
     void reportActivity($).catch(() => undefined)
     try {
       return await next(e)
     } finally {
+      turnSignalAt = Date.now()
       openTools = Math.max(0, openTools - 1)
       void reportActivity($).catch(() => undefined)
     }
@@ -686,6 +709,7 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       busy = true
       mainTurnId = e.turnId
+      turnSignalAt = Date.now()
       void keepTurn($)
       if (turnItems.length > 0 && turnItems.every(id => cancelledIds.has(id))) {
         void $.turn.abort({ turnId: e.turnId }).catch(() => undefined)
@@ -698,6 +722,7 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
       busy = false
+      turnSignalAt = Date.now()
       openTools = 0
       // An interrupted turn answered nothing: the bridge sends no result for its requests and
       // ends a scheduled run it carried as failed.
