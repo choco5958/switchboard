@@ -839,6 +839,7 @@ export const en: Dict = {
   'mac.moveDetail': 'It runs from the download location or the disk image now. macOS runs an app opened this way from a different temporary path each time, so the launcher that sessions use to start the bridge stops matching on the next run. The app restarts after the move.',
   'mac.move': 'Move',
   'mac.later': 'Later',
+  'agent.menuWaiting': 'The {agent} terminal of {project} shows a menu of its own, so the message for it waits. Answer the menu in the terminal first.',
   'mobile.title': 'Phone access',
   'mobile.hint': 'From a phone browser on the same Wi-Fi, answer decisions, allow or deny permission asks, see tasks and write to sessions. Each phone connects with a QR code, and what goes back and forth is encrypted with that phone\'s own key.',
   'mobile.enable': 'Turn on phone access',

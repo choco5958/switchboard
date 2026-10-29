@@ -437,7 +437,18 @@ registerTerminals(ipcMain, send)
 registerAccount(ipcMain, () => ccrPath())
 // Feature area: agent CLIs other than Claude Code. Their terminals, and answers typed into them.
 registerAgentTerms(ipcMain, call)
-const agentDelivery = startAgentDelivery({ target, call, terminal: typingTarget })
+const agentDelivery = startAgentDelivery({
+  target,
+  call,
+  terminal: typingTarget,
+  // The CLI shows a menu of its own: what waits is not typed into it, and the person hears why.
+  menuWaiting: sessionId =>
+    void call('GET', '/state').then(reply => {
+      const session = ((reply.json.sessions ?? []) as { id: string; project: string; agent?: string }[]).find(s => s.id === sessionId)
+      if (!Notification.isSupported()) return
+      new Notification({ title: 'Switchboard', body: t('agent.menuWaiting', { project: session?.project ?? sessionId, agent: session?.agent ?? '' }) }).show()
+    }),
+})
 onTerminalsChange(() => void agentDelivery.refresh())
 
 // Drawn by scripts/icon.mjs.

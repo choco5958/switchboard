@@ -2,7 +2,7 @@ import { request, type ClientRequest } from 'node:http'
 import { parseFrame, takenText } from '../../mod/hooks/batch.ts'
 import type { Reply, Session } from '../shared/types'
 import { getLang, type Lang } from '../shared/i18n'
-import { ENTER, ENTER_DELAY_MS, readyToType, typedInput, type TypingTarget } from './agentInput'
+import { ENTER, ENTER_DELAY_MS, typedInput, typingBlock, type TypingTarget } from './agentInput'
 import type { RequestTarget } from '../../bridge/endpoint.ts'
 
 // Answers for agent CLIs that run in one of the app's terminals. The mod types
@@ -23,9 +23,14 @@ export type DeliveryOptions = {
   now?: () => number
   // The language the typed text is in, the `lang` setting like the mod's (the main process keeps it current).
   lang?: () => Lang
+  // A menu of the CLI's own has kept something from being typed for MENU_TELL_MS: tell the person once.
+  menuWaiting?: (sessionId: string) => void
 }
 
-type Sub = { key: string; req: ClientRequest | null; timer: ReturnType<typeof setTimeout> | null; busy: boolean; closed: boolean }
+const MENU_TELL_MS = 60_000
+
+// menuSince: when a menu on screen started holding typing back; told: the person heard of it.
+type Sub = { key: string; req: ClientRequest | null; timer: ReturnType<typeof setTimeout> | null; busy: boolean; closed: boolean; menuSince: number; told: boolean }
 
 // Sessions the app types for: not Claude Code, in a terminal of this app that is still open.
 export function typedSessions(sessions: readonly Session[], terminal: (key: string) => TypingTarget | undefined): Session[] {
@@ -51,7 +56,18 @@ export function startAgentDelivery(options: DeliveryOptions) {
     sub.timer = null
     const target = options.terminal(sub.key)
     if (!target?.alive) return
-    if (!readyToType(target, now())) {
+    const block = typingBlock(target, now())
+    if (block === 'menu') {
+      sub.menuSince ||= now()
+      if (!sub.told && now() - sub.menuSince >= MENU_TELL_MS) {
+        sub.told = true
+        options.menuWaiting?.(sessionId)
+      }
+    } else {
+      sub.menuSince = 0
+      sub.told = false
+    }
+    if (block !== null) {
       sub.timer = setTimeout(() => void flush(sessionId), RETRY_MS)
       return
     }
@@ -123,7 +139,7 @@ export function startAgentDelivery(options: DeliveryOptions) {
     for (const id of [...subs.keys()]) if (!wanted.has(id) || subs.get(id)?.key !== wanted.get(id)) close(id)
     for (const [id, key] of wanted) {
       if (subs.has(id)) continue
-      const sub: Sub = { key, req: null, timer: null, busy: false, closed: false }
+      const sub: Sub = { key, req: null, timer: null, busy: false, closed: false, menuSince: 0, told: false }
       subs.set(id, sub)
       listen(id, sub)
     }

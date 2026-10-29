@@ -839,6 +839,7 @@ export const zhCN: Dict = {
   'mac.moveDetail': '现在是从下载位置或磁盘映像运行的。macOS 每次都会从不同的临时路径运行这样打开的应用，会话用来启动桥接的启动文件在下次运行时就对不上了。移动后应用会重新启动。',
   'mac.move': '移动',
   'mac.later': '以后再说',
+  'agent.menuWaiting': '{project} 的 {agent} 终端正显示确认菜单，所以要发送的消息正在等待。请先在终端中回答该菜单。',
   'mobile.title': '手机连接',
   'mobile.hint': '在同一 Wi-Fi 下的手机浏览器中回答决定问题、允许或拒绝权限确认、查看任务并给会话发消息。每部手机用二维码连接，往来内容用该手机专属的密钥加密。',
   'mobile.enable': '开启手机连接',

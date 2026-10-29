@@ -46,34 +46,36 @@ export function cliInFront(foreground: string, shell: string, expect: readonly s
   return expect.length === 0 || expect.some(bin => name(bin) === front)
 }
 
-// The end of what the terminal printed, as plain lines: escapes go, and those that move the
-// cursor (full-screen CLIs draw with them instead of newlines) become line breaks.
-export function screenText(output: string): string {
-  return output
-    .slice(-SCREEN_TAIL)
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[[0-?]*[ -/]*([@-~])/g, (_all, end: string) => ('HfABEFd'.includes(end) ? '\n' : ''))
-    .replace(/\x1b[@-Z\\-_]/g, '')
-    .replace(/\r/g, '\n')
-}
-const SCREEN_TAIL = 4000
-
-// A menu the CLI shows now: its own "run this command?" confirmation, a yes/no question.
-// Typed text and Enter would pick the highlighted option there, so nothing is typed while
-// one is on screen. The last lines only: a menu answered earlier has scrolled up since.
-// The highlighted option of a menu (a numbered list in an answer has no marker before it).
-const MENU_LINE = /^[\s│|]*[›❯>●▶➤]\s*(?:\d[.)]\s*)?(?:yes|no|allow|approve|deny|reject|always|don.?t|proceed)\b/i
-const YES_NO = /\[(?:y\/n|y\/N|Y\/n)\]|\((?:y\/n|yes\/no)\)|\(Y\)es/
-export function permissionMenu(output: string): boolean {
-  const lines = screenText(output).split('\n').filter(line => line.trim() !== '').slice(-12)
-  return lines.some(line => MENU_LINE.test(line) || YES_NO.test(line))
+// A menu the CLI shows now: its own "run this command?" confirmation, or a yes/no question
+// waiting on the last line. Typed text and Enter would pick the highlighted option there, so
+// nothing is typed while one is on screen. `rows`: the screen as it is (termScreen.ts), so a
+// menu erased since, the person's own "> yes" and a quote in an answer are not on it.
+const OPTION_WORDS = 'yes|no|allow|approve|deny|reject|always|don.?t|proceed|cancel|skip|accept|decline|trust|continue|run'
+// The highlighted option: a selection marker (never a bare ">", which quotes and prompts use)
+// before an option word, with or without its number.
+const MARKED = new RegExp(`^[\\s│|┃]*(?:[›❯●▶➤]|>(?=\\s*\\d))\\s*(?:\\d{1,2}[.)]\\s*)?(?:${OPTION_WORDS})\\b`, 'i')
+// Another option of the same menu: numbered, or an option word alone at the start.
+const OPTION = new RegExp(`^[\\s│|┃]*(?:[›❯●▶➤]\\s*)?(?:\\d{1,2}[.)]\\s+\\S|(?:${OPTION_WORDS})\\b)`, 'i')
+const YES_NO = /(?:\[(?:y\/n|y\/N|Y\/n)\]|\((?:y\/n|yes\/no)\))\s*[:?]?\s*$/i
+export function permissionMenu(rows: readonly string[]): boolean {
+  const lines = rows.map(line => line.trimEnd()).filter(line => line.trim() !== '').slice(-15)
+  if (lines.length === 0) return false
+  if (YES_NO.test(lines[lines.length - 1]!)) return true
+  return lines.some((line, i) => MARKED.test(line) && lines.slice(Math.max(0, i - 6), i + 7).filter((other, j) => j !== Math.min(i, 6) && OPTION.test(other)).length >= 1)
 }
 
-// `screen`: the end of the terminal's output (permissionMenu).
-export function readyToType(t: { alive: boolean; foreground: string; shell: string; lastOutput: number; expect?: string[]; screen?: string }, now: number): boolean {
-  return t.alive && cliInFront(t.foreground, t.shell, t.expect) && now - t.lastOutput >= QUIET_MS && !permissionMenu(t.screen ?? '')
+// Why typing waits now, or null when it may go: the CLI is not in front, still printing, or
+// showing a menu (permissionMenu). `screen`: the terminal's rows as they are.
+export function typingBlock(t: { alive: boolean; foreground: string; shell: string; lastOutput: number; expect?: string[]; screen?: readonly string[] }, now: number): 'gone' | 'busy' | 'menu' | null {
+  if (!t.alive || !cliInFront(t.foreground, t.shell, t.expect)) return 'gone'
+  if (now - t.lastOutput < QUIET_MS) return 'busy'
+  return permissionMenu(t.screen ?? []) ? 'menu' : null
+}
+
+export function readyToType(t: Parameters<typeof typingBlock>[0], now: number): boolean {
+  return typingBlock(t, now) === null
 }
 
 // A terminal as the answer typing sees it, at the moment it asks.
 // `expect`: the program names of the terminal's CLI; when given, only they count as it.
-export type TypingTarget = { alive: boolean; shell: string; lastOutput: number; paste: boolean; foreground: string; expect?: string[]; screen?: string; write: (data: string) => void }
+export type TypingTarget = { alive: boolean; shell: string; lastOutput: number; paste: boolean; foreground: string; expect?: string[]; screen?: readonly string[]; write: (data: string) => void }

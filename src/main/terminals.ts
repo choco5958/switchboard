@@ -9,6 +9,7 @@ import { projectName, shellQuote, terminalEnv } from '../shared/projects'
 import { accountDir, claudeLauncher, claudeLine } from './termAccount'
 import { ccrPaths } from './account'
 import { pasteModeAfter, type TypingTarget } from './agentInput'
+import { createScreen, type Screen } from './termScreen'
 import { t } from '../shared/i18n'
 import { writeOpenUrl } from './openUrl'
 import { nodeRoot } from './appRoot'
@@ -24,7 +25,8 @@ import { shellWord } from '../shared/agents'
 // seq numbers every output chunk, so a view that replays the buffer can skip live chunks it already holds.
 // key names the terminal to an agent's MCP server (SWITCHBOARD_TERMINAL); lastOutput and
 // paste tell the answer typing whether the CLI waits for input and takes bracketed paste.
-type Live = TermInfo & { proc: pty.IPty; buffer: string; seq: number; key: string; shell: string; lastOutput: number; paste: boolean; bins: string[] }
+// screen: what the terminal shows now (termScreen.ts), for the typing check's menu test.
+type Live = TermInfo & { proc: pty.IPty; buffer: string; seq: number; key: string; shell: string; lastOutput: number; paste: boolean; bins: string[]; screen: Screen }
 
 const BUFFER_MAX = 256 * 1024
 const terms = new Map<string, Live>()
@@ -45,7 +47,7 @@ export function typingTarget(key: string): TypingTarget | undefined {
     paste: term.paste,
     foreground: term.alive ? term.proc.process : '',
     expect: term.bins,
-    screen: term.buffer.slice(-4000),
+    screen: term.screen.rows(),
     write: data => {
       if (term.alive) term.proc.write(data)
     },
@@ -109,10 +111,12 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
   const id = `t${++seq}`
   const key = `${RUN}-${id}`
   const prepared = start.prepare?.(key) ?? {}
+  const cols = Math.max(20, start.cols || 100)
+  const rows = Math.max(5, start.rows || 30)
   const proc = pty.spawn(shell.file, shell.interactive, {
     name: 'xterm-256color',
-    cols: Math.max(20, start.cols || 100),
-    rows: Math.max(5, start.rows || 30),
+    cols,
+    rows,
     cwd: folder,
     env: {
       ...terminalEnv(process.env, configDir),
@@ -128,7 +132,7 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
   const title = `${start.title}${same > 0 ? ` ${same + 1}` : ''}`
   const term: Live = {
     id, project, cwd: folder, title, claude: start.claude === true, agent: start.agent, alive: true, exitCode: null,
-    proc, buffer: '', seq: 0, key, shell: shell.file, lastOutput: Date.now(), paste: false, bins: start.bins ?? [],
+    proc, buffer: '', seq: 0, key, shell: shell.file, lastOutput: Date.now(), paste: false, bins: start.bins ?? [], screen: createScreen(cols, rows),
   }
   terms.set(id, term)
   proc.onData(data => {
@@ -136,6 +140,7 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
     term.seq += 1
     term.lastOutput = Date.now()
     term.paste = pasteModeAfter(term.paste, data)
+    term.screen.write(data)
     send('term:data', { id, data, seq: term.seq })
   })
   proc.onExit(({ exitCode }) => {
@@ -192,12 +197,16 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
   })
   ipcMain.on('term:resize', (_e, id: string, cols: number, rows: number) => {
     const t = terms.get(id)
-    if (t?.alive && cols > 0 && rows > 0) t.proc.resize(cols, rows)
+    if (t?.alive && cols > 0 && rows > 0) {
+      t.proc.resize(cols, rows)
+      t.screen.resize(cols, rows)
+    }
   })
   ipcMain.handle('term:close', (_e, id: string) => {
     const t = terms.get(id)
     if (!t) return false
     if (t.alive) t.proc.kill()
+    t.screen.dispose()
     terms.delete(id)
     changed()
     return true
