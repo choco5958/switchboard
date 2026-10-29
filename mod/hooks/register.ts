@@ -1,9 +1,9 @@
 import type { EngineInterface as Engine, Register } from 'claude-code'
-import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, staleKeys, toastText, type Delivery } from './batch'
+import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, restateText, staleKeys, toastText, approvalSummary, type Delivery } from './batch'
 import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
-import { toolDefs } from './tools.ts'
+import { BROWSER_TOOLS, peersText, sentText, toolDefs, type Peer } from './tools.ts'
 
 // The mod connects this Claude Code session to the Switchboard bridge:
 // questions and task state go out over the bridge's Unix socket, and answers
@@ -47,6 +47,19 @@ let mainTurnId = ''
 // Commands run one at a time, so the record of run ids is never written by two at once.
 let commandChain: Promise<void> = Promise.resolve()
 let touchedAt = 0
+// Activity for the app's stall check (src/shared/stall.ts): tool calls open now, and when
+// the bridge last heard of this session's work.
+let openTools = 0
+// Messages from other sessions that went in with the prompt now running: when its turn ends
+// without a reply to one, the bridge sends the turn's last answer back (POST /messages/turn-end).
+let answering: string[] = []
+// The main conversation was compacted: the next prompt restates this session's Switchboard state.
+let restate = false
+let activitySentAt = 0
+let activitySent = ''
+const ACTIVITY_BEAT_MS = 15_000
+// How long a permission ask waits for the person away from the desk before the terminal asks.
+const APPROVAL_WAIT_MS = 6 * 3600_000
 
 function socketPath(): string {
   return socket || `${home}/.claude-ide/bridge.sock`
@@ -199,6 +212,7 @@ async function flush($: Engine): Promise<void> {
         $.ui.log(t(currentLang(), 'log.retry', { error: submitted.drop }), { to: 'debug' })
       } else {
         await $.store.set(storeKey('sent'), remember(sent, batch.map(d => d.id), ID_CAP))
+        answering = [...answering, ...batch.filter(d => d.id.startsWith('m')).map(d => d.id)]
         $.ui.toast(toastText(batch, currentLang()))
       }
     }
@@ -254,6 +268,18 @@ async function restore($: Engine): Promise<void> {
   for (const key of staleKeys(keys, seen, at, STALE_MS)) await $.store.delete(key)
   for (const [id, last] of Object.entries(seen)) if (at - last > STALE_MS) delete seen[id]
   await $.store.set('seen', seen)
+}
+
+// Tells the bridge the turn is working or idle and whether a tool call is open. A change goes
+// at once; the same picture again only as a heartbeat, at most every ACTIVITY_BEAT_MS.
+async function reportActivity($: Engine): Promise<void> {
+  if (!sessionId) return
+  const picture = `${busy ? 'working' : 'idle'}:${openTools > 0}`
+  const at = await $.clock.now()
+  if (picture === activitySent && at - activitySentAt < ACTIVITY_BEAT_MS) return
+  activitySent = picture
+  activitySentAt = at
+  await call($, 'POST', '/sessions/activity', { sessionId, state: busy ? 'working' : 'idle', openTools }).catch(() => undefined)
 }
 
 // A session that runs for weeks marks itself seen now and then, so nobody removes its keys.
@@ -376,6 +402,17 @@ async function pendingContext($: Engine): Promise<string | undefined> {
   return `${t(lang, 'mod.pending')}\n${lines.join('\n')}`
 }
 
+async function restateContext($: Engine): Promise<string | undefined> {
+  if (!sessionId) return undefined
+  const [state, waits] = await Promise.all([
+    call($, 'GET', '/state'),
+    call($, 'GET', `/waits?session=${encodeURIComponent(sessionId)}`).catch(() => undefined),
+  ])
+  if (!state.ok) return undefined
+  setLang(langOfState(state.json))
+  return restateText(state.json as Parameters<typeof restateText>[0], ((waits?.json.waits ?? []) as { id: number; note: string }[]), sessionId, currentLang())
+}
+
 export const register: Register = on => {
   registerPane(on)
   registerDevtool(on)
@@ -413,10 +450,64 @@ export const register: Register = on => {
       recommend: e.recommend,
       reason: e.reason,
       turnId: mainTurnId,
+      requestKey: e.tool_use_id,
     }).catch((error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }))
     if (!reply.ok) return { result: t(currentLang(), 'tool.askFailed', { error: String(reply.json.error) }) }
-    return { result: t(currentLang(), 'tool.asked', { id: String(reply.json.id) }) }
+    return { result: t(currentLang(), reply.json.duplicate ? 'tool.askedAgain' : 'tool.asked', { id: String(reply.json.id) }) }
   }).catch(() => ({ result: t(currentLang(), 'tool.askFailedPlain') }))
+
+  on('tool.call', { tool: 'mcp__ide-bridge__list_sessions' }, async $ => {
+    const reply = await call($, 'GET', `/sessions/peers?session=${encodeURIComponent(sessionId)}`).catch(
+      (error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }),
+    )
+    if (!reply.ok) return { result: t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
+    return { result: peersText((reply.json.peers ?? []) as Peer[], currentLang()) }
+  }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+
+  on('tool.call', { tool: 'mcp__ide-bridge__send_to_session' }, async ($, e) => {
+    const expectsReply = !e.replyTo && e.expectsReply !== false
+    const reply = await call($, 'POST', '/messages', {
+      sessionId,
+      to: e.to,
+      text: e.text,
+      replyTo: e.replyTo,
+      expectsReply,
+      requestKey: e.tool_use_id,
+    }).catch((error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }))
+    if (!reply.ok) return { result: t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
+    return { result: sentText(reply.json, expectsReply, currentLang()) }
+  }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+
+  const bridgeTool = async ($: Engine, path: string, body: unknown, ok: (json: Record<string, unknown>) => string) => {
+    const reply = await call($, 'POST', path, body).catch((error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }))
+    return { result: reply.ok ? ok(reply.json) : t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
+  }
+  on('tool.call', { tool: 'mcp__ide-bridge__routine_no_update' }, async $ =>
+    bridgeTool($, '/routines/report', { sessionId, kind: 'quiet' }, () => t(currentLang(), 'tool.quietOk')),
+  ).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+  on('tool.call', { tool: 'mcp__ide-bridge__routine_report_failure' }, async ($, e) =>
+    bridgeTool($, '/routines/report', { sessionId, kind: 'failed', reason: e.reason }, () => t(currentLang(), 'tool.failureOk')),
+  ).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+  on('tool.call', { tool: 'mcp__ide-bridge__await_event' }, async ($, e) =>
+    bridgeTool($, '/waits', { sessionId, note: e.note }, json => t(currentLang(), 'tool.waitOpened', { id: String(json.id) })),
+  ).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+  on('tool.call', { tool: 'mcp__ide-bridge__close_wait' }, async ($, e) => {
+    const id = String(e.id ?? '').replace(/^w/, '')
+    return bridgeTool($, `/waits/${id}/close`, {}, () => t(currentLang(), 'tool.waitClosed', { id: `w${id}` }))
+  }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+
+  for (const [name, action] of Object.entries(BROWSER_TOOLS)) {
+    on('tool.call', { tool: `mcp__ide-bridge__${name}` }, async ($, e) => {
+      const { tool, tool_use_id, agentId, ...args } = e as unknown as Record<string, unknown>
+      void tool
+      void tool_use_id
+      void agentId
+      const reply = await call($, 'POST', '/browser/act', { sessionId, action, args }).catch(
+        (error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }),
+      )
+      return { result: reply.ok ? String(reply.json.text ?? '') : t(currentLang(), 'tool.browserFailed', { error: String(reply.json.error) }) }
+    }).catch(() => ({ result: t(currentLang(), 'tool.browserFailed', { error: '' }) }))
+  }
 
   on('tool.call', { tool: 'mcp__ide-bridge__set_task' }, async ($, e) => {
     const reply = await call($, 'POST', '/tasks', {
@@ -479,13 +570,59 @@ export const register: Register = on => {
     const agentId = e.agentId
     if (agentId && stopped.has(agentId)) return { deny: t(currentLang(), 'mod.denyStopped') }
     if (agentId && paused.has(agentId)) return { deny: t(currentLang(), 'mod.denyPaused') }
-    return next(e)
+    openTools += 1
+    void reportActivity($).catch(() => undefined)
+    try {
+      return await next(e)
+    } finally {
+      openTools = Math.max(0, openTools - 1)
+      void reportActivity($).catch(() => undefined)
+    }
   }).catch(($, e, next) => next(e))
 
   on('prompt.submit', async ($, e, next) => {
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return next(e)
-    const extra = await pendingContext($).catch(() => undefined)
+    const extra = restate ? await restateContext($).catch(() => undefined) : await pendingContext($).catch(() => undefined)
+    restate = false
     return next(extra ? { ...e, context: [...(e.context ?? []), extra] } : e)
+  }).catch(($, e, next) => next(e))
+
+  // A permission ask while the person is away (the bridge knows from the app): it goes to the
+  // app's decision queue and Telegram, and this hook waits for the answer. At the desk, or
+  // when the person picks 'answer in the terminal', the terminal's own dialog asks as before.
+  on('tool.check', async ($, e, next) => {
+    const verdict = await next(e)
+    if (verdict.decision !== 'ask' || !sessionId || !e.tool_use_id || e.approver !== 'person' || e.ceiling === 'ask') return verdict
+    const presence = await call($, 'GET', '/presence').catch(() => undefined)
+    if (presence?.json.away !== true) return verdict
+    const posted = await call($, 'POST', '/approvals', {
+      sessionId,
+      tool: e.tool,
+      summary: approvalSummary(e.tool, e.input),
+      cwd,
+      reason: verdict.reason ?? '',
+      requestKey: e.tool_use_id,
+    }).catch(() => undefined)
+    if (!posted?.ok) return verdict
+    const id = String(posted.json.id)
+    for (let waited = 0; waited < APPROVAL_WAIT_MS; waited += 1000) {
+      await $.clock.sleep(1000)
+      const status = (await call($, 'GET', `/approvals/${id}`).catch(() => undefined))?.json.status
+      if (status === 'allow') return { decision: 'allow', reason: t(currentLang(), 'mod.allowedRemote', { id }) }
+      if (status === 'deny') return { decision: 'deny', reason: t(currentLang(), 'mod.deniedRemote', { id }) }
+      if (status === 'terminal' || status === 'expired' || status === undefined) return verdict
+    }
+    return verdict
+  }).catch(($, e, next) => next(e))
+
+  // The summary is told to keep what Switchboard names; whatever it drops, the next prompt
+  // brings back (restateContext). A precompute is only a dry run.
+  on('session.compact', async ($, e, next) => {
+    if (e.agentId !== undefined || e.trigger === 'precompute') return next(e)
+    const keep = t(currentLang(), 'mod.compactKeep')
+    const done = await next({ ...e, instructions: e.instructions ? `${e.instructions}\n\n${keep}` : keep })
+    if (!('skip' in done && done.skip)) restate = true
+    return done
   }).catch(($, e, next) => next(e))
 
   on('turn.start', async ($, e, next) => {
@@ -493,12 +630,20 @@ export const register: Register = on => {
       busy = true
       mainTurnId = e.turnId
     }
+    void reportActivity($).catch(() => undefined)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
       busy = false
+      openTools = 0
+      // An interrupted turn answered nothing: the bridge sends no result for its requests and
+      // ends a scheduled run it carried as failed.
+      if (answering.length > 0 && sessionId) {
+        void call($, 'POST', '/messages/turn-end', { sessionId, ids: answering, answer: e.answer, aborted: e.isAborted }).catch(() => undefined)
+      }
+      answering = []
       void flush($)
       void reportUsage($)
       void touchSeen($).catch(() => undefined)
@@ -506,6 +651,7 @@ export const register: Register = on => {
       void post($, '에이전트', t(currentLang(), 'mod.agentEnd', { text: e.answer.split('\n')[0]?.slice(0, 120) ?? '' }))
     }
     void reportAgents($)
+    void reportActivity($).catch(() => undefined)
     return next(e)
   })
 }

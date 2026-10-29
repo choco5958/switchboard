@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Agent, GraphNode } from '../../shared/types'
 import { ago, clock } from './model'
 import { t, type Key } from '../../shared/i18n'
+import { composing } from './ime'
 
 const STATUS: Record<Agent['status'], Key> = {
   pending: 'agent.pending',
@@ -98,7 +99,7 @@ export function WorkerLane({ sessionId, agents, nodes }: { sessionId: string; ag
                   placeholder={t('worker.messagePlaceholder')}
                   onChange={event => setText(event.target.value)}
                   onKeyDown={event => {
-                    if (event.key === 'Enter' && text.trim()) {
+                    if (event.key === 'Enter' && !composing(event) && text.trim()) {
                       void send('message', agent, { text: text.trim() })
                       setText('')
                       setTalking(null)

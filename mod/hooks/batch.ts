@@ -99,3 +99,43 @@ export function takenText(json: { items?: unknown; commands?: unknown }, lang: L
   const all = [...items, ...prompts]
   return all.length > 0 ? batchText(all, lang) : ''
 }
+
+type RestateTask = { id: number; session_id: string; title: string; stage: string; status: string; now: string }
+type RestateNode = { task_id: number; key: string; title: string; status: string }
+type RestateQuestion = { id: number; session_id: string; question: string; status: string }
+type RestateWait = { id: number; note: string }
+
+// After a compaction the summary may have lost what Switchboard tracks for this session: its
+// tasks, their nodes, the questions still open and the waits. The next prompt carries them.
+export function restateText(
+  state: { tasks?: RestateTask[]; nodes?: RestateNode[]; questions?: RestateQuestion[] },
+  waits: readonly RestateWait[],
+  sessionId: string,
+  lang: Lang = 'ko',
+): string | undefined {
+  const tasks = (state.tasks ?? []).filter(task => task.session_id === sessionId && task.status !== '보관')
+  const questions = (state.questions ?? []).filter(q => q.session_id === sessionId && q.status !== 'answered')
+  if (tasks.length === 0 && questions.length === 0 && waits.length === 0) return undefined
+  const lines = [t(lang, 'mod.restate')]
+  for (const task of tasks) {
+    lines.push(t(lang, 'mod.restateTask', { title: task.title, stage: task.stage, status: task.status, now: task.now || '-' }))
+    for (const node of (state.nodes ?? []).filter(n => n.task_id === task.id)) lines.push(`  - ${node.key} [${node.status}] ${node.title}`)
+  }
+  for (const q of questions) lines.push(t(lang, 'mod.restateQuestion', { id: q.id, question: q.question }))
+  for (const w of waits) lines.push(t(lang, 'mod.restateWait', { id: w.id, note: w.note.split('\n')[0] ?? '' }))
+  return lines.join('\n')
+}
+
+// What a permission ask would run, for the person deciding away from the terminal: the
+// command, the file and the change, the address, or the arguments of another tool.
+export function approvalSummary(tool: string, input: unknown): string {
+  const v = (input ?? {}) as Record<string, unknown>
+  const text = (value: unknown) => (typeof value === 'string' ? value : '')
+  const clip = (value: string, max = 1500) => (value.length > max ? `${value.slice(0, max - 1)}…` : value)
+  if (tool === 'Bash') return clip([text(v.description), text(v.command)].filter(Boolean).join('\n'))
+  if (tool === 'Write') return clip(`${text(v.file_path)}\n${text(v.content)}`)
+  if (tool === 'Edit') return clip(`${text(v.file_path)}\n- ${text(v.old_string)}\n+ ${text(v.new_string)}`)
+  if (tool === 'MultiEdit' || tool === 'NotebookEdit' || tool === 'Read') return clip(text(v.file_path) || text(v.notebook_path) || JSON.stringify(v))
+  if (tool === 'WebFetch') return clip(text(v.url))
+  return clip(JSON.stringify(v, null, 1))
+}

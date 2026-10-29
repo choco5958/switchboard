@@ -234,7 +234,7 @@ export function GalleryPage() {
         <Part title="결정 대기 항목">
           <div className="gallery-pane">
             <QueueItem q={QUESTION} active onClick={noop} />
-            <QueueItem q={{ ...QUESTION, id: 1398, task_title: '금감원 무인 자동화', question: '재시도 상한을 3회로 할까' }} active={false} onClick={noop} />
+            <QueueItem q={{ ...QUESTION, id: 1398, task_title: '금감원 무인 자동화', question: '재시도 상한을 3회로 할까' }} active={false} gone onClick={noop} />
           </div>
         </Part>
         <Part title="홈 카드와 통계">

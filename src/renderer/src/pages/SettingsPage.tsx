@@ -3,6 +3,10 @@ import { DEFAULT_THEME, THEMES, applyTheme, themeLabel, themeOf } from '../theme
 import { LANGS, isLang, resolveLang, t, type Lang } from '../../../shared/i18n'
 import { useToast } from '../parts'
 import { AgentSettings } from './AgentSettings'
+import { RoutinesSection } from './RoutinesSection'
+import { TelegramSection } from './TelegramSection'
+import type { Routine, RoutineRun } from '../../../shared/types'
+import type { ProjectInfo } from '../../../shared/projects'
 
 // Tokens shown in each theme's swatch strip. The strip carries data-theme, so it shows that theme's own colors.
 const SWATCH = ['--bg', '--panel', '--line', '--text', '--accent', '--good', '--warn', '--bad']
@@ -12,7 +16,17 @@ function openGallery() {
   document.querySelector<HTMLButtonElement>('.rail-button[data-rail="gallery"]')?.click()
 }
 
-export function SettingsPage({ settings = {} }: { settings?: Record<string, unknown> }) {
+export function SettingsPage({
+  settings = {},
+  routines = [],
+  runs = [],
+  projects = [],
+}: {
+  settings?: Record<string, unknown>
+  routines?: Routine[]
+  runs?: RoutineRun[]
+  projects?: ProjectInfo[]
+}) {
   const toast = useToast()
   const devMenu = settings.devMenu === true
   const saved = themeOf(settings.theme)
@@ -119,6 +133,8 @@ export function SettingsPage({ settings = {} }: { settings?: Record<string, unkn
         {error && <span className="error small">{error}</span>}
       </div>
       <AgentSettings settings={settings} />
+      <RoutinesSection routines={routines} runs={runs} projects={projects} />
+      <TelegramSection />
       <section className="settings-row settings-dev">
         <h2>{t('settings.dev')}</h2>
         <label className="check-row">

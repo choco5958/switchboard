@@ -16,6 +16,9 @@ import {
 import { debugStore, failureReason, sessionFor, useDebugStore, waitUntilAnswering, whereTo } from './debugStore'
 import { CaptureLimiter, makeNonce, parseMessage, pickerSource, type PickMessage } from './picker'
 import { commentStatusLabel, t, type Key } from '../../shared/i18n'
+import { composing } from './ime'
+import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
+import { focusScript, isLocalUrl, pointScript, refRevision, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
 
 const URL_KEY = 'claude-ide:browser-url'
 const SHOT_PAD = 24
@@ -86,6 +89,8 @@ export function BrowserView({
   const picks = useRef(new Map<number, Promise<{ pick: PickMessage; shot: string | null }>>())
   // A fresh nonce for every injection; page messages without it are ignored.
   const nonce = useRef('')
+  // Console warnings and errors and failed requests of the page shown now, for its comments.
+  const pageLog = useRef<PageLogEntry[]>([])
   const limiter = useRef(new CaptureLimiter())
   const commentingRef = useRef(commenting)
   commentingRef.current = commenting
@@ -155,8 +160,12 @@ export function BrowserView({
         .then(() => run(marksCode()))
     }
     const onConsole = (event: Event) => {
-      const message = parseMessage((event as unknown as { message: string }).message, nonce.current)
-      if (!message) return
+      const raw = event as unknown as { message: string; level: unknown; sourceId?: string; line?: number }
+      const message = parseMessage(raw.message, nonce.current)
+      if (!message) {
+        pageLog.current = pushEntry(pageLog.current, consoleEntry(Date.now(), raw.level, raw.message, raw.sourceId, raw.line))
+        return
+      }
       if (message.kind === 'exit') return setCommenting(false)
       if (message.kind === 'toggle') return setCommenting(on => !on)
       if (message.kind === 'cancel') {
@@ -168,7 +177,7 @@ export function BrowserView({
         picks.current.delete(message.id)
         if (!picked) return
         void picked.then(async ({ pick, shot }) => {
-          const reply = await window.ideDebug.call('POST', '/comments', commentBody(pick, message.memo, shot, targetIdRef.current))
+          const reply = await window.ideDebug.call('POST', '/comments', commentBody(pick, message.memo, shot, targetIdRef.current, logText(pageLog.current)))
           if (!reply.ok) setStatus(t('browser.saveFailed', { error: String(reply.json.error ?? '') }))
           setFilter('열림')
           await loadComments(pageRef.current)
@@ -196,6 +205,9 @@ export function BrowserView({
       // The popover opens after the shot, so it is not in the picture.
       void shot.then(() => run(`window.__claudeIde.ask(${pick.id})`))
     }
+    const offNet = window.ideDebug.onNet(({ webContentsId, entry }) => {
+      if (ready.current && webContentsId === wv.getWebContentsId()) pageLog.current = pushEntry(pageLog.current, entry)
+    })
     const onNavigate = (event: Event) => {
       const url = (event as unknown as { url: string }).url
       setAddress(url)
@@ -211,7 +223,10 @@ export function BrowserView({
     // The newest main-frame navigation: a failure of one it replaced is old news.
     const onStartNavigation = (event: Event) => {
       const { url, isMainFrame, isInPlace } = event as unknown as { url: string; isMainFrame: boolean; isInPlace: boolean }
-      if (isMainFrame && !isInPlace) latest.current = url
+      if (!isMainFrame || isInPlace) return
+      latest.current = url
+      // A new document starts a new log; a route change inside the page keeps it.
+      pageLog.current = []
     }
     const onTitle = (event: Event) => setTitle((event as unknown as { title: string }).title)
     const onFail = (event: Event) => {
@@ -235,6 +250,7 @@ export function BrowserView({
     wv.addEventListener('did-navigate', onNavigate)
     wv.addEventListener('did-navigate-in-page', onNavigate)
     return () => {
+      offNet()
       wv.removeEventListener('did-fail-load', onFail)
       wv.removeEventListener('did-start-loading', onStart)
       wv.removeEventListener('did-start-navigation', onStartNavigation)
@@ -277,6 +293,92 @@ export function BrowserView({
       wv.reloadIgnoringCache()
     } else load(open.url)
   }, [debug.open?.seq])
+
+  // A session drives this browser (browser_* tools, src/renderer/src/agentBrowser.ts). The tab
+  // comes to the front, so the person sees what it does, and so the page has a size to act in.
+  const revision = useRef(0)
+  const showRef = useRef(onShow)
+  showRef.current = onShow
+  const loadRef = useRef(load)
+  loadRef.current = load
+  useEffect(() => {
+    const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+    const snapshot = async (): Promise<string> => {
+      revision.current += 1
+      const read = (await run(snapshotScript(revision.current))) as Snapshot | undefined
+      if (!read) throw new Error('the page cannot be read yet')
+      return snapshotText(read)
+    }
+    const element = (ref: unknown) => {
+      const value = String(ref ?? '')
+      if (refRevision(value) !== revision.current) throw new Error(`ref ${value} is from an older reading; call browser_snapshot again`)
+      return value
+    }
+    const act = async (action: string, args: Record<string, unknown>): Promise<{ text?: string; path?: string }> => {
+      const wv = view.current
+      if (!wv) throw new Error('the browser is not ready')
+      if (commentingRef.current) throw new Error('the person is leaving screen comments in this browser now; try again later')
+      if (action === 'navigate') {
+        const url = String(args.url ?? '')
+        if (!isLocalUrl(url)) throw new Error('only local pages (localhost, 127.0.0.1, the private network) can be opened')
+        const stopped = new Promise<void>(resolve => {
+          const done = () => {
+            wv.removeEventListener('did-stop-loading', done)
+            resolve()
+          }
+          wv.addEventListener('did-stop-loading', done)
+        })
+        loadRef.current(url)
+        await Promise.race([stopped, settle(10_000)])
+        await settle(300)
+        return { text: await snapshot() }
+      }
+      if (!isLocalUrl(pageRef.current)) throw new Error('the browser shows a page that is not local; open a local page with browser_navigate first')
+      if (action === 'snapshot') return { text: await snapshot() }
+      if (action === 'console') return { text: logText(pageLog.current) || 'no console warnings, errors or failed requests on this page' }
+      if (action === 'screenshot') {
+        const image = await wv.capturePage()
+        const path = await window.ide.saveShot(image.toDataURL())
+        if (!path) throw new Error('the screenshot could not be saved')
+        return { path, text: path }
+      }
+      if (action === 'click') {
+        const point = (await run(pointScript(element(args.ref)))) as { x?: number; y?: number; error?: string; by?: string } | undefined
+        if (!point || point.error === 'stale') throw new Error('that element is gone; call browser_snapshot again')
+        if (point.error === 'covered') throw new Error(`the element is covered by ${point.by}`)
+        const at = { x: point.x!, y: point.y! }
+        wv.sendInputEvent({ type: 'mouseMove', ...at })
+        wv.sendInputEvent({ type: 'mouseDown', ...at, button: 'left', clickCount: 1 })
+        wv.sendInputEvent({ type: 'mouseUp', ...at, button: 'left', clickCount: 1 })
+        await settle(600)
+        return { text: await snapshot() }
+      }
+      if (action === 'type') {
+        const focused = (await run(focusScript(element(args.ref)))) as { error?: string } | undefined
+        if (!focused || focused.error) throw new Error('that element is gone; call browser_snapshot again')
+        await wv.insertText(String(args.text ?? ''))
+        if (args.submit === true) {
+          wv.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+          wv.sendInputEvent({ type: 'char', keyCode: '\r' })
+          wv.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
+        }
+        await settle(500)
+        return { text: await snapshot() }
+      }
+      throw new Error(`unknown action: ${action}`)
+    }
+    return window.ide.onChange(event => {
+      if (event.type !== 'browserAct') return
+      const { id, action, args } = (event as unknown as { act: { id: string; action: string; args: Record<string, unknown> } }).act
+      showRef.current?.()
+      void settle(150)
+        .then(() => act(action, args ?? {}))
+        .then(
+          result => window.ideDebug.call('POST', '/browser/result', { id, ...result }),
+          (error: unknown) => window.ideDebug.call('POST', '/browser/result', { id, error: error instanceof Error ? error.message : String(error) }),
+        )
+    })
+  }, [])
 
   // ⌥M while the IDE (not the page) has focus; the page has its own listener.
   useEffect(() => {
@@ -348,7 +450,7 @@ export function BrowserView({
           className="address"
           value={address}
           onChange={event => setAddress(event.target.value)}
-          onKeyDown={event => event.key === 'Enter' && load(address)}
+          onKeyDown={event => event.key === 'Enter' && !composing(event) && load(address)}
         />
         <button
           className={`switch ${commenting ? 'switch-on' : ''}`}

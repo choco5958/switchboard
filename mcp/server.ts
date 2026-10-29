@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { takenText } from '../mod/hooks/batch.ts'
 import { langFromLocale, langOfState, osLocale, t, type Key, type Lang, type Vars } from '../mod/hooks/i18n.ts'
-import { openBody, openResultText, openToolDef, toolDefs, type ToolDef } from '../mod/hooks/tools.ts'
+import { BROWSER_TOOLS, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
 
 export { takenText }
 
@@ -226,7 +226,37 @@ export function createSession(options: Options, deps: Deps) {
         reason: a.reason,
       })
       if (!reply.ok) return { text: say('mcp.askFailed', { error: errorText(reply) }), isError: true }
-      return { text: `${say('tool.asked', { id: String(reply.json.id) })} ${say(options.terminal ? 'mcp.askInside' : 'mcp.askOutside')}` }
+      return { text: `${say(reply.json.duplicate ? 'tool.askedAgain' : 'tool.asked', { id: String(reply.json.id) })} ${say(options.terminal ? 'mcp.askInside' : 'mcp.askOutside')}` }
+    }
+    if (BROWSER_TOOLS[name]) {
+      const reply = await call('POST', '/browser/act', { sessionId, action: BROWSER_TOOLS[name], args: a })
+      if (!reply.ok) return { text: say('tool.browserFailed', { error: errorText(reply) }), isError: true }
+      return { text: String(reply.json.text ?? '') }
+    }
+    if (name === 'list_sessions') {
+      const reply = await call('GET', `/sessions/peers?session=${encodeURIComponent(sessionId)}`)
+      if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
+      return { text: peersText((reply.json.peers ?? []) as Peer[], lang) }
+    }
+    if (name === 'send_to_session') {
+      const expectsReply = !a.replyTo && a.expectsReply !== false
+      const reply = await call('POST', '/messages', { sessionId, to: a.to, text: a.text, replyTo: a.replyTo, expectsReply })
+      if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
+      return { text: sentText(reply.json, expectsReply, lang) }
+    }
+    if (name === 'routine_no_update' || name === 'routine_report_failure' || name === 'await_event' || name === 'close_wait') {
+      const waitId = String(a.id ?? '').replace(/^w/, '')
+      const [path, body, done] =
+        name === 'routine_no_update'
+          ? ['/routines/report', { sessionId, kind: 'quiet' }, () => say('tool.quietOk')]
+          : name === 'routine_report_failure'
+            ? ['/routines/report', { sessionId, kind: 'failed', reason: a.reason }, () => say('tool.failureOk')]
+            : name === 'await_event'
+              ? ['/waits', { sessionId, note: a.note }, (json: Record<string, unknown>) => say('tool.waitOpened', { id: String(json.id) })]
+              : [`/waits/${waitId}/close`, {}, () => say('tool.waitClosed', { id: `w${waitId}` })]
+      const reply = await call('POST', path as string, body)
+      if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
+      return { text: (done as (json: Record<string, unknown>) => string)(reply.json) }
     }
     if (name === 'set_task') {
       const fields = ['title', 'stage', 'status', 'now', 'why', 'what', 'result', 'artifact', 'tests', 'branch']

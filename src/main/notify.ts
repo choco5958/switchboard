@@ -1,4 +1,4 @@
-import type { Question } from '../shared/types'
+import type { Question, RoutineRun } from '../shared/types'
 
 export type PendingScan = {
   // Ids to remember for the next comparison.
@@ -34,4 +34,24 @@ export function planNotification(fresh: Question[]): NotifyPlan | null {
   if (!q) return null
   if (fresh.length > 1) return { many: fresh.length }
   return { title: q.project, body: firstLine(q.question), questionId: q.id }
+}
+
+// Sessions that stalled since the last pass (src/shared/stall.ts). Once per stall: a session
+// leaves the set when it moves again, so a later stall notifies again.
+export function scanStalled(stalled: readonly string[], previous: Set<string>): { ids: Set<string>; fresh: string[] } {
+  return { ids: new Set(stalled), fresh: stalled.filter(id => !previous.has(id)) }
+}
+
+// Sessions whose usage limit lifted since the last pass (src/shared/limit.ts), once each.
+export function scanReleased(limited: readonly string[], previous: Set<string>): { ids: Set<string>; released: string[] } {
+  const ids = new Set(limited)
+  return { ids, released: [...previous].filter(id => !ids.has(id)) }
+}
+
+// Runs that ended since the last pass and have something to say: done with an answer, or
+// failed. The first pass after launch is only a baseline.
+export function scanRuns(runs: readonly RoutineRun[], previous: Set<number> | null): { ids: Set<number>; fresh: RoutineRun[] } {
+  const ended = runs.filter(run => run.status === 'done' || run.status === 'failed')
+  const ids = new Set(ended.map(run => run.id))
+  return { ids, fresh: previous === null ? [] : ended.filter(run => !previous.has(run.id)) }
 }

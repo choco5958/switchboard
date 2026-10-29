@@ -1,5 +1,6 @@
 // Rows as the bridge's GET /state returns them.
 import type { DevTarget } from './devtargets'
+import type { Activity } from './stall'
 
 export type Option = { key: string; label: string }
 
@@ -84,6 +85,7 @@ export type Question = {
   answered_at: number | null
   delivered: number
   turn_id: string
+  forwarded_to?: string // the session the person handed it to, '' when none
 }
 
 export type LogEvent = {
@@ -115,6 +117,11 @@ export type GraphNode = {
 
 export type BridgeState = {
   sessions: Session[]
+  live?: string[] // sessions whose delivery stream is open now
+  activity?: Record<string, Activity> // what each session's turn is doing (src/shared/stall.ts)
+  routines?: Routine[]
+  approvals?: Approval[] // the newest 30 permission asks (bridge: POST /approvals)
+  routineRuns?: RoutineRun[] // the newest 100
   tasks: Task[]
   questions: Question[]
   answeredCount: number
@@ -180,6 +187,8 @@ export type IdeApi = {
   state: () => Promise<BridgeState | null>
   answer: (id: number, choice: string, memo: string) => Promise<Reply>
   hold: (id: number) => Promise<Reply>
+  forward: (id: number, to: string) => Promise<Reply> // hand a question to another session to answer
+  approve: (id: number, decision: 'allow' | 'deny' | 'terminal') => Promise<Reply>
   connected: () => Promise<boolean>
   send: (sessionId: string, text: string, kind: string, taskTitle: string) => Promise<Reply>
   saveShot: (dataUrl: string) => Promise<string | null>
@@ -237,3 +246,51 @@ export type CcrSlot = {
 // Feature area: agent CLIs other than Claude Code. found maps a command to its path
 // on the login-shell PATH; a command missing from it is not installed.
 export type AgentDetect = { found: Record<string, string>; node: string | null; at: number }
+
+// A scheduled prompt (bridge/schedule.ts) and one of its runs, as GET /state returns them.
+export type RoutineSchedule =
+  | { kind: 'daily'; time: string }
+  | { kind: 'weekdays'; time: string }
+  | { kind: 'interval'; every: number; anchor: number }
+  | { kind: 'once'; at: string }
+
+export type Routine = {
+  id: number
+  project: string
+  cwd: string
+  name: string
+  prompt: string
+  schedule: string // JSON of RoutineSchedule
+  missed: 'skip' | 'run-once'
+  enabled: number
+  next_at: number | null
+  created_at: number
+  updated_at: number
+}
+
+export type RoutineRun = {
+  id: number
+  routine_id: number
+  scheduled_for: number
+  created_at: number
+  session_id: string
+  status: 'waiting' | 'sent' | 'done' | 'quiet' | 'failed' | 'skipped' | 'missed'
+  failure: string
+  result: string
+  finished_at: number | null
+}
+
+// A Claude Code permission ask put to the person while away from the desk (mod tool.check).
+export type Approval = {
+  id: number
+  session_id: string
+  project: string
+  tool: string
+  summary: string
+  cwd: string
+  reason: string
+  status: 'pending' | 'allow' | 'deny' | 'terminal' | 'expired'
+  via: string
+  created_at: number
+  answered_at: number | null
+}

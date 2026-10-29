@@ -71,6 +71,81 @@ test('a session registers under its folder name', async () => {
   assert.equal(json.project, 'music-app')
 })
 
+test('a session is live while its delivery stream is open', async () => {
+  await call('POST', '/sessions', { id: 'live-1', cwd: '/work/live' })
+  assert.ok(!(await call('GET', '/state')).json.live.includes('live-1'))
+  const req = request({ socketPath, path: '/deliveries?session=live-1' })
+  req.on('error', () => undefined)
+  req.end()
+  await new Promise(resolve => req.on('response', resolve))
+  assert.ok((await call('GET', '/state')).json.live.includes('live-1'))
+  req.destroy()
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.ok(!(await call('GET', '/state')).json.live.includes('live-1'))
+})
+
+test('the same question is posted once: by its call id, or while the first still waits', async () => {
+  await call('POST', '/sessions', { id: 'dup-1', cwd: '/work/dup' })
+  const ask = (extra: object) =>
+    call('POST', '/questions', { sessionId: 'dup-1', question: '캐시를 지울까', options: [{ key: 'a', label: '예' }], ...extra })
+  const first = (await ask({ requestKey: 'toolu_1' })).json
+  assert.equal(first.duplicate, undefined)
+  assert.deepEqual((await ask({ requestKey: 'toolu_1' })).json, { id: first.id, duplicate: true })
+  assert.deepEqual((await ask({ requestKey: 'toolu_2' })).json, { id: first.id, duplicate: true })
+  const other = (await ask({ options: [{ key: 'b', label: '아니오' }] })).json
+  assert.notEqual(other.id, first.id)
+  await call('POST', `/questions/${first.id}/answer`, { choice: 'a' })
+  assert.deepEqual((await ask({ requestKey: 'toolu_1' })).json, { id: first.id, duplicate: true })
+  assert.notEqual((await ask({ requestKey: 'toolu_3' })).json.id, first.id)
+})
+
+test('a session reports what its turn is doing', async () => {
+  assert.equal((await call('POST', '/sessions/activity', { sessionId: 's1', state: 'busy' })).status, 400)
+  await call('POST', '/sessions/activity', { sessionId: 's1', state: 'working', openTools: 2 })
+  const { json } = await call('GET', '/state')
+  assert.equal(json.activity.s1.state, 'working')
+  assert.equal(json.activity.s1.openTools, 2)
+  assert.equal(typeof json.activity.s1.at, 'number')
+  await call('POST', '/sessions/activity', { sessionId: 's1', state: 'idle', openTools: 0 })
+  assert.equal((await call('GET', '/state')).json.activity.s1.state, 'idle')
+})
+
+test('a session at its usage limit gets nothing until the reset', async () => {
+  await call('POST', '/sessions', { id: 'lim-1', cwd: '/work/lim' })
+  const later = new Date(Date.now() + 3600_000).toISOString()
+  await call('POST', '/sessions/usage', { sessionId: 'lim-1', usage: { rateLimits: [{ kind: 'five_hour', percentUsed: 100, resetsAt: later }] } })
+  const { json: q } = await call('POST', '/questions', { sessionId: 'lim-1', question: '한도 중 질문', options: [{ key: 'a', label: '예' }] })
+  await call('POST', `/questions/${q.id}/answer`, { choice: 'a' })
+  assert.deepEqual((await call('POST', '/deliveries/take', { sessionId: 'lim-1' })).json.items, [])
+  // The next report shows the window open again (the reset came, or the plan changed).
+  await call('POST', '/sessions/usage', { sessionId: 'lim-1', usage: { rateLimits: [{ kind: 'five_hour', percentUsed: 3, resetsAt: later }] } })
+  assert.equal((await call('POST', '/deliveries/take', { sessionId: 'lim-1' })).json.items[0].id, `q${q.id}`)
+})
+
+test('a browser action waits for the app to carry it out', async () => {
+  assert.equal((await call('POST', '/browser/act', { sessionId: 's1', action: 'snapshot' })).status, 503)
+  // The app: it hears browserAct on /stream and posts what it saw.
+  const app = request({ socketPath, path: '/stream' }, res => {
+    let buffer = ''
+    res.on('data', chunk => {
+      buffer += chunk
+      const match = buffer.match(/"type":"browserAct","act":(\{.*?"args":\{.*?\}\})/)
+      if (!match) return
+      buffer = ''
+      const act = JSON.parse(match[1]!)
+      void call('POST', '/browser/result', act.action === 'snapshot' ? { id: act.id, text: `URL: ${act.args.note}` } : { id: act.id, error: 'nope' })
+    })
+  })
+  app.on('error', () => undefined)
+  app.end()
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.deepEqual((await call('POST', '/browser/act', { sessionId: 's1', action: 'snapshot', args: { note: 'x' } })).json, { text: 'URL: x', path: '' })
+  const refused = await call('POST', '/browser/act', { sessionId: 's1', action: 'click', args: {} })
+  assert.deepEqual([refused.status, refused.json.error], [400, 'nope'])
+  assert.equal((await call('POST', '/browser/result', { id: 'gone' })).status, 404)
+  app.destroy()
+})
+
 test('a task upserts by title and keeps its stage when none is given', async () => {
   await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', stage: '설계' })
   const { json } = await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', now: '시안 비교' })
@@ -578,5 +653,194 @@ describe('agent CLIs other than Claude Code', () => {
     const state = (await call('GET', '/state')).json
     assert.equal(state.questions.find((one: { id: number }) => one.id === q.id).delivered, 1)
     assert.equal((await call('POST', '/deliveries/take', { sessionId: 'nobody' })).status, 404)
+  })
+})
+
+describe('messages between sessions', () => {
+  const take = async (sessionId: string) => (await call('POST', '/deliveries/take', { sessionId })).json.items as { id: string; text: string }[]
+  // A session whose delivery stream stays open counts as live (heldReply waits only for live ones).
+  const hold = (sessionId: string) => {
+    const req = request({ socketPath, path: `/deliveries?session=${sessionId}` })
+    req.on('error', () => undefined)
+    req.end()
+    return req
+  }
+
+  test('a request reads as collaborator input with how to answer, and the reply goes back once', async () => {
+    for (const [id, cwd] of [['pa', '/w/front'], ['pb', '/w/back']]) await call('POST', '/sessions', { id, cwd })
+    assert.equal((await call('POST', '/messages', { sessionId: 'pa', to: ['pa'], text: 'x' })).status, 400)
+    assert.equal((await call('POST', '/messages', { sessionId: 'pa', to: ['nobody'], text: 'x' })).status, 404)
+    const sent = (await call('POST', '/messages', { sessionId: 'pa', to: ['pb'], text: '주문 API 응답 형식을 알려줘', requestKey: 'toolu_p1' })).json
+    assert.equal(sent.ids.length, 1)
+    assert.deepEqual((await call('POST', '/messages', { sessionId: 'pa', to: ['pb'], text: '주문 API 응답 형식을 알려줘', requestKey: 'toolu_p1' })).json, { ids: sent.ids, duplicate: true })
+    const [got] = await take('pb')
+    assert.equal(got?.id, sent.ids[0])
+    assert.match(got!.text, /front \(pa\)이\(가\) 보낸 메시지/)
+    assert.match(got!.text, /협업자 입력/)
+    assert.match(got!.text, new RegExp(`replyTo "${sent.ids[0]}"`))
+    assert.match(got!.text, /마지막 답변이 그대로 결과로/)
+    assert.match(got!.text, /--- 메시지 ---\n주문 API 응답 형식을 알려줘$/)
+
+    // A reply needs no `to`, wants no answer, and the turn's end then sends nothing more.
+    assert.equal((await call('POST', '/messages', { sessionId: 'pa', replyTo: sent.ids[0], text: 'x' })).status, 400)
+    const reply = (await call('POST', '/messages', { sessionId: 'pb', replyTo: sent.ids[0], text: '상태: 완료\n결과: { id, items }\n근거: api/orders.ts' })).json
+    assert.equal(reply.ids.length, 1)
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '끝' })).json.relayed, 0)
+    const [back] = await take('pa')
+    assert.match(back!.text, new RegExp(`요청 ${sent.ids[0]}에 대한 답`))
+    assert.match(back!.text, /보낸 세션 이름으로 시작해/)
+    assert.doesNotMatch(back!.text, /send_to_session으로 결과를 보내세요/)
+  })
+
+  test('a request the turn ended without answering gets the last answer, once', async () => {
+    const sent = (await call('POST', '/messages', { sessionId: 'pa', to: ['pb'], text: '테스트 돌려줘' })).json
+    await take('pb')
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '' })).json.relayed, 0)
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '상태: 완료' })).json.relayed, 1)
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '상태: 완료' })).json.relayed, 0)
+    const items = await take('pa')
+    assert.equal(items.length, 1)
+    assert.match(items[0]!.text, /상태: 완료$/)
+  })
+
+  test('information wants no answer and the turn end relays nothing', async () => {
+    const sent = (await call('POST', '/messages', { sessionId: 'pa', to: ['pb'], text: '배포 끝남', expectsReply: false })).json
+    const [got] = await take('pb')
+    assert.match(got!.text, /답장이나 확인을 보내지 마세요/)
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '알겠습니다' })).json.relayed, 0)
+  })
+
+  test('answers to a request sent to several live sessions come together', async () => {
+    await call('POST', '/sessions', { id: 'pc', cwd: '/w/infra' })
+    const streams = [hold('pb'), hold('pc')]
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const sent = (await call('POST', '/messages', { sessionId: 'pa', to: ['pb', 'pc'], text: '각자 의견' })).json
+    assert.equal(sent.ids.length, 2)
+    await call('POST', '/messages', { sessionId: 'pb', replyTo: sent.ids[0], text: 'b 의견' })
+    assert.equal((await take('pa')).length, 0)
+    await call('POST', '/messages', { sessionId: 'pc', replyTo: sent.ids[1], text: 'c 의견' })
+    assert.deepEqual((await take('pa')).map(item => item.text.split('\n').at(-1)), ['b 의견', 'c 의견'])
+    for (const stream of streams) stream.destroy()
+    await take('pb')
+    await take('pc')
+  })
+
+  test('a forwarded question is answered by the session it went to', async () => {
+    const q = (await call('POST', '/questions', { sessionId: 'pa', question: '캐시 만료를 몇 분으로', options: [{ key: 'a', label: '5분' }, { key: 'b', label: '30분' }], recommend: 'a' })).json
+    assert.equal((await call('POST', `/questions/${q.id}/forward`, { to: 'pa' })).status, 400)
+    const fwd = (await call('POST', `/questions/${q.id}/forward`, { to: 'pb' })).json
+    const [got] = await take('pb')
+    assert.equal(got!.id, fwd.message)
+    assert.match(got!.text, new RegExp(`front \\(pa\\)의 결정 질문 Q${q.id}`))
+    assert.match(got!.text, /\(a\) 5분 \(질문한 세션의 추천\)/)
+    const reply = (await call('POST', '/messages', { sessionId: 'pb', replyTo: fwd.message, text: 'b\n트래픽이 적어서 길게' })).json
+    assert.equal(reply.answered, `Q${q.id}`)
+    const row = (await call('GET', '/state')).json.questions.find((one: { id: number }) => one.id === q.id)
+    assert.equal(row.status, 'answered')
+    assert.equal(row.choice, 'b')
+    assert.match(row.memo, /back \(pb\)의 답: b\n트래픽이 적어서 길게/)
+    assert.equal((await call('POST', `/questions/${q.id}/forward`, { to: 'pb' })).status, 409)
+    await take('pa')
+  })
+
+  test('peers list the other sessions with their task, connected first', async () => {
+    await call('POST', '/tasks', { sessionId: 'pb', title: '주문 API', now: '응답 형식 정리' })
+    const stream = hold('pb')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const { peers } = (await call('GET', '/sessions/peers?session=pa')).json
+    assert.ok(!peers.some((p: { id: string }) => p.id === 'pa'))
+    assert.equal(peers[0].id, 'pb')
+    assert.equal(peers[0].live, true)
+    assert.equal(peers[0].task, '주문 API')
+    stream.destroy()
+  })
+})
+
+describe('scheduled prompts and waits', () => {
+  const take = async (sessionId: string) => (await call('POST', '/deliveries/take', { sessionId })).json.items as { id: string; text: string }[]
+  const runs = async (routineId: number) =>
+    ((await call('GET', '/state')).json.routineRuns as { routine_id: number; status: string; failure: string; result: string }[]).filter(r => r.routine_id === routineId)
+  const open = (sessionId: string) => {
+    const req = request({ socketPath, path: `/deliveries?session=${sessionId}` })
+    req.on('error', () => undefined)
+    req.end()
+    return req
+  }
+
+  test('a run waits for a session of its project, goes in, and ends quiet', async () => {
+    assert.equal((await call('POST', '/routines', { name: 'x', prompt: 'y', project: 'p', cwd: '/w', schedule: { kind: 'interval', every: 1 } })).status, 400)
+    const { json: r } = await call('POST', '/routines', {
+      name: '의존성 점검', prompt: 'pnpm outdated를 보고 올릴 것만 알려줘', project: 'sched', cwd: '/w/sched', schedule: { kind: 'daily', time: '09:00' },
+    })
+    assert.equal(typeof r.next_at, 'number')
+    await call('POST', `/routines/${r.id}/run`)
+    assert.deepEqual((await runs(r.id)).map(run => run.status), ['waiting'])
+
+    await call('POST', '/sessions', { id: 'sch-1', cwd: '/w/sched' })
+    const stream = open('sch-1')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.deepEqual((await runs(r.id)).map(run => run.status), ['sent'])
+    const [got] = await take('sch-1')
+    assert.match(got!.text, /예약 프롬프트 '의존성 점검'/)
+    assert.match(got!.text, /routine_no_update/)
+    assert.match(got!.text, /pnpm outdated를 보고 올릴 것만 알려줘$/)
+
+    // A second run while the first one still runs is skipped.
+    await call('POST', `/routines/${r.id}/run`)
+    assert.deepEqual((await runs(r.id)).map(run => run.status), ['sent', 'skipped'])
+
+    assert.equal((await call('POST', '/routines/report', { sessionId: 'sch-1', kind: 'quiet' })).status, 200)
+    await call('POST', '/messages/turn-end', { sessionId: 'sch-1', ids: [got!.id], answer: '새로 올릴 것 없음' })
+    assert.equal((await runs(r.id))[0]!.status, 'quiet')
+    assert.equal((await call('POST', '/routines/report', { sessionId: 'sch-1', kind: 'quiet' })).status, 400)
+
+    // Failed, and interrupted.
+    await call('POST', `/routines/${r.id}/run`)
+    const [second] = await take('sch-1')
+    await call('POST', '/routines/report', { sessionId: 'sch-1', kind: 'failed', reason: '레지스트리에 닿지 못함' })
+    await call('POST', '/messages/turn-end', { sessionId: 'sch-1', ids: [second!.id], answer: '실패' })
+    await call('POST', `/routines/${r.id}/run`)
+    const [third] = await take('sch-1')
+    await call('POST', '/messages/turn-end', { sessionId: 'sch-1', ids: [third!.id], answer: '', aborted: true })
+    const last = await runs(r.id)
+    assert.deepEqual(last.map(run => run.status), ['quiet', 'skipped', 'failed', 'failed'])
+    assert.equal(last[2]!.failure, '레지스트리에 닿지 못함')
+    assert.equal(last[3]!.failure, '턴이 중단됨')
+    stream.destroy()
+    await call('POST', `/routines/${r.id}/delete`)
+    assert.equal((await runs(r.id)).length, 0)
+  })
+
+  test('a run due long ago follows the missed policy; a once switches itself off', async () => {
+    const make = async (missed: string, schedule: object) =>
+      (await call('POST', '/routines', { name: missed, prompt: 'p', project: 'gone', cwd: '/w/gone', schedule, missed })).json
+    const skip = await make('skip', { kind: 'daily', time: '09:00' })
+    const once = await make('run-once', { kind: 'daily', time: '09:00' })
+    const at = Date.now()
+    bridge.db.prepare('update routines set next_at = ? where id in (?, ?)').run(at - 3600_000, skip.id, once.id)
+    bridge.tickRoutines(at)
+    assert.deepEqual((await runs(skip.id)).map(run => run.status), ['missed'])
+    assert.deepEqual((await runs(once.id)).map(run => run.status), ['waiting'])
+    const later = new Date(at + 3600_000)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const one = await make('skip', { kind: 'once', at: `${later.getFullYear()}-${pad(later.getMonth() + 1)}-${pad(later.getDate())}T${pad(later.getHours())}:${pad(later.getMinutes())}` })
+    bridge.tickRoutines(one.next_at)
+    const row = (await call('GET', '/state')).json.routines.find((r: { id: number }) => r.id === one.id)
+    assert.deepEqual([row.enabled, row.next_at], [0, null])
+    for (const r of [skip, once, one]) await call('POST', `/routines/${r.id}/delete`)
+  })
+
+  test('a wait goes back into its session when it fires', async () => {
+    await call('POST', '/sessions', { id: 'wt-1', cwd: '/w/wait' })
+    const { json } = await call('POST', '/waits', { sessionId: 'wt-1', note: 'CI가 끝나면 결과를 보고 배포 여부 판단' })
+    assert.match(json.id, /^w\d+$/)
+    assert.equal((await call('GET', '/waits?session=wt-1')).json.waits.length, 1)
+    await call('POST', `/waits/${json.id}/fire`, { payload: 'CI 통과 (12분)' })
+    const [got] = await take('wt-1')
+    assert.match(got!.text, new RegExp(`기다리던 일 ${json.id}가 일어났습니다`))
+    assert.match(got!.text, /기다린 이유: CI가 끝나면/)
+    assert.match(got!.text, /함께 온 내용:\nCI 통과 \(12분\)/)
+    assert.equal((await call('POST', `/waits/${json.id}/fire`, {})).status, 404)
+    assert.equal((await call('GET', '/waits?session=wt-1')).json.waits.length, 0)
   })
 })

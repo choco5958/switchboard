@@ -89,7 +89,7 @@ describe('the MCP server against a test bridge', () => {
 
     const list = await c.request('tools/list')
     const names = list.result.tools.map((t: { name: string }) => t.name)
-    assert.deepEqual(names, ['ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'update_node', 'open_in_ide', 'check_answers'])
+    assert.deepEqual(names, ['ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'list_sessions', 'send_to_session', 'routine_no_update', 'routine_report_failure', 'await_event', 'close_wait', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_navigate', 'browser_console', 'browser_screenshot', 'update_node', 'open_in_ide', 'check_answers'])
     assert.deepEqual(list.result.tools[0].inputSchema, toolDefs('ko')[0]!.inputSchema)
     assert.deepEqual(list.result.tools[1].inputSchema, toolDefs('ko')[1]!.inputSchema)
     assert.equal(list.result.tools[1].description, toolDefs('ko')[1]!.description)
@@ -131,6 +131,27 @@ describe('the MCP server against a test bridge', () => {
     assert.match((await c.tool('check_answers')).text, /새로 온 답이나 메시지가 없습니다/)
     const row = (await call('GET', '/state')).json.questions.find((q: { id: number }) => q.id === id)
     assert.equal(row.delivered, 1)
+    assert.equal(await c.close(), 0)
+  })
+
+  test('a codex session lists the others, asks one, and reads the reply through check_answers', async () => {
+    await call('POST', '/sessions', { id: 'peer-claude', cwd: '/w/api' })
+    const c = client(['--agent', 'codex'])
+    await c.request('initialize', { protocolVersion: '2025-06-18' })
+    await c.tool('set_task', { title: '피어 작업' })
+    const listed = await c.tool('list_sessions')
+    assert.match(listed.text, /- peer-claude \| api \| claude \| \/w\/api \| 연결 끊김/)
+    const sent = await c.tool('send_to_session', { to: ['peer-claude'], text: '스키마 알려줘' })
+    const id = /m(\d+)/.exec(sent.text)?.[0]
+    assert.ok(id)
+    assert.match(sent.text, /턴을 끝내세요/)
+    const self = (await call('GET', '/state')).json.sessions.find((s: { agent: string; id: string }) => s.agent === 'codex' && s.id !== 'peer-claude')
+    // The other session answers it; the codex session reads the reply with check_answers.
+    await call('POST', '/messages', { sessionId: 'peer-claude', replyTo: id, text: '상태: 완료\n결과: id, name' })
+    const got = await c.tool('check_answers')
+    assert.match(got.text, new RegExp(`이 세션이 보낸 요청 ${id}에 대한 답`))
+    assert.match(got.text, /결과: id, name/)
+    assert.ok(self)
     assert.equal(await c.close(), 0)
   })
 

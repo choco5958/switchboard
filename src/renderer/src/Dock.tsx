@@ -62,6 +62,7 @@ export function Dock({
   onExpandLog,
   onFolder,
   agents = {},
+  stalledTerms = new Set<string>(),
   customs = [],
   showOthers = true,
 }: {
@@ -75,6 +76,7 @@ export function Dock({
   onExpandLog: () => void
   onFolder: (cwd: string) => void
   agents?: Record<string, AgentTag> // session id to its agent badge, for the log
+  stalledTerms?: Set<string> // terminals whose session's turn shows no activity
   customs?: CustomAgent[] // the person's own agent CLIs (settings)
   showOthers?: boolean // settings: offer agent CLIs other than Claude
 }) {
@@ -210,6 +212,9 @@ export function Dock({
             {scope === null && <span className="quiet">{projectOf(term)} </span>}
             {term.title}
             {!term.alive && <span className="quiet"> {t('dock.ended')}</span>}
+            {term.alive && stalledTerms.has(term.id) && (
+              <span className="stalled-mark" title={t('task.stalledTitle')}> {t('task.stalled')}</span>
+            )}
             <button
               className={`tab-close ${closing === term.id ? 'armed' : ''}`}
               title={term.alive ? t('dock.closeArmedTitle') : t('common.close')}

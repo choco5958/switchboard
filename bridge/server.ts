@@ -9,9 +9,69 @@ import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
+import type { Activity } from '../src/shared/stall.ts'
+import { limitedUntil } from '../src/shared/limit.ts'
+import { maskSecrets } from '../src/shared/pageLog.ts'
+import { HELD_REPLY_MS, PEER_RECIPIENTS_MAX, clipText, forwardText, forwardedAnswer, peerText, routineText, shellText, waitText, type PeerRow } from './peer.ts'
+import { nextRun, parseSchedule, type Schedule } from './schedule.ts'
+import { TELEGRAM_API, createTelegram } from './telegram.ts'
 import { eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
 
 export type Option = { key: string; label: string }
+
+type RoutineRow = {
+  id: number
+  project: string
+  cwd: string
+  name: string
+  prompt: string
+  schedule: string
+  missed: 'skip' | 'run-once'
+  enabled: number
+  next_at: number | null
+  created_at: number
+  updated_at: number
+}
+
+type RunRow = {
+  id: number
+  routine_id: number
+  scheduled_for: number
+  created_at: number
+  session_id: string
+  message_id: number | null
+  status: 'waiting' | 'sent' | 'done' | 'quiet' | 'failed' | 'skipped' | 'missed'
+  quiet: number
+  failure: string
+  result: string
+  finished_at: number | null
+  opened: number
+}
+
+type ApprovalRow = {
+  id: number
+  session_id: string
+  project: string
+  tool: string
+  summary: string
+  cwd: string
+  reason: string
+  status: 'pending' | 'allow' | 'deny' | 'terminal' | 'expired'
+  created_at: number
+}
+
+type OutboxRow = PeerRow & {
+  session_id: string
+  delivered: number
+  routine_run: number | null
+  wait_id: number | null
+  kind: string
+  task_title: string
+  created_at: number
+  answered: number
+  group_key: string
+  question_id: number | null
+}
 
 export type QuestionRow = {
   id: number
@@ -80,6 +140,32 @@ create table if not exists nodes (
   round integer not null default 1, note text not null default '',
   updated_at integer not null,
   unique (task_id, key)
+);
+create table if not exists routines (
+  id integer primary key, project text not null, cwd text not null, name text not null,
+  prompt text not null, schedule text not null, missed text not null default 'skip',
+  enabled integer not null default 1, next_at integer, created_at integer not null, updated_at integer not null
+);
+create table if not exists routine_runs (
+  id integer primary key, routine_id integer not null, scheduled_for integer not null,
+  created_at integer not null, session_id text not null default '', message_id integer,
+  status text not null default 'waiting', quiet integer not null default 0,
+  failure text not null default '', result text not null default '', finished_at integer,
+  opened integer not null default 0
+);
+create index if not exists routine_runs_routine on routine_runs (routine_id, id);
+create table if not exists secrets (key text primary key, value text not null);
+create table if not exists approvals (
+  id integer primary key, session_id text not null, project text not null, tool text not null,
+  summary text not null, cwd text not null default '', reason text not null default '',
+  status text not null default 'pending', via text not null default '', request_key text not null default '',
+  created_at integer not null, answered_at integer
+);
+create table if not exists telegram_approvals (approval_id integer primary key, message_id integer not null);
+create table if not exists telegram_messages (question_id integer primary key, message_id integer not null, created_at integer not null);
+create table if not exists waits (
+  id integer primary key, session_id text not null, note text not null,
+  created_at integer not null, fired_at integer, closed_at integer, payload text not null default ''
 );
 `
 
@@ -202,7 +288,9 @@ export function systemLocale(): string {
   return Intl.DateTimeFormat().resolvedOptions().locale
 }
 
-export function createBridge(dbPath: string, locale = systemLocale()) {
+export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch }
+
+export function createBridge(dbPath: string, locale = systemLocale(), options: BridgeOptions = {}) {
   privateDir(dirname(dbPath))
   const db = new DatabaseSync(dbPath)
   db.exec('pragma journal_mode = wal;')
@@ -222,6 +310,24 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
   ])
   addColumns('sessions', [['usage', "text not null default '{}'"]])
   addColumns('questions', [['turn_id', "text not null default ''"]])
+  addColumns('questions', [['request_key', "text not null default ''"], ['forwarded_to', "text not null default ''"]])
+  // Messages between sessions (bridge/peer.ts): who sent it, what it answers, whether it
+  // wants an answer and got one, the batch it went out with, and a forwarded question.
+  addColumns('outbox', [
+    ['from_session', "text not null default ''"],
+    ['reply_to', 'integer'],
+    ['expects_reply', 'integer not null default 0'],
+    ['answered', 'integer not null default 0'],
+    ['group_key', "text not null default ''"],
+    ['question_id', 'integer'],
+    ['request_key', "text not null default ''"],
+    // A request from the shell (switchboard send --wait): the session's reply waits here.
+    ['reply_text', 'text'],
+    ['replied_at', 'integer'],
+    // A scheduled prompt's run (bridge/schedule.ts) and a fired wait (await_event).
+    ['routine_run', 'integer'],
+    ['wait_id', 'integer'],
+  ])
   // Which agent CLI a session runs in (sessions before this were all Claude Code)
   // and the app terminal it runs in, when it does.
   addColumns('sessions', [['agent', "text not null default 'claude'"], ['terminal', "text not null default ''"]])
@@ -263,17 +369,262 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       )
       .all(sessionId) as QuestionRow[]
 
+  const sessionLabel = (id: string): string => {
+    const row = db.prepare('select project from sessions where id = ?').get(id) as { project: string } | undefined
+    return row ? `${row.project} (${id})` : id
+  }
+  // A Claude Code session's mod sends the turn's last answer back when it did not reply itself.
+  const autoReplies = (id: string): boolean =>
+    ((db.prepare('select agent from sessions where id = ?').get(id) as { agent: string } | undefined)?.agent ?? 'claude') === 'claude'
+
+  // What a session reads for one outbox row: a message from another session, or a question
+  // the person forwarded, gets its header in the reader's language; the rest is the text sent.
+  const outboxText = (m: OutboxRow): string => {
+    if (m.routine_run) {
+      const run = db.prepare('select r.name, r.prompt, rr.scheduled_for from routine_runs rr join routines r on r.id = rr.routine_id where rr.id = ?').get(m.routine_run) as
+        | { name: string; prompt: string; scheduled_for: number }
+        | undefined
+      if (run) return routineText(run.name, run.prompt, run.scheduled_for, langNow())
+    }
+    if (m.wait_id) {
+      const wait = db.prepare('select * from waits where id = ?').get(m.wait_id) as { id: number; note: string; payload: string; created_at: number } | undefined
+      if (wait) return waitText(wait, langNow())
+    }
+    if (m.question_id) {
+      const q = db.prepare('select * from questions where id = ?').get(m.question_id) as QuestionRow | undefined
+      if (q) return forwardText(m.id, q, sessionLabel(q.session_id), langNow(), autoReplies(m.session_id))
+    }
+    if (m.from_session) return peerText(m, sessionLabel(m.from_session), langNow(), autoReplies(m.session_id))
+    if (m.expects_reply) return shellText(m, langNow(), autoReplies(m.session_id))
+    return m.text
+  }
+
+  // A reply to a request that went to several sessions waits until every live one of them
+  // answered, or HELD_REPLY_MS after the request: the asker reads the answers in one turn.
+  const heldReply = (m: OutboxRow, at = now()): boolean => {
+    if (!m.reply_to || !m.from_session) return false
+    const request = db.prepare('select group_key, created_at from outbox where id = ?').get(m.reply_to) as
+      | { group_key: string; created_at: number }
+      | undefined
+    if (!request?.group_key || at - request.created_at >= HELD_REPLY_MS) return false
+    const open = db
+      .prepare('select session_id from outbox where group_key = ? and id != ? and answered = 0')
+      .all(request.group_key, m.reply_to) as { session_id: string }[]
+    const live = liveSessions()
+    return open.some(o => live.includes(o.session_id))
+  }
+
+  // A session at its usage limit takes nothing until the reset (src/shared/limit.ts).
+  const limitedSession = (sessionId: string): boolean => {
+    const row = db.prepare('select usage, last_seen from sessions where id = ?').get(sessionId) as { usage: string; last_seen: number } | undefined
+    return row !== undefined && limitedUntil(row.usage, row.last_seen, now()) !== null
+  }
+
+  const pendingOutbox = (sessionId: string): OutboxRow[] =>
+    (db.prepare('select * from outbox where session_id = ? and delivered = 0 order by id').all(sessionId) as OutboxRow[]).filter(
+      m => !heldReply(m),
+    )
+
+  const answerQuestion = (q: QuestionRow, choice: string | null, memo: string | null, via: 'app' | 'telegram' = 'app') => {
+    db.prepare(
+      "update questions set status = 'answered', choice = ?, memo = ?, answered_at = ?, delivered = 0 where id = ?",
+    ).run(choice, memo, now(), q.id)
+    logEvent(q.session_id, '답함', `Q${q.id} ${choice ? `(${choice})` : say('history.memo')} ${q.question}`, q.task_title)
+    changed('questions')
+    pushDeliveries(q.session_id)
+    if (via !== 'telegram') telegram.answeredElsewhere(q, choice, memo)
+  }
+
+  let shuttingDown = false
+
+  // A permission ask answered once, from wherever it was first.
+  const answerApproval = (row: ApprovalRow, decision: 'allow' | 'deny' | 'terminal' | 'expired', via: string): boolean => {
+    const result = db.prepare("update approvals set status = ?, via = ?, answered_at = ? where id = ? and status = 'pending'").run(decision, via, now(), row.id)
+    if (result.changes === 0) return false
+    const key = ({ allow: 'bridge.event.approvalAllow', deny: 'bridge.event.approvalDeny', terminal: 'bridge.event.approvalTerminal', expired: 'bridge.event.approvalExpired' } as const)[decision]
+    logEvent(row.session_id, '권한', say(key, { id: row.id, tool: row.tool }))
+    changed('approvals')
+    if (via !== 'telegram') telegram.approvalClosed(row, decision)
+    return true
+  }
+
+  // The person's presence at the desk, from the app (POST /presence): away when the app is
+  // closed, its report is old, or it says so (screen locked, idle). Telegram writes only then.
+  let presence = { away: false, at: 0 }
+  const away = () => watchers.size === 0 || presence.away || now() - presence.at > 90_000
+  const secret = (key: string) => (db.prepare('select value from secrets where key = ?').get(key) as { value: string } | undefined)?.value ?? null
+  const setSecret = (key: string, value: string | null) => {
+    if (value === null) db.prepare('delete from secrets where key = ?').run(key)
+    else db.prepare('insert into secrets (key, value) values (?, ?) on conflict (key) do update set value = excluded.value').run(key, value)
+  }
+  const telegram = createTelegram({
+    api: options.telegramApi ?? TELEGRAM_API,
+    fetch: options.fetch ?? fetch,
+    secret,
+    setSecret,
+    lang: langNow,
+    away,
+    pending: () => db.prepare("select * from questions where status = 'pending' order by id").all() as QuestionRow[],
+    question: id => db.prepare('select * from questions where id = ?').get(id) as QuestionRow | undefined,
+    answer: (id, choice, memo) => {
+      const q = db.prepare('select * from questions where id = ?').get(id) as QuestionRow | undefined
+      if (q && q.status !== 'answered') answerQuestion(q, choice, memo, 'telegram')
+    },
+    hold: id => {
+      const q = db.prepare('select * from questions where id = ?').get(id) as QuestionRow | undefined
+      if (!q || q.status !== 'pending') return
+      db.prepare("update questions set status = 'held' where id = ?").run(id)
+      logEvent(q.session_id, '보류', `Q${id} ${q.question}`, q.task_title)
+      changed('questions')
+    },
+    sentMessage: id => (db.prepare('select message_id from telegram_messages where question_id = ?').get(id) as { message_id: number } | undefined)?.message_id ?? null,
+    saveMessage: (id, messageId) => db.prepare('insert or replace into telegram_messages (question_id, message_id, created_at) values (?, ?, ?)').run(id, messageId, now()),
+    questionOf: messageId => (db.prepare('select question_id from telegram_messages where message_id = ?').get(messageId) as { question_id: number } | undefined)?.question_id ?? null,
+    pendingApprovals: () => db.prepare("select * from approvals where status = 'pending' order by id").all() as ApprovalRow[],
+    approval: id => db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow | undefined,
+    answerApproval: (id, decision) => {
+      const row = db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow | undefined
+      return row ? answerApproval(row, decision, 'telegram') : false
+    },
+    approvalMessage: id => (db.prepare('select message_id from telegram_approvals where approval_id = ?').get(id) as { message_id: number } | undefined)?.message_id ?? null,
+    saveApprovalMessage: (id, messageId) => db.prepare('insert or replace into telegram_approvals (approval_id, message_id) values (?, ?)').run(id, messageId),
+    changed: () => changed('telegram'),
+    log: text => console.log(text),
+  })
+
+  // The answer a session gave to a question the person forwarded to it. The person may have
+  // answered first; then the late answer only closes the forward.
+  const answerForwarded = (row: OutboxRow, from: string, text: string) => {
+    db.prepare('update outbox set answered = 1 where id = ?').run(row.id)
+    const q = db.prepare('select * from questions where id = ?').get(row.question_id) as QuestionRow | undefined
+    if (!q || q.status === 'answered' || !text.trim()) return
+    const { choice, memo } = forwardedAnswer(text, q.options)
+    answerQuestion(q, choice, say('peer.forwardedMemo', { session: sessionLabel(from), text: memo }))
+  }
+
+  const keepShellReply = (row: OutboxRow, text: string) => {
+    db.prepare('update outbox set answered = 1, reply_text = ?, replied_at = ? where id = ? and answered = 0').run(clipText(text), now(), row.id)
+    changed('outbox')
+  }
+
+  // One message from a session to others; replies and plain information want no answer.
+  const sendPeer = (from: string, to: string[], text: string, replyTo: number | null, expectsReply: boolean, requestKey = '') => {
+    const group = to.length > 1 && expectsReply ? `g${now()}-${Math.random().toString(36).slice(2, 8)}` : ''
+    const ids: string[] = []
+    for (const recipient of to) {
+      const row = db
+        .prepare(
+          `insert into outbox (session_id, kind, text, created_at, from_session, reply_to, expects_reply, group_key, request_key)
+           values (?, '세션메시지', ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(recipient, clipText(text), now(), from, replyTo, expectsReply ? 1 : 0, group, requestKey)
+      ids.push(`m${Number(row.lastInsertRowid)}`)
+    }
+    const names = to.map(sessionLabel).join(', ')
+    logEvent(from, '세션메시지', `→ ${names}: ${text.split('\n')[0]?.slice(0, 160) ?? ''}`)
+    changed('outbox')
+    for (const recipient of to) pushDeliveries(recipient)
+    // The reply may release answers the sender of the request held back (heldReply).
+    return ids
+  }
+
+  // Scheduled prompts (bridge/schedule.ts). A run goes to an idle connected Claude Code
+  // session of its project; with none, the app opens a `+ Claude` terminal there (the
+  // 'routine-open' event) and the run waits for it. A run that comes while the previous one
+  // still runs is skipped, so a laptop waking up does not get a burst. It ends at the turn's
+  // end, quiet when the session called routine_no_update, failed with routine_report_failure.
+  const RUN_WAIT_MS = 30 * 60_000
+  const RUN_RESULT_MS = 6 * 3600_000
+  const MISSED_GRACE_MS = 2 * 60_000
+
+  const scheduleOf = (r: RoutineRow): Schedule => JSON.parse(r.schedule) as Schedule
+  const advanceRoutine = (r: RoutineRow, after: number) => {
+    const next = nextRun(scheduleOf(r), after)
+    // A once that ran is done: it stays in the list, switched off.
+    db.prepare('update routines set next_at = ?, enabled = ? where id = ?').run(next, next === null ? 0 : r.enabled, r.id)
+  }
+  const addRun = (r: RoutineRow, scheduledFor: number, status: RunRow['status'], failure = '') =>
+    Number(
+      db
+        .prepare('insert into routine_runs (routine_id, scheduled_for, created_at, status, failure, finished_at) values (?, ?, ?, ?, ?, ?)')
+        .run(r.id, scheduledFor, now(), status, failure, status === 'waiting' ? null : now()).lastInsertRowid,
+    )
+  const startRun = (r: RoutineRow, scheduledFor: number) => {
+    if (db.prepare("select 1 from routine_runs where routine_id = ? and status in ('waiting', 'sent')").get(r.id)) {
+      addRun(r, scheduledFor, 'skipped', say('routine.skippedLive'))
+      return
+    }
+    addRun(r, scheduledFor, 'waiting')
+  }
+  const routineSession = (project: string): string | null => {
+    const live = liveSessions()
+    const rows = db.prepare("select id from sessions where project = ? and agent = 'claude' order by last_seen desc").all(project) as { id: string }[]
+    const ready = rows.filter(row => live.includes(row.id) && !limitedSession(row.id))
+    return (ready.find(row => activity.get(row.id)?.state !== 'working') ?? ready[0])?.id ?? null
+  }
+  const assignRuns = () => {
+    const waiting = db
+      .prepare("select rr.*, r.project, r.cwd, r.name from routine_runs rr join routines r on r.id = rr.routine_id where rr.status = 'waiting' order by rr.id")
+      .all() as (RunRow & { project: string; cwd: string; name: string })[]
+    for (const run of waiting) {
+      const sessionId = routineSession(run.project)
+      if (!sessionId) {
+        // Only the app opens terminals: with it away the run asks again on the next tick.
+        if (!run.opened && watchers.size > 0) {
+          db.prepare('update routine_runs set opened = 1 where id = ?').run(run.id)
+          for (const res of watchers) sseSend(res, 'change', { type: 'routine-open', cwd: run.cwd, project: run.project })
+        }
+        continue
+      }
+      const row = db
+        .prepare("insert into outbox (session_id, kind, text, created_at, expects_reply, routine_run) values (?, '예약', '', ?, 1, ?)")
+        .run(sessionId, now(), run.id)
+      db.prepare("update routine_runs set status = 'sent', session_id = ?, message_id = ? where id = ?").run(sessionId, Number(row.lastInsertRowid), run.id)
+      logEvent(sessionId, '예약', say('bridge.event.routineSent', { name: run.name }))
+      changed('routines')
+      pushDeliveries(sessionId)
+    }
+  }
+  const finishRun = (runId: number, answerText: string, interrupted = false) => {
+    const run = db.prepare('select * from routine_runs where id = ?').get(runId) as RunRow | undefined
+    if (!run || run.status !== 'sent') return
+    const status = interrupted || run.failure ? 'failed' : run.quiet ? 'quiet' : 'done'
+    const failure = run.failure || (interrupted ? say('routine.interrupted') : '')
+    db.prepare('update routine_runs set status = ?, failure = ?, result = ?, finished_at = ? where id = ?').run(status, failure, clipText(answerText).slice(0, 4000), now(), run.id)
+    if (run.message_id) db.prepare('update outbox set answered = 1 where id = ?').run(run.message_id)
+    changed('routines')
+  }
+  const tickRoutines = (at = now()) => {
+    const due = db.prepare('select * from routines where enabled = 1 and next_at is not null and next_at <= ?').all(at) as RoutineRow[]
+    for (const r of due) {
+      // Due long ago (the bridge was down): the routine's missed policy decides.
+      if (r.next_at! < at - MISSED_GRACE_MS && r.missed === 'skip') addRun(r, r.next_at!, 'missed')
+      else startRun(r, r.next_at!)
+      advanceRoutine(r, at)
+    }
+    // A run nobody took, or one whose turn never reported back, ends instead of blocking the next.
+    const stale = db
+      .prepare("select id, status from routine_runs where (status = 'waiting' and created_at < ?) or (status = 'sent' and created_at < ?)")
+      .all(at - RUN_WAIT_MS, at - RUN_RESULT_MS) as { id: number; status: string }[]
+    for (const run of stale) {
+      db.prepare("update routine_runs set status = 'failed', failure = ?, finished_at = ? where id = ?").run(
+        say(run.status === 'waiting' ? 'routine.noSession' : 'routine.noResult'),
+        at,
+        run.id,
+      )
+    }
+    assignRuns()
+    if (due.length > 0 || stale.length > 0) changed('routines')
+  }
+
   // Everything waiting for a session, oldest first: answers ("q<id>") and
   // messages the IDE sent, such as screen comments ("m<id>").
   const pushDeliveries = (sessionId: string, only?: ServerResponse) => {
     const targets = only ? new Set([only]) : deliveryWatchers.get(sessionId)
-    if (!targets || targets.size === 0) return
-    const messages = db
-      .prepare('select id, text, created_at from outbox where session_id = ? and delivered = 0 order by id')
-      .all(sessionId) as { id: number; text: string; created_at: number }[]
+    if (!targets || targets.size === 0 || limitedSession(sessionId)) return
     const items = [
       ...undelivered(sessionId).map(q => ({ id: `q${q.id}`, text: deliveryText(q, langNow()), at: q.answered_at ?? 0 })),
-      ...messages.map(m => ({ id: `m${m.id}`, text: m.text, at: m.created_at })),
+      ...pendingOutbox(sessionId).map(m => ({ id: `m${m.id}`, text: outboxText(m), at: m.created_at })),
     ].sort((a, b) => a.at - b.at)
     for (const item of items) {
       for (const res of targets) sseSend(res, 'delivery', { id: item.id, text: item.text })
@@ -362,6 +713,13 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     changed('tasks')
   }
 
+  // What each session's turn is doing, from the mod's hooks (POST /sessions/activity). Kept in
+  // memory: after a restart nothing counts as stalled until the session reports again.
+  const activity = new Map<string, Activity>()
+
+  // Sessions whose delivery stream is open: the mod's, or the app's for a CLI in its terminal.
+  const liveSessions = () => [...deliveryWatchers].filter(([, set]) => set.size > 0).map(([id]) => id)
+
   // Retention. Questions are history and stay. Delivered messages, done commands and
   // ended subagents go after 7 days; events keep the newest 5000; commands a session
   // never picked up go once it has not been seen for a day.
@@ -370,7 +728,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     db.prepare('delete from commands where done_at is not null and done_at < ?').run(at - 7 * DAY)
     db.prepare("delete from agents where status in ('completed', 'failed', 'killed') and updated_at < ?").run(at - 7 * DAY)
     db.prepare('delete from events where id <= (select max(id) - 5000 from events)').run()
-    const live = [...deliveryWatchers].filter(([, set]) => set.size > 0).map(([id]) => id)
+    const live = liveSessions()
     db.prepare(
       `delete from commands where done_at is null
        and session_id not in (select value from json_each(?))
@@ -380,9 +738,29 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
   prune()
   const pruning = setInterval(() => prune(), 3600_000)
   pruning.unref()
+  // A held reply (heldReply) and a usage limit's reset have no event to let what waits go:
+  // look every minute.
+  const releasing = setInterval(() => {
+    for (const id of liveSessions()) {
+      const waiting =
+        db.prepare('select 1 from outbox where session_id = ? and delivered = 0 limit 1').get(id) ||
+        db.prepare("select 1 from questions where session_id = ? and status = 'answered' and delivered = 0 limit 1").get(id)
+      if (waiting) pushDeliveries(id)
+    }
+  }, 60_000)
+  releasing.unref()
+  telegram.start()
+  tickRoutines()
+  const routineTimer = setInterval(() => tickRoutines(), 30_000)
+  routineTimer.unref()
 
   const state = () => ({
     sessions: db.prepare('select * from sessions order by last_seen desc').all(),
+    live: liveSessions(),
+    routines: db.prepare('select * from routines order by id').all(),
+    approvals: db.prepare("select * from (select * from approvals order by id desc limit 30) order by id").all(),
+    routineRuns: db.prepare('select * from (select * from routine_runs order by id desc limit 100) order by id').all(),
+    activity: Object.fromEntries(activity),
     // Every running task, however many: the limit only trims waiting ones.
     tasks: db
       .prepare(
@@ -435,8 +813,83 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     if (method === 'GET' && path === '/stream') {
       sse(res)
       watchers.add(res)
-      req.on('close', () => watchers.delete(res))
+      req.on('close', () => {
+        watchers.delete(res)
+        // The app closed: the person is away from it, and what waits goes to Telegram.
+        if (watchers.size === 0) telegram.away()
+      })
       return
+    }
+
+    if (method === 'GET' && path === '/presence') return send(res, 200, { away: away() })
+
+    // A Claude Code permission ask while the person is away (the mod's tool.check hook):
+    // it waits for an answer here, from the app or Telegram. 'terminal' hands it back to
+    // the terminal's dialog; a session that drops takes its asks with it ('expired').
+    if (method === 'POST' && path === '/approvals') {
+      const body = await readJson(req)
+      const sessionId = str(body.sessionId)
+      if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
+      const requestKey = str(body.requestKey)
+      const same = requestKey ? (db.prepare('select id from approvals where session_id = ? and request_key = ?').get(sessionId, requestKey) as { id: number } | undefined) : undefined
+      if (same) return send(res, 200, { id: same.id, duplicate: true })
+      const tool = str(body.tool).slice(0, 200)
+      const summary = maskSecrets(str(body.summary)).slice(0, 4000)
+      const id = Number(
+        db
+          .prepare('insert into approvals (session_id, project, tool, summary, cwd, reason, request_key, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(sessionId, projectOf(sessionId), tool, summary, str(body.cwd), maskSecrets(str(body.reason)).slice(0, 500), requestKey, now()).lastInsertRowid,
+      )
+      logEvent(sessionId, '권한', `A${id} ${tool}: ${summary.split('\n')[0]?.slice(0, 160) ?? ''}`)
+      changed('approvals')
+      telegram.approvalPosted(db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow)
+      return send(res, 200, { id })
+    }
+    const approvalOne = path.match(/^\/approvals\/(\d+)(\/answer)?$/)
+    if (approvalOne) {
+      const row = db.prepare('select * from approvals where id = ?').get(Number(approvalOne[1])) as ApprovalRow | undefined
+      if (!row) return send(res, 404, { error: say('bridge.notFound') })
+      if (method === 'GET' && !approvalOne[2]) return send(res, 200, { id: row.id, status: row.status })
+      if (method === 'POST' && approvalOne[2]) {
+        const body = await readJson(req)
+        const decision = str(body.decision)
+        if (!['allow', 'deny', 'terminal'].includes(decision)) return send(res, 400, { error: say('bridge.needAnswer') })
+        if (!answerApproval(row, decision as 'allow' | 'deny' | 'terminal', 'app')) return send(res, 409, { error: say('bridge.alreadyAnswered', { id: row.id }) })
+        return send(res, 200, { id: row.id, status: decision })
+      }
+    }
+
+    if (method === 'POST' && path === '/presence') {
+      const body = await readJson(req)
+      const wasAway = away()
+      presence = { away: body.away === true, at: now() }
+      if (!wasAway && away()) telegram.away()
+      return send(res, 200, { away: away() })
+    }
+
+    // Telegram (bridge/telegram.ts), from the app's settings. The token never leaves the bridge.
+    if (method === 'GET' && path === '/telegram') return send(res, 200, telegram.status())
+    if (method === 'POST' && path === '/telegram/token') {
+      const body = await readJson(req)
+      const value = body.token === null ? null : str(body.token).trim()
+      if (value !== null && !/^\d+:[A-Za-z0-9_-]{20,}$/.test(value)) return send(res, 400, { error: say('telegram.badToken') })
+      const result = await telegram.setToken(value)
+      changed('telegram')
+      return send(res, result.ok ? 200 : 400, result.ok ? telegram.status() : { error: result.error })
+    }
+    if (method === 'POST' && path === '/telegram/pair') return send(res, 200, await telegram.pair())
+    if (method === 'POST' && path === '/telegram/unpair') {
+      telegram.unpair()
+      changed('telegram')
+      return send(res, 200, telegram.status())
+    }
+    if (method === 'POST' && path === '/telegram/test') {
+      try {
+        await telegram.test()
+        return send(res, 200, { ok: true })
+      } catch (error) {
+        return send(res, 400, { error: String(error instanceof Error ? error.message : error) })
+      }
     }
 
     if (method === 'GET' && path === '/deliveries') {
@@ -446,7 +899,21 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       const set = deliveryWatchers.get(sessionId) ?? new Set()
       set.add(res)
       deliveryWatchers.set(sessionId, set)
-      req.on('close', () => set.delete(res))
+      // The app shows which sessions can take an answer now (state().live).
+      if (set.size === 1) {
+        changed('sessions')
+        assignRuns()
+      }
+      req.on('close', () => {
+        set.delete(res)
+        // Streams close as the bridge shuts down too, after its database.
+        if (set.size > 0 || shuttingDown) return
+        changed('sessions')
+        // Its process is gone, and the ask with it.
+        for (const row of db.prepare("select * from approvals where session_id = ? and status = 'pending'").all(sessionId) as ApprovalRow[]) {
+          answerApproval(row, 'expired', '')
+        }
+      })
       db.prepare('update sessions set last_seen = ? where id = ?').run(now(), sessionId)
       pushDeliveries(sessionId, res)
       pushCommands(sessionId, { only: res })
@@ -524,20 +991,34 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
         .map(o => ({ key: str(o.key).trim(), label: str(o.label).trim() }))
         .filter(o => o.key && o.label)
       const taskTitle = str(body.taskTitle)
+      // One question, asked once. The same call seen again (its tool_use_id) gets its
+      // question back, answered or not; the same question asked again while the first
+      // still waits (a model retrying, or asking after a compaction) gets the first.
+      const requestKey = str(body.requestKey)
+      const same = db
+        .prepare(
+          `select id from questions where session_id = ? and (
+             (? != '' and request_key = ?)
+             or (status in ('pending', 'held') and question = ? and options = ?))
+           order by id limit 1`,
+        )
+        .get(sessionId, requestKey, requestKey, question, JSON.stringify(clean)) as { id: number } | undefined
+      if (same) return send(res, 200, { id: same.id, duplicate: true })
       const result = db
         .prepare(
-          `insert into questions (session_id, project, task_title, question, body, options, recommend, reason, created_at, turn_id)
-           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `insert into questions (session_id, project, task_title, question, body, options, recommend, reason, created_at, turn_id, request_key)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           sessionId, projectOf(sessionId), taskTitle, question, str(body.body),
-          JSON.stringify(clean), str(body.recommend), str(body.reason), now(), str(body.turnId),
+          JSON.stringify(clean), str(body.recommend), str(body.reason), now(), str(body.turnId), requestKey,
         )
       const owner = taskTitle ? taskByTitle(sessionId, taskTitle) : undefined
       if (owner) revive(owner.id)
       const id = Number(result.lastInsertRowid)
       logEvent(sessionId, '결정 대기', `Q${id} ${question}`, taskTitle)
       changed('questions')
+      telegram.posted(db.prepare('select * from questions where id = ?').get(id) as QuestionRow)
       return send(res, 200, { id })
     }
 
@@ -562,13 +1043,34 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
         return send(res, 400, { error })
       }
       if (!choice && !memo) return send(res, 400, { error: say('bridge.needAnswer') })
-      db.prepare(
-        "update questions set status = 'answered', choice = ?, memo = ?, answered_at = ?, delivered = 0 where id = ?",
-      ).run(choice || null, memo || null, now(), id)
-      logEvent(q.session_id, '답함', `Q${id} ${choice ? `(${choice})` : say('history.memo')} ${q.question}`, q.task_title)
-      changed('questions')
-      pushDeliveries(q.session_id)
+      answerQuestion(q, choice || null, memo || null)
       return send(res, 200, { id, status: 'answered' })
+    }
+
+    // The person hands a decision question to another session, which answers in their place
+    // (bridge/peer.ts forwardText); its reply becomes the answer (answerForwarded).
+    const forward = path.match(/^\/questions\/(\d+)\/forward$/)
+    if (method === 'POST' && forward) {
+      const id = Number(forward[1])
+      const q = db.prepare('select * from questions where id = ?').get(id) as QuestionRow | undefined
+      if (!q) return send(res, 404, { error: say('bridge.noQuestion', { id }) })
+      if (q.status === 'answered') return send(res, 409, { error: say('bridge.peer.forwardNotOpen', { id }) })
+      const body = await readJson(req)
+      const to = str(body.to)
+      if (!to || !db.prepare('select 1 from sessions where id = ?').get(to)) return send(res, 404, { error: say('bridge.noSessionFound', { id: to }) })
+      if (to === q.session_id) return send(res, 400, { error: say('bridge.peer.self') })
+      const row = db
+        .prepare(
+          `insert into outbox (session_id, kind, task_title, text, created_at, expects_reply, question_id)
+           values (?, '세션메시지', ?, '', ?, 1, ?)`,
+        )
+        .run(to, q.task_title, now(), id)
+      db.prepare('update questions set forwarded_to = ? where id = ?').run(to, id)
+      logEvent(q.session_id, '세션메시지', say('bridge.event.forwarded', { id, to: sessionLabel(to) }), q.task_title)
+      changed('questions')
+      changed('outbox')
+      pushDeliveries(to)
+      return send(res, 200, { id, message: `m${Number(row.lastInsertRowid)}` })
     }
 
     const ackMessage = path.match(/^\/deliveries\/m(\d+)\/ack$/)
@@ -685,9 +1187,11 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       if (!known) return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
       const kind = str(body.kind) || '메시지'
       const taskTitle = str(body.taskTitle)
+      // From the shell (scripts/switchboard.ts): the session's reply is kept on the row.
+      const expectsReply = body.expectsReply === true ? 1 : 0
       const result = db
-        .prepare('insert into outbox (session_id, kind, task_title, text, created_at) values (?, ?, ?, ?, ?)')
-        .run(sessionId, kind, taskTitle, text, now())
+        .prepare('insert into outbox (session_id, kind, task_title, text, created_at, expects_reply) values (?, ?, ?, ?, ?, ?)')
+        .run(sessionId, kind, taskTitle, text, now(), expectsReply)
       logEvent(sessionId, kind, text.split('\n')[0]?.slice(0, 200) ?? '', taskTitle)
       changed('outbox')
       pushDeliveries(sessionId)
@@ -841,6 +1345,221 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
 
     // Feature area: agent CLIs other than Claude Code (mcp/server.ts and the app's terminal typing).
     // An MCP session says it is still there without a full registration (no change event).
+    // send_to_session. `to` may be left out on a reply: it goes to the one who asked. A reply
+    // to a forwarded question answers that question instead (answerForwarded).
+    if (method === 'POST' && path === '/messages') {
+      const body = await readJson(req)
+      const from = str(body.sessionId)
+      if (!db.prepare('select 1 from sessions where id = ?').get(from)) return send(res, 404, { error: say('bridge.noSessionFound', { id: from }) })
+      const text = str(body.text).trim()
+      if (!text) return send(res, 400, { error: say('bridge.needText') })
+      const requestKey = str(body.requestKey)
+      if (requestKey) {
+        const sent = db.prepare('select id from outbox where from_session = ? and request_key = ? order by id').all(from, requestKey) as { id: number }[]
+        if (sent.length > 0) return send(res, 200, { ids: sent.map(r => `m${r.id}`), duplicate: true })
+      }
+      const replyId = Number(str(body.replyTo).replace(/^m/, '')) || null
+      const replied = replyId
+        ? (db.prepare('select * from outbox where id = ? and session_id = ?').get(replyId, from) as OutboxRow | undefined)
+        : undefined
+      if (replyId && !replied) return send(res, 400, { error: say('bridge.peer.badReply', { id: `m${replyId}` }) })
+      if (replied?.question_id) {
+        answerForwarded(replied, from, text)
+        return send(res, 200, { ids: [], answered: `Q${replied.question_id}` })
+      }
+      if (replied && !replied.from_session && replied.expects_reply) {
+        keepShellReply(replied, text)
+        return send(res, 200, { ids: [], answered: `m${replied.id}` })
+      }
+      const named = Array.isArray(body.to) ? [...new Set(body.to.map(id => str(id)).filter(Boolean))] : []
+      const to = named.length > 0 ? named : replied?.from_session ? [replied.from_session] : []
+      if (to.length === 0) return send(res, 400, { error: say('bridge.peer.noRecipients') })
+      if (to.length > PEER_RECIPIENTS_MAX) return send(res, 400, { error: say('bridge.peer.tooMany', { max: PEER_RECIPIENTS_MAX }) })
+      if (to.includes(from)) return send(res, 400, { error: say('bridge.peer.self') })
+      const unknown = to.find(id => !db.prepare('select 1 from sessions where id = ?').get(id))
+      if (unknown) return send(res, 404, { error: say('bridge.noSessionFound', { id: unknown }) })
+      // A reply never asks for another: two sessions never answer each other's answers.
+      const expectsReply = !replied && body.expectsReply !== false
+      if (replied) db.prepare('update outbox set answered = 1 where id = ?').run(replied.id)
+      const ids = sendPeer(from, to, text, replied?.id ?? null, expectsReply, requestKey)
+      return send(res, 200, { ids })
+    }
+
+    // switchboard status / send --wait: where a message stands, its reply, and the decision
+    // questions its session posted since it was sent (the shell then waits for a person).
+    const messageOne = path.match(/^\/messages\/m?(\d+)$/)
+    if (method === 'GET' && messageOne) {
+      const row = db.prepare('select * from outbox where id = ?').get(Number(messageOne[1])) as (OutboxRow & { reply_text: string | null; replied_at: number | null }) | undefined
+      if (!row) return send(res, 404, { error: say('bridge.peer.badReply', { id: `m${messageOne[1]}` }) })
+      const questions = db
+        .prepare("select id, question from questions where session_id = ? and status in ('pending', 'held') and created_at >= ? order by id")
+        .all(row.session_id, row.created_at)
+      return send(res, 200, {
+        id: `m${row.id}`,
+        sessionId: row.session_id,
+        live: liveSessions().includes(row.session_id),
+        delivered: row.delivered === 1,
+        answered: row.answered === 1,
+        reply: row.reply_text ?? null,
+        repliedAt: row.replied_at ?? null,
+        questions,
+      })
+    }
+
+    // The mod's turn ended (turn.complete). Each request that went in with the turn and got
+    // no reply gets the turn's last answer as its result; a forwarded question, as its answer.
+    if (method === 'POST' && path === '/messages/turn-end') {
+      const body = await readJson(req)
+      const sessionId = str(body.sessionId)
+      const answerText = str(body.answer).trim()
+      const aborted = body.aborted === true
+      const ids = Array.isArray(body.ids) ? body.ids.map(id => Number(str(id).replace(/^m/, ''))).filter(Boolean) : []
+      let relayed = 0
+      for (const id of ids) {
+        const row = db.prepare('select * from outbox where id = ? and session_id = ?').get(id, sessionId) as OutboxRow | undefined
+        if (row?.routine_run) {
+          finishRun(row.routine_run, answerText, aborted)
+          continue
+        }
+        if (!row || aborted || !row.expects_reply || row.answered || !answerText) continue
+        if (row.question_id) answerForwarded(row, sessionId, answerText)
+        else if (!row.from_session) keepShellReply(row, answerText)
+        else if (row.from_session) {
+          db.prepare('update outbox set answered = 1 where id = ?').run(row.id)
+          sendPeer(sessionId, [row.from_session], answerText, row.id, false, `auto:${row.id}`)
+        } else continue
+        relayed++
+      }
+      return send(res, 200, { relayed })
+    }
+
+    // list_sessions: the other sessions a session can write to, connected ones first.
+    if (method === 'GET' && path === '/sessions/peers') {
+      const self = url.searchParams.get('session') ?? ''
+      const live = liveSessions()
+      const rows = db
+        .prepare('select id, project, cwd, agent, last_seen from sessions where id != ? and last_seen > ? order by last_seen desc')
+        .all(self, now() - 7 * DAY) as { id: string; project: string; cwd: string; agent: string; last_seen: number }[]
+      const peers = rows.map(s => {
+        const task = db
+          .prepare("select title, now from tasks where session_id = ? and status != '보관' order by updated_at desc limit 1")
+          .get(s.id) as { title: string; now: string } | undefined
+        return { ...s, live: live.includes(s.id), state: activity.get(s.id)?.state ?? '', task: task?.title ?? '', now: task?.now ?? '' }
+      })
+      peers.sort((a, b) => Number(b.live) - Number(a.live))
+      return send(res, 200, { peers })
+    }
+
+    // Scheduled prompts, from the app's settings. A new or changed one counts its next run from now.
+    if (method === 'POST' && path === '/routines') {
+      const body = await readJson(req)
+      const schedule = parseSchedule(body.schedule, now())
+      if ('error' in schedule) return send(res, 400, { error: schedule.error })
+      const name = str(body.name).trim()
+      const prompt = str(body.prompt).trim()
+      const project = str(body.project).trim()
+      const cwd = str(body.cwd).trim()
+      if (!name || !prompt || !project || !cwd) return send(res, 400, { error: say('bridge.needText') })
+      const missed = str(body.missed) === 'run-once' ? 'run-once' : 'skip'
+      const enabled = body.enabled === false ? 0 : 1
+      const next = nextRun(schedule, now())
+      const id = Number(body.id) || 0
+      if (id) {
+        db.prepare('update routines set project = ?, cwd = ?, name = ?, prompt = ?, schedule = ?, missed = ?, enabled = ?, next_at = ?, updated_at = ? where id = ?').run(
+          project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), id,
+        )
+      }
+      const saved = id
+        ? id
+        : Number(
+            db
+              .prepare('insert into routines (project, cwd, name, prompt, schedule, missed, enabled, next_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+              .run(project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), now()).lastInsertRowid,
+          )
+      changed('routines')
+      return send(res, 200, db.prepare('select * from routines where id = ?').get(saved))
+    }
+    const routineAction = path.match(/^\/routines\/(\d+)\/(run|delete)$/)
+    if (method === 'POST' && routineAction) {
+      const r = db.prepare('select * from routines where id = ?').get(Number(routineAction[1])) as RoutineRow | undefined
+      if (!r) return send(res, 404, { error: say('bridge.notFound') })
+      if (routineAction[2] === 'delete') {
+        db.prepare('delete from routine_runs where routine_id = ?').run(r.id)
+        db.prepare('delete from routines where id = ?').run(r.id)
+      } else {
+        startRun(r, now())
+        assignRuns()
+      }
+      changed('routines')
+      return send(res, 200, { ok: true })
+    }
+
+    // routine_no_update / routine_report_failure: the run this session is on ends quiet or failed
+    // when its turn ends.
+    if (method === 'POST' && path === '/routines/report') {
+      const body = await readJson(req)
+      const run = db
+        .prepare("select id from routine_runs where session_id = ? and status = 'sent' order by id desc limit 1")
+        .get(str(body.sessionId)) as { id: number } | undefined
+      if (!run) return send(res, 400, { error: say('routine.notInRun') })
+      if (str(body.kind) === 'failed') db.prepare('update routine_runs set failure = ? where id = ?').run(str(body.reason).trim().slice(0, 1000) || '-', run.id)
+      else db.prepare('update routine_runs set quiet = 1 where id = ?').run(run.id)
+      return send(res, 200, { ok: true, run: run.id })
+    }
+
+    // await_event: a session parks what it waits for and ends its turn; `switchboard fire w<id>`
+    // later puts the request back into it with what came.
+    if (method === 'POST' && path === '/waits') {
+      const body = await readJson(req)
+      const sessionId = str(body.sessionId)
+      const note = str(body.note).trim()
+      if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
+      if (!note) return send(res, 400, { error: say('bridge.needText') })
+      const open = (db.prepare('select count(*) n from waits where session_id = ? and fired_at is null and closed_at is null').get(sessionId) as { n: number }).n
+      if (open >= 20) return send(res, 400, { error: say('bridge.waitLimit', { max: 20 }) })
+      const id = Number(db.prepare('insert into waits (session_id, note, created_at) values (?, ?, ?)').run(sessionId, note.slice(0, 2000), now()).lastInsertRowid)
+      logEvent(sessionId, '대기', `w${id} ${note.split('\n')[0]?.slice(0, 160) ?? ''}`)
+      changed('waits')
+      return send(res, 200, { id: `w${id}` })
+    }
+    if (method === 'GET' && path === '/waits') {
+      const session = url.searchParams.get('session')
+      const rows = db
+        .prepare(`select w.*, s.project from waits w left join sessions s on s.id = w.session_id where w.fired_at is null and w.closed_at is null ${session ? 'and w.session_id = ?' : ''} order by w.id`)
+        .all(...(session ? [session] : []))
+      return send(res, 200, { waits: rows })
+    }
+    const waitAction = path.match(/^\/waits\/w?(\d+)\/(fire|close)$/)
+    if (method === 'POST' && waitAction) {
+      const body = await readJson(req)
+      const wait = db.prepare('select * from waits where id = ?').get(Number(waitAction[1])) as { id: number; session_id: string; fired_at: number | null; closed_at: number | null } | undefined
+      if (!wait || wait.fired_at || wait.closed_at) return send(res, 404, { error: say('bridge.notFound') })
+      if (waitAction[2] === 'close') {
+        db.prepare('update waits set closed_at = ? where id = ?').run(now(), wait.id)
+      } else {
+        db.prepare('update waits set fired_at = ?, payload = ? where id = ?').run(now(), clipText(str(body.payload)), wait.id)
+        db.prepare("insert into outbox (session_id, kind, text, created_at, wait_id) values (?, '메시지', '', ?, ?)").run(wait.session_id, now(), wait.id)
+        changed('outbox')
+        pushDeliveries(wait.session_id)
+      }
+      changed('waits')
+      return send(res, 200, { ok: true })
+    }
+
+    // A turn started or ended, or a tool call opened or closed. The app is told only when
+    // the picture changes (working or idle, a tool open or not); a heartbeat just moves `at`.
+    if (method === 'POST' && path === '/sessions/activity') {
+      const body = await readJson(req)
+      const sessionId = str(body.sessionId)
+      const state = str(body.state)
+      if (!sessionId || (state !== 'working' && state !== 'idle')) return send(res, 400, { error: say('bridge.noSession') })
+      const openTools = Math.max(0, Math.floor(Number(body.openTools) || 0))
+      const before = activity.get(sessionId)
+      activity.set(sessionId, { state, openTools, at: now() })
+      if (!before || before.state !== state || (before.openTools > 0) !== (openTools > 0)) changed('activity')
+      return send(res, 200, { ok: true })
+    }
+
     if (method === 'POST' && path === '/sessions/seen') {
       const body = await readJson(req)
       const result = db.prepare('update sessions set last_seen = ? where id = ?').run(now(), str(body.sessionId))
@@ -857,14 +1576,19 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) {
         return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
       }
-      const answers = undelivered(sessionId)
-      const messages = db
-        .prepare('select id, kind, task_title, text, created_at from outbox where session_id = ? and delivered = 0 order by id')
-        .all(sessionId) as { id: number; kind: string; task_title: string; text: string; created_at: number }[]
+      const limited = limitedSession(sessionId)
+      const answers = limited ? [] : undelivered(sessionId)
+      const messages = limited ? [] : pendingOutbox(sessionId)
       const items = [
         ...answers.map(q => ({ id: `q${q.id}`, text: deliveryText(q, langNow()), at: q.answered_at ?? 0 })),
-        ...messages.map(m => ({ id: `m${m.id}`, text: m.text, at: m.created_at })),
+        ...messages.map(m => ({ id: `m${m.id}`, text: outboxText(m), at: m.created_at })),
       ].sort((a, b) => a.at - b.at)
+      // `hold`: the caller types the items first and acknowledges each one after
+      // (/deliveries/<id>/ack), so a terminal that closes in between loses nothing.
+      if (body.hold === true) {
+        answers.length = 0
+        messages.length = 0
+      }
       for (const q of answers) {
         db.prepare('update questions set delivered = 1 where id = ?').run(q.id)
         logEvent(sessionId, '전달', say('bridge.event.answerInjected', { id: q.id }), q.task_title)
@@ -899,7 +1623,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     })
   })
 
-  return { server, db, prune, close: () => { clearInterval(pruning); server.close(); db.close() } }
+  return { server, db, prune, tickRoutines, close: () => { shuttingDown = true; telegram.stop(); clearInterval(pruning); clearInterval(releasing); clearInterval(routineTimer); server.close(); db.close() } }
 }
 
 function isAnswering(socketPath: string): Promise<boolean> {

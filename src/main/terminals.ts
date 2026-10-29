@@ -10,6 +10,7 @@ import { accountDir, claudeLauncher, claudeLine } from './termAccount'
 import { ccrPaths } from './account'
 import { pasteModeAfter, type TypingTarget } from './agentInput'
 import { t } from '../shared/i18n'
+import { writeOpenUrl } from './openUrl'
 
 // Terminals in the IDE's bottom dock. Each is a login shell in a project folder;
 // a Claude terminal types `claude --plugin-dir <this app's mod>` into it first,
@@ -87,6 +88,12 @@ export type TermStart = {
   prepare?: (key: string) => { env?: Record<string, string>; line?: string }
 }
 
+let browserScript = ''
+
+// A `+ Claude` terminal opened by the app itself (a scheduled prompt with no session to go
+// to); set once the terminal handlers are registered.
+export let openClaudeIn: (cwd: string) => TermInfo | { error: string } = () => ({ error: 'terminals not ready' })
+
 // A login shell in the folder, the way every dock terminal starts.
 export function openTerminal(start: TermStart): TermInfo | { error: string } {
   const folder = start.cwd.startsWith('~/') ? homedir() + start.cwd.slice(1) : start.cwd
@@ -100,7 +107,13 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
     cols: Math.max(20, start.cols || 100),
     rows: Math.max(5, start.rows || 30),
     cwd: folder,
-    env: { ...terminalEnv(process.env, configDir), ...(start.agent ? { SWITCHBOARD_AGENT: start.agent, SWITCHBOARD_TERMINAL: key } : {}), ...prepared.env },
+    env: {
+      ...terminalEnv(process.env, configDir),
+      // Local links a CLI opens land in the in-app browser (openUrl.ts), unless the person set their own.
+      ...(browserScript && !process.env.BROWSER ? { BROWSER: browserScript } : {}),
+      ...(start.agent ? { SWITCHBOARD_AGENT: start.agent, SWITCHBOARD_TERMINAL: key } : {}),
+      ...prepared.env,
+    },
   })
   const project = projectName(folder)
   const same = [...terms.values()].filter(one => one.project === project).length
@@ -130,6 +143,11 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
 
 export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, payload: unknown) => void): void {
   send = sendTo
+  try {
+    browserScript = writeOpenUrl(join(homedir(), '.claude-ide'))
+  } catch {
+    browserScript = ''
+  }
   configDir = accountDir(process.env, join(homedir(), '.claude-ide', 'terminal.json'))
   const modDir = join(app.getAppPath(), 'mod')
 
@@ -145,6 +163,15 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
       prepare: () => ({ line: claude ? claudeLine(claudeLauncher(), shellQuote(modDir), slot, ccrPaths().count) : undefined }),
     }),
   )
+  openClaudeIn = cwd =>
+    openTerminal({
+      cwd,
+      cols: 100,
+      rows: 30,
+      claude: true,
+      title: 'claude',
+      prepare: () => ({ line: claudeLine(claudeLauncher(), shellQuote(modDir), undefined, ccrPaths().count) }),
+    })
 
   ipcMain.handle('term:buffer', (_e, id: string) => {
     const t = terms.get(id)

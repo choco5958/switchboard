@@ -1,22 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Question } from '../../shared/types'
 import { renderMarkdown } from './markdown'
-import { clock, keyAction, optionsOf } from './model'
+import { clock, keyAction, optionsOf, type Reach } from './model'
 import { AgentBadge } from './parts'
 import type { AgentTag } from '../../shared/agents'
 import { t } from '../../shared/i18n'
 import { tx } from './tx'
+import { composing } from './ime'
 
 export function QuestionCard({
   q,
   agent,
   sessionProject,
+  reach = 'unknown',
+  peers = [],
   onDone,
   onOpenTask,
 }: {
   q: Question
   agent?: AgentTag // the agent CLI that asked, once other agents than Claude are around
   sessionProject: string
+  reach?: Reach // whether the session can take the answer now
+  peers?: { id: string; name: string; label: string }[] // connected sessions other than the asker, to hand the question to
   onDone: () => void
   onOpenTask: (() => void) | null
 }) {
@@ -27,6 +32,8 @@ export function QuestionCard({
   const [busy, setBusy] = useState(false)
   const memoBox = useRef<HTMLTextAreaElement>(null)
   const isOpen = q.status !== 'answered'
+  const [forwardTo, setForwardTo] = useState('')
+  const forwardedTo = q.forwarded_to ? (peers.find(p => p.id === q.forwarded_to)?.name ?? q.forwarded_to) : ''
   const chosen = options.find(o => o.key === q.choice)
 
   const submit = async (picked: string, note: string) => {
@@ -36,6 +43,16 @@ export function QuestionCard({
     setBusy(false)
     if (!reply.ok) return setError(String(reply.json.error ?? t('question.sendFailed')))
     onDone()
+  }
+
+  // Another session answers in the person's place; its reply becomes this question's answer.
+  const forward = async () => {
+    if (!forwardTo) return
+    setBusy(true)
+    const reply = await window.ide.forward(q.id, forwardTo)
+    setBusy(false)
+    if (!reply.ok) return setError(String(reply.json.error ?? t('question.forwardFailed')))
+    setForwardTo('')
   }
 
   const hold = async () => {
@@ -49,8 +66,8 @@ export function QuestionCard({
   const onKey = useRef<(event: KeyboardEvent) => void>(() => undefined)
   onKey.current = event => {
     const target = event.target as HTMLElement | null
-    const typing = target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT'
-    if (!isOpen || busy || typing || event.metaKey || event.ctrlKey || event.altKey) return
+    const typing = target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT' || target?.tagName === 'SELECT'
+    if (!isOpen || busy || typing || composing(event) || event.metaKey || event.ctrlKey || event.altKey) return
     const action = keyAction(event.key, options)
     if (action.type === 'none') return
     event.preventDefault()
@@ -66,7 +83,7 @@ export function QuestionCard({
   }, [])
 
   const onMemoKey = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !composing(event)) {
       event.preventDefault()
       void submit(choice, memo)
     }
@@ -79,6 +96,9 @@ export function QuestionCard({
         <span className="qid">Q{q.id}</span>
         <span className="tag">[{q.task_title || q.project}]</span>
         <span className="spacer" />
+        {reach === 'gone' && (isOpen || !q.delivered) && (
+          <span className="chip" title={t('question.goneTitle')}>{t('question.gone')}</span>
+        )}
         <span className={`chip ${q.status === 'pending' ? 'chip-warn' : q.status === 'held' ? '' : 'chip-good'}`}>
           {t(q.status === 'pending' ? 'palette.qPending' : q.status === 'held' ? 'palette.qHeld' : 'palette.qAnswered')}
         </span>
@@ -107,7 +127,7 @@ export function QuestionCard({
         <li>
           {t('question.picked', { value: isOpen ? '-' : q.choice ? `(${q.choice}) ${chosen?.label ?? ''}` : t('question.memoOnly') })}
         </li>
-        <li>{t('question.how', { value: isOpen ? '-' : q.memo || t('question.noMemo') })}{!isOpen && ` ${q.delivered ? t('question.delivered') : t('question.notDelivered')}`}</li>
+        <li>{t('question.how', { value: isOpen ? '-' : q.memo || t('question.noMemo') })}{!isOpen && ` ${q.delivered ? t('question.delivered') : reach === 'gone' ? t('question.notDeliveredGone') : t('question.notDelivered')}`}</li>
         <li>{t('question.answeredAt', { time: q.answered_at ? clock(q.answered_at) : '-' })}</li>
       </ul>
 
@@ -149,6 +169,7 @@ export function QuestionCard({
             onKeyDown={onMemoKey}
           />
           {error && <p className="error">{error}</p>}
+          {forwardedTo && <p className="quiet small">{t('question.forwarded', { session: forwardedTo })}</p>}
           <div className="actions">
             <button className="primary" disabled={busy || !choice} onClick={() => void submit(choice, memo)}>
               {choice ? t('question.sendChoice', { key: choice }) : t('question.pickFirst')}
@@ -166,6 +187,21 @@ export function QuestionCard({
               {tx('question.keys', { a: <kbd>a</kbd>, b: <kbd>b</kbd>, one: <kbd>1</kbd>, two: <kbd>2</kbd>, enter: <kbd>Enter</kbd>, h: <kbd>H</kbd>, m: <kbd>M</kbd> })}
             </span>
           </div>
+          {peers.length > 0 && (
+            <div className="forward">
+              <select className="session-select inline" value={forwardTo} disabled={busy} onChange={event => setForwardTo(event.target.value)} title={t('question.forwardTitle')}>
+                <option value="">{t('question.forwardPick')}</option>
+                {peers.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <button disabled={busy || !forwardTo} onClick={() => void forward()}>
+                {t('question.forward')}
+              </button>
+            </div>
+          )}
         </>
       ) : null}
       {onOpenTask && (

@@ -40,6 +40,7 @@ test('the place goes under the element line', () => {
 test('a pick becomes the row the bridge keeps, on its page without the fragment', () => {
   const pick = { selector: 'main > p', tag: 'p', text: '안내  문구', url: 'http://a/x#top', rect: { x: 0, y: 0, width: 1, height: 1 }, crumbs: ['본문', '"안내 문구" 문단'] }
   expect(commentBody(pick, '짧게', '/s.png', 's1')).toEqual({
+    logs: '',
     url: 'http://a/x',
     place: '본문 › "안내 문구" 문단',
     css: 'main > p',
@@ -49,6 +50,14 @@ test('a pick becomes the row the bridge keeps, on its page without the fragment'
     sessionId: 's1',
   })
   expect(pageKey('http://a/')).toBe('http://a/')
+})
+
+test('the page log goes under the comment, one line each', () => {
+  const one = comment(1, 'http://a/', '저장이 안 됨', null, { logs: '14:02:11 console error: TypeError: x\n14:02:12 net error: POST /api/save 500' })
+  expect(commentPrompt([one])).toContain(
+    '   그때 페이지의 콘솔 경고와 오류, 실패한 요청:\n     14:02:11 console error: TypeError: x\n     14:02:12 net error: POST /api/save 500',
+  )
+  expect(commentPrompt([comment(2, 'http://a/', 'x')])).not.toContain('콘솔')
 })
 
 test('counts and the status filter', () => {

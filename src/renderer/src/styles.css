@@ -51,6 +51,7 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .queue-item:hover { background: var(--panel-2); }
 .queue-item.active { background: var(--accent-soft); border-color: var(--accent); }
 .queue-item .qtext { display: block; }
+.queue-item .gone-mark { margin-left: 6px; font-size: 11px; color: var(--quiet); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .qid { font-family: var(--mono); color: var(--accent); font-weight: 700; }
 .tag { color: var(--warn); }
 .link {
@@ -649,3 +650,26 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .lang-option { min-width: 104px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); cursor: pointer; }
 .lang-option:hover { border-color: var(--accent); }
 .lang-option.on { border-color: var(--accent); background: var(--accent-soft); }
+
+.dock-tab .stalled-mark { color: var(--warn); }
+.waiting-group h3 { color: var(--warn); }
+.card .forward { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.card .forward select { max-width: 320px; }
+
+.routine-row { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+.routine-row.off { opacity: 0.6; }
+.routine-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.routine-last { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.routine-form { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+.routine-form input:not([type='checkbox']), .routine-form textarea { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+.routine-when { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.routine-when input[type='number'] { width: 64px; }
+.telegram-steps { margin: 4px 0 8px 18px; }
+.telegram-token { display: flex; gap: 8px; }
+.telegram-token input { flex: 1; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+
+.approval-item { border: 1px solid var(--warn); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.approval-summary { margin: 6px 0; padding: 6px; max-height: 6.5em; overflow: hidden; white-space: pre-wrap; word-break: break-all; font-family: var(--mono); font-size: 12px; background: var(--bg); border-radius: 4px; }
+.approval-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.approval-actions button:not(.link) { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--text); cursor: pointer; }
+.approval-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }

@@ -5,6 +5,8 @@ const api: IdeApi = {
   state: () => ipcRenderer.invoke('bridge:state'),
   answer: (id, choice, memo) => ipcRenderer.invoke('bridge:answer', id, choice, memo),
   hold: id => ipcRenderer.invoke('bridge:hold', id),
+  forward: (id, to) => ipcRenderer.invoke('bridge:forward', id, to),
+  approve: (id, decision) => ipcRenderer.invoke('bridge:approve', id, decision),
   connected: () => ipcRenderer.invoke('bridge:connected'),
   send: (sessionId, text, kind, taskTitle) => ipcRenderer.invoke('bridge:send', sessionId, text, kind, taskTitle),
   saveShot: dataUrl => ipcRenderer.invoke('shots:save', dataUrl),
@@ -69,4 +71,10 @@ contextBridge.exposeInMainWorld('ide', api)
 // Dynamic debugging: its own bridge routes (comments, open requests, live sessions).
 contextBridge.exposeInMainWorld('ideDebug', {
   call: (method: 'GET' | 'POST', path: string, body?: unknown) => ipcRenderer.invoke('debug:call', method, path, body),
+  // A failed request of an in-app browser view, for its screen comments.
+  onNet: (listener: (event: { webContentsId: number; entry: unknown }) => void) => {
+    const handler = (_e: unknown, event: { webContentsId: number; entry: unknown }) => listener(event)
+    ipcRenderer.on('browser:net', handler)
+    return () => ipcRenderer.off('browser:net', handler)
+  },
 })

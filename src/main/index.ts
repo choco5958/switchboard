@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, Notification, shell } from 'electron'
+import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, Notification, powerMonitor, session, shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
@@ -12,10 +12,13 @@ import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
 import { bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
-import { onTerminalsChange, registerTerminals, typingTarget } from './terminals'
+import { onTerminalsChange, openClaudeIn, registerTerminals, typingTarget } from './terminals'
 import { registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
-import { badgeText, planNotification, scanPending } from './notify'
+import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled } from './notify'
+import { STALL_MS, stalledSessions } from '../shared/stall'
+import { limitedUntil } from '../shared/limit'
+import { netEntry, type PageLogEntry } from '../shared/pageLog'
 import { resolveLang, setLang, t } from '../shared/i18n'
 
 const DIR = join(homedir(), '.claude-ide')
@@ -69,6 +72,10 @@ function send(channel: string, payload: unknown): void {
 
 // Pending question ids seen by the last scan; null until the first state, which is only a baseline.
 let seenPending: Set<number> | null = null
+let seenStalled = new Set<string>()
+let seenLimited = new Set<string>()
+let seenRuns: Set<number> | null = null
+let seenApprovals: Set<number> | null = null
 let scanTimer: ReturnType<typeof setTimeout> | null = null
 
 // Electron drops a notification's click handler once the object is collected, so live ones are held here.
@@ -91,9 +98,13 @@ function focusWindow(afterLoad?: () => void): void {
 async function scanQueue(): Promise<void> {
   const reply = await call('GET', '/state')
   if (!reply.ok) return
+  notifyStalled(reply.json as unknown as BridgeState)
+  notifyReleased(reply.json as unknown as BridgeState)
+  notifyRuns(reply.json as unknown as BridgeState)
+  notifyApprovals(reply.json as unknown as BridgeState)
   const scan = scanPending((reply.json as unknown as BridgeState).questions ?? [], seenPending)
   seenPending = scan.ids
-  app.dock?.setBadge(badgeText(scan.count))
+  app.dock?.setBadge(badgeText(scan.count + ((reply.json as unknown as BridgeState).approvals ?? []).filter(a => a.status === 'pending').length))
   // A focused window already shows the queue; only the badge is kept current.
   const plan = win?.isFocused() ? null : planNotification(scan.fresh)
   if (!plan || !Notification.isSupported()) return
@@ -110,6 +121,85 @@ async function scanQueue(): Promise<void> {
   notification.show()
 }
 
+// A session whose turn stopped moving (src/shared/stall.ts): one notification per stall,
+// also while the window is focused, since the terminal that waits may be in another tab.
+function notifyStalled(state: BridgeState): void {
+  const stalled = stalledSessions(state.activity ?? {}, state.live ?? [], Date.now())
+  const scan = scanStalled(stalled, seenStalled)
+  seenStalled = scan.ids
+  if (!Notification.isSupported()) return
+  for (const id of scan.fresh) {
+    const project = state.sessions.find(s => s.id === id)?.project ?? id
+    const notification = new Notification({ title: project, body: t('notify.stalled', { minutes: STALL_MS / 60_000 }) })
+    liveNotifications.add(notification)
+    notification.on('click', () => {
+      liveNotifications.delete(notification)
+      focusWindow()
+    })
+    notification.on('close', () => liveNotifications.delete(notification))
+    notification.show()
+  }
+}
+
+// A scheduled prompt run that ended with something to say, or failed. A quiet run, one that
+// was skipped and the runs already over at launch notify nothing.
+function notifyRuns(state: BridgeState): void {
+  const scan = scanRuns(state.routineRuns ?? [], seenRuns)
+  seenRuns = scan.ids
+  if (!Notification.isSupported()) return
+  for (const run of scan.fresh) {
+    const routine = (state.routines ?? []).find(r => r.id === run.routine_id)
+    const body = run.status === 'failed' ? t('notify.runFailed', { reason: run.failure }) : firstLine(run.result) || t('notify.runDone')
+    const notification = new Notification({ title: routine?.name ?? 'Switchboard', body })
+    liveNotifications.add(notification)
+    notification.on('click', () => {
+      liveNotifications.delete(notification)
+      focusWindow()
+    })
+    notification.on('close', () => liveNotifications.delete(notification))
+    notification.show()
+  }
+}
+
+// A permission ask came while the person is away: the notification waits on the screen too.
+function notifyApprovals(state: BridgeState): void {
+  const pending = (state.approvals ?? []).filter(a => a.status === 'pending')
+  const fresh = seenApprovals === null ? [] : pending.filter(a => !seenApprovals!.has(a.id))
+  seenApprovals = new Set(pending.map(a => a.id))
+  if (!Notification.isSupported()) return
+  for (const a of fresh) {
+    const notification = new Notification({ title: a.project, body: t('notify.approval', { tool: a.tool, what: firstLine(a.summary) }) })
+    liveNotifications.add(notification)
+    notification.on('click', () => {
+      liveNotifications.delete(notification)
+      focusWindow()
+    })
+    notification.on('close', () => liveNotifications.delete(notification))
+    notification.show()
+  }
+}
+
+// A usage limit lifted: what waited for the session goes in now (the bridge looks every minute).
+function notifyReleased(state: BridgeState): void {
+  const at = Date.now()
+  const limited = state.sessions.filter(s => limitedUntil(s.usage, s.last_seen, at) !== null).map(s => s.id)
+  const scan = scanReleased(limited, seenLimited)
+  seenLimited = scan.ids
+  if (!Notification.isSupported()) return
+  for (const id of scan.released) {
+    const project = state.sessions.find(s => s.id === id)?.project
+    if (!project) continue
+    const notification = new Notification({ title: project, body: t('notify.limitReleased') })
+    liveNotifications.add(notification)
+    notification.on('click', () => {
+      liveNotifications.delete(notification)
+      focusWindow()
+    })
+    notification.on('close', () => liveNotifications.delete(notification))
+    notification.show()
+  }
+}
+
 // SSE events arrive in bursts; one state read per burst is enough.
 function scheduleScan(): void {
   if (scanTimer) return
@@ -123,17 +213,39 @@ function scheduleScan(): void {
 // and the renderer refetches /state (also on the 'connected' event after a
 // reconnect). On loss the app shows the bridge as down at once, restarts it and
 // subscribes again.
+// Away from the desk: the screen locked, or no keyboard and mouse for five minutes. The
+// bridge writes to Telegram only then (bridge/telegram.ts); an old report counts as away.
+const AWAY_IDLE_SECONDS = 300
+function reportPresence(): void {
+  const state = powerMonitor.getSystemIdleState(AWAY_IDLE_SECONDS)
+  void call('POST', '/presence', { away: state === 'idle' || state === 'locked' }).catch(() => undefined)
+}
+
 function watch(): void {
+  // A stall is the absence of events, so the state is also read now and then without one.
+  setInterval(() => {
+    scheduleScan()
+    reportPresence()
+  }, 30_000).unref()
+  powerMonitor.on('lock-screen', reportPresence)
+  powerMonitor.on('unlock-screen', reportPresence)
+  powerMonitor.on('resume', reportPresence)
   watchBridge({
     socketPath: SOCKET,
     retryMs: RETRY_MS,
     onConnection: up => {
       connected = up
       send('bridge:connection', up)
-      if (up) scheduleScan()
+      if (up) {
+        scheduleScan()
+        reportPresence()
+      }
       else app.dock?.setBadge('')
     },
     onEvent: event => {
+      // A scheduled prompt found no Claude session of its project: start one there.
+      const change = event as { type?: string; cwd?: string }
+      if (change.type === 'routine-open' && change.cwd) openClaudeIn(change.cwd)
       send('bridge:change', event)
       scheduleScan()
       agentDelivery.onBridgeEvent(event)
@@ -224,6 +336,10 @@ ipcMain.handle('bridge:send', (_e, sessionId: string, text: string, kind: string
 // Element shots for screen comments; the prompt carries the path so the session can read the image.
 ipcMain.handle('shots:save', (_e, dataUrl: string): string | null => saveShot(join(DIR, 'shots'), dataUrl))
 ipcMain.handle('bridge:hold', (_e, id: number) => call('POST', `/questions/${Number(id)}/hold`))
+ipcMain.handle('bridge:forward', (_e, id: number, to: string) => call('POST', `/questions/${Number(id)}/forward`, { to: String(to) }))
+ipcMain.handle('bridge:approve', (_e, id: number, decision: string) =>
+  call('POST', `/approvals/${Number(id)}/answer`, { decision: ['allow', 'deny', 'terminal'].includes(decision) ? decision : 'terminal' }),
+)
 // Dynamic debugging: screen comments, open_in_ide requests and live sessions (bridge/debug.ts).
 ipcMain.handle('debug:call', (_e, method: string, path: string, body?: unknown) => {
   if (!debugPathAllowed(path)) return { ok: false, status: 0, json: { error: `not allowed: ${String(path)}` } }
@@ -323,10 +439,23 @@ app.whenReady().then(async () => {
   await startBridge()
   createWindow()
   watch()
+  watchBrowserRequests()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+// Requests of the in-app browser that failed go to the view that made them, which keeps
+// them for its screen comments (src/shared/pageLog.ts).
+function watchBrowserRequests(): void {
+  const requests = session.fromPartition('persist:claude-ide').webRequest
+  const filter = { urls: ['http://*/*', 'https://*/*'] }
+  const report = (webContentsId: number | undefined, entry: PageLogEntry | null) => {
+    if (entry && webContentsId !== undefined) send('browser:net', { webContentsId, entry })
+  }
+  requests.onCompleted(filter, d => report(d.webContentsId, netEntry(Date.now(), { method: d.method, url: d.url, statusCode: d.statusCode })))
+  requests.onErrorOccurred(filter, d => report(d.webContentsId, netEntry(Date.now(), { method: d.method, url: d.url, error: d.error })))
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

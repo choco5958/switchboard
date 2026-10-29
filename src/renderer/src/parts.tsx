@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react'
-import type { BridgeState, Question, Task } from '../../shared/types'
+import type { Approval, BridgeState, Question, Task } from '../../shared/types'
 import { taskStateLabel, taskState } from '../../shared/projects'
 import { eventKindLabel, stageLabel, t } from '../../shared/i18n'
-import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent } from './model'
+import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent, type Attention } from './model'
 import type { AgentTag } from '../../shared/agents'
 
 // Six task colors, cycled by task number (the round badge in the task list).
@@ -29,10 +29,11 @@ export function AgentBadge({ tag }: { tag: AgentTag | undefined }) {
   )
 }
 
-export function QueueItem({ q, active, onClick }: { q: Question; active: boolean; onClick: () => void }) {
+export function QueueItem({ q, active, gone, onClick }: { q: Question; active: boolean; gone?: boolean; onClick: () => void }) {
   return (
     <button className={`queue-item ${active ? 'active' : ''}`} onClick={onClick}>
       <span className="qid">Q{q.id}</span> <span className="tag">[{q.task_title || q.project}]</span>
+      {gone && <span className="gone-mark" title={t('question.goneTitle')}>{t('question.gone')}</span>}
       <span className="qtext">{q.question}</span>
       <span className="quiet small">{ago(q.created_at)}</span>
     </button>
@@ -45,6 +46,8 @@ export function TaskItem({
   openQuestions,
   nodeCount,
   agent,
+  attention = null,
+  project,
   onClick,
 }: {
   task: Task
@@ -52,6 +55,8 @@ export function TaskItem({
   openQuestions: number
   nodeCount: number
   agent?: AgentTag
+  attention?: Attention | null // why it needs the person now (model.ts attentionOf)
+  project?: string // shown in the waiting group, where tasks of every project mix
   onClick: () => void
 }) {
   const at = STAGES.indexOf(task.stage)
@@ -61,6 +66,7 @@ export function TaskItem({
       <div className="task-title">
         <span className={`status status-${state}`}>{taskStateLabel(state)}</span> <NumberBadge task={task} />{' '}
         {task.title} <AgentBadge tag={agent} />
+        {project && <span className="quiet small"> {project}</span>}
       </div>
       {task.now && <div className="quiet small">{t('task.now', { now: task.now })}</div>}
       <ol className="stages">
@@ -71,6 +77,21 @@ export function TaskItem({
         ))}
       </ol>
       <div className="task-tags">
+        {attention === 'stalled' && (
+          <span className="tag-chip warn" title={t('task.stalledTitle')}>
+            {t('task.stalled')}
+          </span>
+        )}
+        {attention === 'limited' && (
+          <span className="tag-chip warn" title={t('task.limitedTitle')}>
+            {t('task.limited')}
+          </span>
+        )}
+        {attention === 'offline' && (
+          <span className="tag-chip" title={t('task.offlineTitle')}>
+            {t('question.gone')}
+          </span>
+        )}
         {openQuestions > 0 && <span className="tag-chip warn">{t('task.openQuestions', { n: openQuestions })}</span>}
         {task.restored_at && Date.now() - task.restored_at < 24 * 3600_000 && (
           <span className="tag-chip accent">{t('task.restoredTag')}</span>
@@ -202,6 +223,32 @@ export function Toast({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (
           </button>
         </div>
       ))}
+    </div>
+  )
+}
+
+// A permission ask that came while the person was away (mod tool.check). Allow and deny answer
+// it here; 'in the terminal' hands it back to Claude Code's own dialog.
+export function ApprovalItem({ a, onAnswer }: { a: Approval; onAnswer: (decision: 'allow' | 'deny' | 'terminal') => void }) {
+  return (
+    <div className="approval-item">
+      <div>
+        <span className="qid">A{a.id}</span> <span className="tag">[{a.project}]</span> <strong>{a.tool}</strong>
+        <span className="quiet small"> {ago(a.created_at)}</span>
+      </div>
+      <pre className="approval-summary" title={a.summary}>
+        {a.summary}
+      </pre>
+      {a.cwd && <div className="quiet small">{t('approval.cwd', { cwd: a.cwd })}</div>}
+      <div className="approval-actions">
+        <button className="primary" onClick={() => onAnswer('allow')}>
+          {t('approval.allow')}
+        </button>
+        <button onClick={() => onAnswer('deny')}>{t('approval.deny')}</button>
+        <button className="link small" title={t('approval.terminalTitle')} onClick={() => onAnswer('terminal')}>
+          {t('approval.terminal')}
+        </button>
+      </div>
     </div>
   )
 }

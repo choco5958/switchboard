@@ -57,6 +57,40 @@ const KO = {
   openName: '개발 서버 대상 이름 (예: 검수 앱 main). 같은 이름이나 같은 포트의 대상이 있으면 그 대상을 고친다',
   openRepo: '개발 서버를 띄울 레포 폴더. 상대 경로는 세션 폴더 기준 (command만 주면 세션 폴더)',
   openCommand: '개발 서버를 띄우는 명령 (예: pnpm dev --port 8951). 주면 IDE가 서버를 새로 띄운다',
+  peers:
+    'Switchboard에 연결된 다른 세션 목록을 본다: 세션 id, 프로젝트, 폴더, 에이전트, 지금 하는 작업. ' +
+    '다른 프로젝트의 코드, API, 설정처럼 그 세션이 더 잘 아는 일이 생기면 먼저 부르고, 작업 제목과 폴더로 맞는 세션을 고른다.',
+  send:
+    '다른 세션에 메시지를 보낸다. 호출은 바로 끝난다. 요청(expectsReply true, 기본값)을 보냈으면 턴을 끝내고, 기다리며 폴링하거나 sleep하지 않는다. ' +
+    '답은 다음 턴에 "[Switchboard] ...이(가) 보낸 메시지"로 들어온다. 받은 세션은 이 대화와 메모리를 볼 수 없으니, 혼자 읽어도 되는 메시지 하나로 쓴다: ' +
+    '목표, 필요한 맥락, 시도한 것, 사용자가 승인한 위험한 작업과 하지 말아야 할 작업, 끝났다고 볼 기준. ' +
+    '받은 요청에 답할 때는 replyTo에 그 메시지 id를 준다(to는 생략). 정보만 알릴 때는 expectsReply false. ' +
+    '같은 요청을 반복해 보내지 않고, 받은 요청을 보낸 세션에 되돌려 맡기지 않으며, 사용자의 제한이나 안전 확인을 피하려고 다른 세션을 쓰지 않는다.',
+  sendTo: '받을 세션 id 목록 (list_sessions의 id). 답장이면 생략',
+  sendText: '보낼 메시지',
+  sendReplyTo: '답하는 메시지 id (예: m12)',
+  sendExpects: '답을 바라면 true(기본값), 정보만 알리면 false',
+  noUpdate: '예약 프롬프트 실행에서 사람에게 알릴 것이 없을 때 부른다. 알림 없이 조용히 끝난 실행으로 기록된다. 예약 실행이 아닐 때는 부르지 않는다.',
+  reportFailure: '예약 프롬프트 실행에서 할 일을 해내지 못했을 때 이유와 함께 부른다. 실패한 실행으로 기록되고 사람에게 알린다.',
+  reportReason: '못 한 이유 한 줄',
+  awaitEvent:
+    '빌드, 배포, 다른 사람의 확인처럼 이번 턴 밖에서 일어날 일을 기다려야 할 때 대기를 연다. 대기 id(w번호)를 사용자에게 알리고 턴을 끝낸다. 폴링하거나 sleep하지 않는다. ' +
+    '그 일이 일어나면 셸의 "switchboard fire w번호"로 이 요청이 다시 들어온다(예: long-job; switchboard fire w3).',
+  awaitNote: '무엇을 기다리고, 일어나면 무엇을 할지 한두 줄',
+  closeWait: '더 기다릴 필요가 없어진 대기를 닫는다.',
+  closeWaitId: '닫을 대기 id (예: w3)',
+  browserSnapshot:
+    'Switchboard 내장 브라우저에 지금 보이는 로컬 페이지를 읽는다: 주소, 제목, 누르거나 입력할 수 있는 요소 목록([ref] 역할 "이름"), 보이는 글. ' +
+    '화면을 확인하거나 고친 결과를 검증할 때 쓴다. ref는 이번 읽기에서만 유효하다. 브라우저 탭이 앞으로 나와 사람이 볼 수 있다. 로컬 개발 서버만 다룬다.',
+  browserClick: 'browser_snapshot의 ref로 요소를 실제 마우스 입력으로 누른다. 다른 요소가 덮고 있으면 거절된다. 누른 뒤의 새 읽기를 돌려준다.',
+  browserRef: 'browser_snapshot이 준 ref (예: 3:12)',
+  browserType: 'ref의 입력칸에 글을 넣는다(있던 내용은 바뀐다). submit이 true면 Enter를 누른다. 넣은 뒤의 새 읽기를 돌려준다.',
+  browserText: '넣을 글',
+  browserSubmit: '넣은 뒤 Enter를 누를지',
+  browserNavigate: '내장 브라우저로 로컬 주소(localhost, 127.0.0.1, 사설망)를 연다. 열린 뒤의 읽기를 돌려준다.',
+  browserUrl: '열 주소',
+  browserConsole: '지금 페이지의 콘솔 경고와 오류, 실패한 요청(400 이상, 응답 없음)을 최근 것부터 보여 준다.',
+  browserScreenshot: '내장 브라우저 화면을 PNG로 저장하고 경로를 돌려준다. 그 파일을 읽어 화면을 볼 수 있다.',
 }
 
 const EN: typeof KO = {
@@ -115,6 +149,40 @@ const EN: typeof KO = {
   openName: 'Dev server target name (e.g. review app main). A target with the same name or port is updated',
   openRepo: 'Repo folder to start the dev server in. A relative path is taken from the session folder (the session folder when only command is given)',
   openCommand: 'Command that starts the dev server (e.g. pnpm dev --port 8951). When given, the IDE starts the server again',
+  peers:
+    'Lists the other sessions connected to Switchboard: session id, project, folder, agent and the task each works on. ' +
+    'Call it first when work comes up that another session knows better, such as the code, API or settings of another project, and pick the session by its task title and folder.',
+  send:
+    'Sends a message to other sessions. The call returns at once. After sending a request (expectsReply true, the default) end your turn; do not poll or sleep while waiting. ' +
+    'The answer arrives in a later turn as "[Switchboard] A message from ...". The receiving session cannot see this conversation or your memory, so write one message that stands alone: ' +
+    'the goal, the context it needs, what you tried, which risky actions the user approved and which it must not do, and what counts as finished. ' +
+    'To answer a request you received, give its message id as replyTo (leave out to). For information only, set expectsReply false. ' +
+    'Do not send the same request again, do not hand a request back to the session that sent it, and never use another session to get around a user limit or a safety check.',
+  sendTo: 'Ids of the sessions to send to (ids from list_sessions). Leave out on a reply',
+  sendText: 'The message',
+  sendReplyTo: 'Id of the message this answers (e.g. m12)',
+  sendExpects: 'true (the default) when you want an answer, false for information only',
+  noUpdate: 'Call it in a scheduled prompt run when there is nothing to tell the person. The run is recorded as ended quietly, with no notification. Do not call it outside a scheduled run.',
+  reportFailure: 'Call it with the reason in a scheduled prompt run when the work could not be done. The run is recorded as failed and the person is told.',
+  reportReason: 'Why it could not be done, in one line',
+  awaitEvent:
+    'Opens a wait when the work needs something that happens outside this turn, such as a build, a deploy or someone else\'s check. Tell the user the wait id (w number) and end your turn; do not poll or sleep. ' +
+    'When it happens, "switchboard fire w<number>" in a shell puts this request back into the session (for example: long-job; switchboard fire w3).',
+  awaitNote: 'What you wait for and what to do when it happens, in a line or two',
+  closeWait: 'Closes a wait that is no longer needed.',
+  closeWaitId: 'Id of the wait to close (e.g. w3)',
+  browserSnapshot:
+    'Reads the local page shown in the Switchboard in-app browser: address, title, the elements that can be pressed or typed into ([ref] role "name"), and the visible text. ' +
+    'Use it to check a screen or verify a fix. A ref holds only for this reading. The browser tab comes to the front, so the person can watch. Local dev servers only.',
+  browserClick: 'Presses an element by its browser_snapshot ref, with real mouse input. Refused when another element covers it. Returns a fresh reading.',
+  browserRef: 'A ref from browser_snapshot (e.g. 3:12)',
+  browserType: 'Puts text into the field of a ref (what was there is replaced). With submit true it presses Enter. Returns a fresh reading.',
+  browserText: 'The text to put in',
+  browserSubmit: 'Whether to press Enter afterwards',
+  browserNavigate: 'Opens a local address (localhost, 127.0.0.1, the private network) in the in-app browser. Returns the reading once it loaded.',
+  browserUrl: 'The address to open',
+  browserConsole: 'Shows the page\'s console warnings and errors and its failed requests (status 400 or more, or no answer), newest last.',
+  browserScreenshot: 'Saves the in-app browser\'s screen as a PNG and returns the path. Read that file to see the screen.',
 }
 
 const STAGES = ['요구', '설계', '작업', '완료']
@@ -214,6 +282,71 @@ export function toolDefs(lang: Lang): ToolDef[] {
       },
     },
     {
+      name: 'list_sessions',
+      description: d.peers,
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'send_to_session',
+      description: d.send,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          to: { type: 'array', items: { type: 'string' }, description: d.sendTo },
+          text: { type: 'string', description: d.sendText },
+          replyTo: { type: 'string', description: d.sendReplyTo },
+          expectsReply: { type: 'boolean', description: d.sendExpects },
+        },
+        required: ['text'],
+      },
+    },
+    {
+      name: 'routine_no_update',
+      description: d.noUpdate,
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'routine_report_failure',
+      description: d.reportFailure,
+      inputSchema: { type: 'object', properties: { reason: { type: 'string', description: d.reportReason } }, required: ['reason'] },
+    },
+    {
+      name: 'await_event',
+      description: d.awaitEvent,
+      inputSchema: { type: 'object', properties: { note: { type: 'string', description: d.awaitNote } }, required: ['note'] },
+    },
+    {
+      name: 'close_wait',
+      description: d.closeWait,
+      inputSchema: { type: 'object', properties: { id: { type: 'string', description: d.closeWaitId } }, required: ['id'] },
+    },
+    { name: 'browser_snapshot', description: d.browserSnapshot, inputSchema: { type: 'object', properties: {} } },
+    {
+      name: 'browser_click',
+      description: d.browserClick,
+      inputSchema: { type: 'object', properties: { ref: { type: 'string', description: d.browserRef } }, required: ['ref'] },
+    },
+    {
+      name: 'browser_type',
+      description: d.browserType,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ref: { type: 'string', description: d.browserRef },
+          text: { type: 'string', description: d.browserText },
+          submit: { type: 'boolean', description: d.browserSubmit },
+        },
+        required: ['ref', 'text'],
+      },
+    },
+    {
+      name: 'browser_navigate',
+      description: d.browserNavigate,
+      inputSchema: { type: 'object', properties: { url: { type: 'string', description: d.browserUrl } }, required: ['url'] },
+    },
+    { name: 'browser_console', description: d.browserConsole, inputSchema: { type: 'object', properties: {} } },
+    { name: 'browser_screenshot', description: d.browserScreenshot, inputSchema: { type: 'object', properties: {} } },
+    {
       name: 'update_node',
       description: d.node,
       inputSchema: {
@@ -277,4 +410,36 @@ export function openResultText(reply: Reply, lang: Lang = 'ko'): string {
   }
   if (reply.json.ideWatching === false) lines.push(t(lang, 'dev.appOff'))
   return lines.join('\n')
+}
+
+// list_sessions and send_to_session results, shared by the mod and the MCP server.
+export type Peer = { id: string; project: string; cwd: string; agent: string; live: boolean; state: string; task: string; now: string }
+
+export function peersText(peers: readonly Peer[], lang: Lang): string {
+  if (peers.length === 0) return t(lang, 'tool.peersNone')
+  return [
+    t(lang, 'tool.peersHead'),
+    ...peers.map(p => {
+      const state = !p.live ? t(lang, 'tool.peerOffline') : p.state === 'working' ? t(lang, 'tool.peerWorking') : t(lang, 'tool.peerIdle')
+      const task = p.task ? ` | ${p.task}${p.now ? `: ${p.now}` : ''}` : ''
+      return `- ${p.id} | ${p.project} | ${p.agent} | ${p.cwd} | ${state}${task}`
+    }),
+  ].join('\n')
+}
+
+export function sentText(json: Record<string, unknown>, expectsReply: boolean, lang: Lang): string {
+  if (typeof json.answered === 'string') return t(lang, 'tool.sentAnswer', { id: json.answered })
+  const ids = Array.isArray(json.ids) ? json.ids.join(', ') : ''
+  if (json.duplicate) return t(lang, 'tool.sentAgain', { ids })
+  return t(lang, expectsReply ? 'tool.sentRequest' : 'tool.sentInfo', { ids })
+}
+
+// The browser_* tools and the bridge action each asks for (bridge POST /browser/act).
+export const BROWSER_TOOLS: Record<string, string> = {
+  browser_snapshot: 'snapshot',
+  browser_click: 'click',
+  browser_type: 'type',
+  browser_navigate: 'navigate',
+  browser_console: 'console',
+  browser_screenshot: 'screenshot',
 }

@@ -54,10 +54,13 @@ export function startAgentDelivery(options: DeliveryOptions) {
     }
     sub.busy = true
     try {
-      const reply = await options.call('POST', '/deliveries/take', { sessionId })
-      // The terminal may have closed while the bridge answered; type only into one still open.
+      // Typed first, acknowledged after: what a terminal that closed in between did not get
+      // stays undelivered, for the session's next start (codex resume and the like).
+      const reply = await options.call('POST', '/deliveries/take', { sessionId, hold: true })
       const still = options.terminal(sub.key)
-      if (reply.ok && still?.alive) typePrompt(still, takenText(reply.json, lang()))
+      if (reply.ok && still?.alive && typePrompt(still, takenText(reply.json, lang()))) {
+        for (const item of (reply.json.items ?? []) as { id: string }[]) await options.call('POST', `/deliveries/${item.id}/ack`)
+      }
     } finally {
       sub.busy = false
     }

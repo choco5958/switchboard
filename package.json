@@ -11,7 +11,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "test": "node --test bridge/*.test.ts mcp/*.test.ts mod/tests/*.unit.ts && vitest run src",
+    "test": "node --import ./scripts/test-env.ts --test bridge/*.test.ts mcp/*.test.ts mod/tests/*.unit.ts scripts/*.test.ts && vitest run src",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true"
   },

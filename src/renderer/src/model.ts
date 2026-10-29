@@ -1,4 +1,4 @@
-import type { GraphNode, Option, Question, Task } from '../../shared/types'
+import type { GraphNode, Option, Question, Session, Task } from '../../shared/types'
 import { agoText } from '../../shared/i18n'
 
 export const STAGES = ['요구', '설계', '작업', '완료'] as const
@@ -157,4 +157,40 @@ export function stripTaskPrefix(text: string): string {
 export function taskOfEvent<T extends Pick<Task, 'session_id' | 'title'>>(tasks: T[], event: { session_id: string; task_title: string }): T | null {
   if (!event.task_title) return null
   return tasks.find(t => t.session_id === event.session_id && t.title === event.task_title) ?? null
+}
+
+// Whether an answer can reach the session now. Claude Code holds its delivery stream
+// through the mod, and a CLI in an app terminal through the app; a CLI outside the app
+// only polls (check_answers), so the bridge cannot tell. An answer to a gone session
+// stays with the bridge and goes in when the session connects again (claude --resume).
+export type Reach = 'live' | 'gone' | 'unknown'
+
+export function reachOf(session: Pick<Session, 'id' | 'agent' | 'terminal'> | undefined, live: readonly string[]): Reach {
+  if (!session) return 'gone'
+  if (live.includes(session.id)) return 'live'
+  if (!session.agent || session.agent === 'claude' || session.terminal) return 'gone'
+  return 'unknown'
+}
+
+// Why a task needs the person now, the strongest reason first: a decision waits, its
+// session's turn stalled, its account is at the usage limit, or a running task's session dropped. null: nothing to do.
+// One function, so the waiting group and each card agree on the order.
+export type Attention = 'question' | 'stalled' | 'limited' | 'offline'
+
+const ATTENTION_ORDER: Attention[] = ['question', 'stalled', 'limited', 'offline']
+
+export function attentionOf(task: { openQuestions: number; stalled: boolean; limited?: boolean; offline: boolean; running: boolean }): Attention | null {
+  if (task.openQuestions > 0) return 'question'
+  if (task.running && task.stalled) return 'stalled'
+  if (task.running && task.limited) return 'limited'
+  if (task.running && task.offline) return 'offline'
+  return null
+}
+
+// The tasks that need the person, strongest reason first, then the newest; and the rest.
+export function waitingFirst<T extends { updated_at: number }>(tasks: T[], attention: (task: T) => Attention | null): { waiting: T[]; rest: T[] } {
+  const waiting = tasks
+    .filter(task => attention(task) !== null)
+    .sort((a, b) => ATTENTION_ORDER.indexOf(attention(a)!) - ATTENTION_ORDER.indexOf(attention(b)!) || b.updated_at - a.updated_at)
+  return { waiting, rest: tasks.filter(task => attention(task) === null) }
 }

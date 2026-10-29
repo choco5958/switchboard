@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Question } from '../shared/types'
-import { badgeText, firstLine, planNotification, scanPending } from './notify'
+import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled } from './notify'
 
 const q = (id: number, status: Question['status'] = 'pending', question = `q${id}`): Question =>
   ({ id, status, question, project: 'proj', session_id: 's' }) as Question
@@ -43,4 +43,28 @@ describe('text helpers', () => {
     expect(planNotification([q(7, 'pending', 'first\nsecond')])).toEqual({ title: 'proj', body: 'first', questionId: 7 })
     expect(planNotification([q(1), q(2)])).toEqual({ many: 2 })
   })
+})
+
+test('a stall notifies once, and again only after the session moved', () => {
+  const first = scanStalled(['a'], new Set())
+  expect(first.fresh).toEqual(['a'])
+  expect(scanStalled(['a'], first.ids).fresh).toEqual([])
+  const moved = scanStalled([], first.ids)
+  expect(scanStalled(['a'], moved.ids).fresh).toEqual(['a'])
+})
+
+test('a lifted limit notifies once', () => {
+  const first = scanReleased(['a', 'b'], new Set())
+  expect(first.released).toEqual([])
+  const next = scanReleased(['b'], first.ids)
+  expect(next.released).toEqual(['a'])
+  expect(scanReleased(['b'], next.ids).released).toEqual([])
+})
+
+test('a run that ended with something to say notifies once; quiet and skipped ones never', () => {
+  const run = (id: number, status: string) => ({ id, routine_id: 1, scheduled_for: 0, created_at: 0, session_id: '', status, failure: '', result: '', finished_at: 0 }) as never
+  const first = scanRuns([run(1, 'done')], null)
+  expect(first.fresh).toEqual([])
+  const next = scanRuns([run(1, 'done'), run(2, 'quiet'), run(3, 'failed'), run(4, 'skipped'), run(5, 'sent')], first.ids)
+  expect(next.fresh.map(r => (r as { id: number }).id)).toEqual([3])
 })

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { BridgeState, CommandKind, GraphNode } from '../../shared/types'
+import type { BridgeState, CommandKind, GraphNode, Question, Task } from '../../shared/types'
 import { Icon, type IconName } from './Icons'
 import { Palette, type PaletteItem } from './Palette'
 import { PropsPanel } from './PropsPanel'
 import { QuestionCard } from './QuestionCard'
 import { TaskView } from './TaskView'
 import { TopBar } from './TopBar'
-import { nextAfter, queueOf, tasksByProject } from './model'
+import { attentionOf, nextAfter, queueOf, reachOf, tasksByProject, waitingFirst, type Attention } from './model'
 import { ArchivePage } from './pages/ArchivePage'
 import { DebugPage } from './pages/DebugPage'
 import { DebugPanel } from './pages/DebugPanel'
@@ -17,8 +17,10 @@ import { LogPage } from './pages/LogPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { isRunning, nameForFolder, pickSession, projectsOf, savedProjects, scopeFor, scopeState } from '../../shared/projects'
 import { Dock } from './Dock'
-import { AgentBadge, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
+import { AgentBadge, ApprovalItem, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
+import { stalledSessions } from '../../shared/stall'
+import { limitedUntil } from '../../shared/limit'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
 import { HOME, activeTab, closeTab, openTab, pruneTabs, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
 import { applyTheme } from './theme'
@@ -26,6 +28,7 @@ import { LOCALE_TAG, resolveLang, setLang, stageLabel, t, type Key } from '../..
 
 const EMPTY: BridgeState = {
   sessions: [],
+  live: [],
   tasks: [],
   questions: [],
   answeredCount: 0,
@@ -208,7 +211,51 @@ export function App() {
   // Feature area: agent CLIs other than Claude Code. Badges by session, and the person's own CLIs.
   const customs = useMemo(() => customAgents(state.settings[CUSTOM_AGENTS_KEY]), [state.settings])
   const tags = useMemo(() => agentTags(state.sessions, customs), [state.sessions, customs])
+  // A stall is time passing without events, so the check runs on a clock as well.
+  const [clockNow, setClockNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+  const stalled = useMemo(
+    () => new Set(stalledSessions(state.activity ?? {}, state.live ?? [], clockNow)),
+    [state.activity, state.live, clockNow],
+  )
+  const limited = useMemo(
+    () => new Set(state.sessions.filter(s => limitedUntil(s.usage, s.last_seen, clockNow) !== null).map(s => s.id)),
+    [state.sessions, clockNow],
+  )
+  const openQuestionsOf = (task: Task) =>
+    state.questions.filter(q => q.status !== 'answered' && q.session_id === task.session_id && q.task_title === task.title).length
+  const attentionOfTask = (task: Task): Attention | null =>
+    attentionOf({
+      openQuestions: openQuestionsOf(task),
+      stalled: stalled.has(task.session_id),
+      limited: limited.has(task.session_id),
+      offline: reachOf(state.sessions.find(s => s.id === task.session_id), state.live ?? []) === 'gone',
+      running: isRunning(task),
+    })
+  const waitingTasks = waitingFirst(view.tasks, attentionOfTask)
+  const taskItem = (task: Task, showProject: boolean) => (
+    <TaskItem
+      key={task.id}
+      task={task}
+      active={tabs.active === `task:${task.id}`}
+      openQuestions={openQuestionsOf(task)}
+      nodeCount={state.nodes.filter(n => n.task_id === task.id).length}
+      agent={tags[task.session_id]}
+      attention={attentionOfTask(task)}
+      project={showProject ? task.project : undefined}
+      onClick={() => openTask(task.id)}
+    />
+  )
+  const stalledTerms = useMemo(
+    () => new Set(state.sessions.filter(s => stalled.has(s.id) && s.terminal).map(s => s.terminal as string)),
+    [state.sessions, stalled],
+  )
   const { pending, held } = useMemo(() => queueOf(view.questions), [view.questions])
+  const pendingApprovals = (state.approvals ?? []).filter(a => a.status === 'pending' && (scope === null || a.project === scope))
+  const reachOfQuestion = (q: Question) => reachOf(state.sessions.find(s => s.id === q.session_id), state.live ?? [])
   const inScope = (tab: Tab): boolean => {
     if (scope === null) return true
     if (tab.kind === 'task') return state.tasks.find(t => t.id === tab.id)?.project === scope
@@ -354,6 +401,13 @@ export function App() {
           q={q}
           agent={tags[q.session_id]}
           sessionProject={state.sessions.find(s => s.id === q.session_id)?.project ?? q.project}
+          reach={reachOfQuestion(q)}
+          peers={state.sessions
+            .filter(s => s.id !== q.session_id && (state.live ?? []).includes(s.id))
+            .map(s => {
+              const task = state.tasks.find(one => one.session_id === s.id && isRunning(one))
+              return { id: s.id, name: s.project, label: `${s.project}${s.agent && s.agent !== 'claude' ? ` (${s.agent})` : ''}${task ? `: ${task.title}` : ''}` }
+            })}
           onDone={() => void advance(q.id)}
           onOpenTask={task ? () => openTask(task.id) : null}
         />
@@ -363,7 +417,7 @@ export function App() {
     if (tab.kind === 'archive') return <ArchivePage archived={view.archived} onRestore={id => void restore(id)} />
     if (tab.kind === 'log') return <LogPage events={view.events} tasks={logTasks} agents={tags} />
     if (tab.kind === 'linear') return <LinearPage sessions={view.sessions} />
-    if (tab.kind === 'settings') return <SettingsPage settings={state.settings} />
+    if (tab.kind === 'settings') return <SettingsPage settings={state.settings} routines={state.routines} runs={state.routineRuns} projects={projects} />
     if (tab.kind === 'gallery') return showDev ? <GalleryPage /> : null
     return null
   }
@@ -407,7 +461,7 @@ export function App() {
               }}
             >
               <Icon name={item.icon} />
-              {item.section === 'questions' && pending.length > 0 && <span className="rail-badge">{pending.length}</span>}
+              {item.section === 'questions' && pending.length + pendingApprovals.length > 0 && <span className="rail-badge">{pending.length + pendingApprovals.length}</span>}
             </button>
           ))}
         </nav>
@@ -463,21 +517,34 @@ export function App() {
                     {t('sidebar.noTasks')}
                   </p>
                 )}
-                {tasksByProject(view.tasks).map(([project, list]) => (
+                {waitingTasks.waiting.length > 0 && (
+                  <div className="project waiting-group">
+                    <h3>{t('sidebar.waiting', { n: waitingTasks.waiting.length })}</h3>
+                    {waitingTasks.waiting.map(task => taskItem(task, scope === null))}
+                  </div>
+                )}
+                {tasksByProject(waitingTasks.rest).map(([project, list]) => (
                   <div key={project} className="project">
                     <h3>{project}</h3>
-                    {list.map(task => (
-                      <TaskItem
-                        key={task.id}
-                        task={task}
-                        active={tabs.active === `task:${task.id}`}
-                        openQuestions={state.questions.filter(q => q.status !== 'answered' && q.session_id === task.session_id && q.task_title === task.title).length}
-                        nodeCount={state.nodes.filter(n => n.task_id === task.id).length}
-                        agent={tags[task.session_id]}
-                        onClick={() => openTask(task.id)}
-                      />
-                    ))}
+                    {list.map(task => taskItem(task, false))}
                   </div>
+                ))}
+              </section>
+            )}
+            {section === 'questions' && pendingApprovals.length > 0 && (
+              <section className="approvals">
+                <h2>
+                  {t('approval.title')} <span className="count warn">{pendingApprovals.length}</span>
+                </h2>
+                {pendingApprovals.map(a => (
+                  <ApprovalItem
+                    key={a.id}
+                    a={a}
+                    onAnswer={async decision => {
+                      const reply = await window.ide.approve(a.id, decision)
+                      if (!reply.ok) toast(String(reply.json.error ?? reply.status), 'bad')
+                    }}
+                  />
                 ))}
               </section>
             )}
@@ -488,7 +555,7 @@ export function App() {
                 </h2>
                 {pending.length === 0 && <p className="quiet">{t('sidebar.noQuestions')}</p>}
                 {pending.map(q => (
-                  <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} onClick={() => openQuestion(q.id)} />
+                  <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} gone={reachOfQuestion(q) === 'gone'} onClick={() => openQuestion(q.id)} />
                 ))}
                 <button className="link" onClick={() => open({ kind: 'history' })}>
                   {t('rail.history')} <span className="count">{view.answeredCount}</span>
@@ -497,7 +564,7 @@ export function App() {
                   <>
                     <h3>{t('sidebar.held', { n: held.length })}</h3>
                     {held.map(q => (
-                      <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} onClick={() => openQuestion(q.id)} />
+                      <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} gone={reachOfQuestion(q) === 'gone'} onClick={() => openQuestion(q.id)} />
                     ))}
                   </>
                 )}
@@ -592,6 +659,7 @@ export function App() {
           onExpandLog={() => open({ kind: 'log' })}
           onFolder={cwd => void addProject(cwd)}
           agents={tags}
+          stalledTerms={stalledTerms}
           customs={customs}
           showOthers={showOtherAgents(state.settings[SHOW_OTHER_AGENTS_KEY])}
         />

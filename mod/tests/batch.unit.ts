@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, staleKeys, toastText } from '../hooks/batch.ts'
+import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, restateText, staleKeys, approvalSummary, toastText } from '../hooks/batch.ts'
 
 test('one delivery goes in as it is', () => {
   assert.equal(batchText([{ id: 'q6', text: 'Q6 답' }]), 'Q6 답')
@@ -54,4 +54,34 @@ test('a waiting question shows the recommended option by its label', () => {
 test('only the store keys of sessions gone too long are stale', () => {
   const keys = ['sent:old', 'commands:old', 'sent:new', 'seen', 'sent:unknown']
   assert.deepEqual(staleKeys(keys, { old: 0, new: 900 }, 1000, 500), ['sent:old', 'commands:old'])
+})
+
+test('after a compaction the prompt restates the session tasks, nodes, open questions and waits', () => {
+  const state = {
+    tasks: [
+      { id: 1, session_id: 's', title: '결제', stage: '작업', status: '하는 중', now: 'PG 응답 처리' },
+      { id: 2, session_id: 's', title: '옛 작업', stage: '완료', status: '보관', now: '' },
+      { id: 3, session_id: 'other', title: '남의 작업', stage: '작업', status: '하는 중', now: '' },
+    ],
+    nodes: [{ task_id: 1, key: 'impl', title: '재시도 구현', status: '지금' }],
+    questions: [
+      { id: 7, session_id: 's', question: '재시도 몇 번?', status: 'pending' },
+      { id: 8, session_id: 's', question: '끝난 질문', status: 'answered' },
+    ],
+  }
+  const text = restateText(state, [{ id: 3, note: 'CI가 끝나면 배포\n둘째 줄' }], 's', 'ko')!
+  assert.match(text, /^\[Switchboard\] 대화가 압축되었습니다/)
+  assert.match(text, /작업: 결제 \(작업, 하는 중\) 지금: PG 응답 처리\n {2}- impl \[지금\] 재시도 구현/)
+  assert.match(text, /답 기다리는 질문: Q7 재시도 몇 번\?/)
+  assert.match(text, /열린 대기: w3 CI가 끝나면 배포$/)
+  assert.doesNotMatch(text, /옛 작업|남의 작업|끝난 질문/)
+  assert.equal(restateText({ tasks: [] }, [], 's'), undefined)
+})
+
+test('a permission ask reads as what would run', () => {
+  assert.equal(approvalSummary('Bash', { command: 'rm -rf dist', description: '빌드 폴더 지우기' }), '빌드 폴더 지우기\nrm -rf dist')
+  assert.equal(approvalSummary('Edit', { file_path: '/a.ts', old_string: 'x', new_string: 'y' }), '/a.ts\n- x\n+ y')
+  assert.equal(approvalSummary('WebFetch', { url: 'https://x.dev' }), 'https://x.dev')
+  assert.match(approvalSummary('mcp__db__query', { sql: 'drop table t' }), /"sql": "drop table t"/)
+  assert.equal(approvalSummary('Bash', { command: 'x'.repeat(2000) }).length, 1500)
 })
