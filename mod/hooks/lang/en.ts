@@ -93,6 +93,11 @@ export const en: Dict = {
   'mod.syncPrompt':
     '[Switchboard] Request to sync the IDE. Post the tasks in progress again with set_task, the plans with plan_nodes, ' +
     'and the node statuses with update_node, so the IDE matches the actual state. If nothing changed, leave it and say so briefly.',
+  'mod.restate': '[Switchboard] The conversation was compacted. Here is what this session put on Switchboard, again. Keep using the same task titles, node keys, Q numbers and wait ids.',
+  'mod.restateTask': 'Task: {title} ({stage}, {status}) now: {now}',
+  'mod.restateQuestion': 'Waiting for an answer: Q{id} {question}',
+  'mod.restateWait': 'Open wait: w{id} {note}',
+  'mod.compactKeep': 'Keep, unchanged, the task titles, node keys, decision question numbers (Q numbers), wait ids (w numbers) and message ids with other sessions (m numbers) put on Switchboard.',
   'mod.pending':
     'These questions are waiting for an answer in Switchboard. End your reply with this list as is, under the heading "Questions waiting for an answer".',
   'mod.resumed': 'Resumed from the IDE. Carry on with what you were doing.',

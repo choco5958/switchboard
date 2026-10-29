@@ -99,6 +99,11 @@ export const ko = {
     '[Switchboard] IDE 정보 갱신 요청입니다. 진행 중인 작업을 set_task로, 계획을 plan_nodes로, 노드 상태를 update_node로 다시 올려 ' +
     'IDE가 실제 상태와 같게 해 주세요. 바뀐 것이 없으면 그대로 두고 짧게 알려 주세요.',
   'mod.pending': 'Switchboard에서 답을 기다리는 질문입니다. 응답 끝에 "답 기다리는 질문" 제목으로 이 목록을 그대로 붙이세요.',
+  'mod.restate': '[Switchboard] 대화가 압축되었습니다. 이 세션이 Switchboard에 올린 상태를 다시 알려 드립니다. 같은 작업 제목, 노드 key, Q번호, 대기 id를 계속 쓰세요.',
+  'mod.restateTask': '작업: {title} ({stage}, {status}) 지금: {now}',
+  'mod.restateQuestion': '답 기다리는 질문: Q{id} {question}',
+  'mod.restateWait': '열린 대기: w{id} {note}',
+  'mod.compactKeep': 'Switchboard에 올린 작업 제목, 노드 key, 결정 질문 번호(Q번호), 대기 id(w번호), 다른 세션과 주고받은 메시지 id(m번호)는 바꾸지 말고 그대로 남기세요.',
   'mod.resumed': 'IDE에서 재개했습니다. 하던 일을 이어서 하세요.',
   'mod.stopped': 'IDE에서 정지했습니다. 도구를 더 쓰지 말고, 지금까지 한 일과 남은 일을 짧게 보고하고 끝내세요.',
   'mod.message': '[Switchboard에서 온 말] {text}',

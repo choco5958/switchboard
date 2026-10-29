@@ -1,5 +1,5 @@
 import type { EngineInterface as Engine, Register } from 'claude-code'
-import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, staleKeys, toastText, type Delivery } from './batch'
+import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, restateText, staleKeys, toastText, type Delivery } from './batch'
 import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
@@ -53,6 +53,8 @@ let openTools = 0
 // Messages from other sessions that went in with the prompt now running: when its turn ends
 // without a reply to one, the bridge sends the turn's last answer back (POST /messages/turn-end).
 let answering: string[] = []
+// The main conversation was compacted: the next prompt restates this session's Switchboard state.
+let restate = false
 let activitySentAt = 0
 let activitySent = ''
 const ACTIVITY_BEAT_MS = 15_000
@@ -398,6 +400,17 @@ async function pendingContext($: Engine): Promise<string | undefined> {
   return `${t(lang, 'mod.pending')}\n${lines.join('\n')}`
 }
 
+async function restateContext($: Engine): Promise<string | undefined> {
+  if (!sessionId) return undefined
+  const [state, waits] = await Promise.all([
+    call($, 'GET', '/state'),
+    call($, 'GET', `/waits?session=${encodeURIComponent(sessionId)}`).catch(() => undefined),
+  ])
+  if (!state.ok) return undefined
+  setLang(langOfState(state.json))
+  return restateText(state.json as Parameters<typeof restateText>[0], ((waits?.json.waits ?? []) as { id: number; note: string }[]), sessionId, currentLang())
+}
+
 export const register: Register = on => {
   registerPane(on)
   registerDevtool(on)
@@ -554,8 +567,19 @@ export const register: Register = on => {
 
   on('prompt.submit', async ($, e, next) => {
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return next(e)
-    const extra = await pendingContext($).catch(() => undefined)
+    const extra = restate ? await restateContext($).catch(() => undefined) : await pendingContext($).catch(() => undefined)
+    restate = false
     return next(extra ? { ...e, context: [...(e.context ?? []), extra] } : e)
+  }).catch(($, e, next) => next(e))
+
+  // The summary is told to keep what Switchboard names; whatever it drops, the next prompt
+  // brings back (restateContext). A precompute is only a dry run.
+  on('session.compact', async ($, e, next) => {
+    if (e.agentId !== undefined || e.trigger === 'precompute') return next(e)
+    const keep = t(currentLang(), 'mod.compactKeep')
+    const done = await next({ ...e, instructions: e.instructions ? `${e.instructions}\n\n${keep}` : keep })
+    if (!('skip' in done && done.skip)) restate = true
+    return done
   }).catch(($, e, next) => next(e))
 
   on('turn.start', async ($, e, next) => {

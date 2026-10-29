@@ -91,6 +91,11 @@ export const ja: Dict = {
   'mod.syncPrompt':
     '[Switchboard] IDE 情報の更新依頼です。進行中のタスクを set_task で、計画を plan_nodes で、ノードの状態を update_node で改めて送り、' +
     'IDE を実際の状態と同じにしてください。変わったことがなければそのままにして、短く伝えてください。',
+  'mod.restate': '[Switchboard] 会話が圧縮されました。このセッションが Switchboard に登録した状態をもう一度お知らせします。同じ作業タイトル、ノード key、Q 番号、待機 ID を使い続けてください。',
+  'mod.restateTask': '作業: {title} ({stage}, {status}) 今: {now}',
+  'mod.restateQuestion': '回答待ちの質問: Q{id} {question}',
+  'mod.restateWait': '開いている待機: w{id} {note}',
+  'mod.compactKeep': 'Switchboard に登録した作業タイトル、ノード key、決定待ちの質問番号 (Q 番号)、待機 ID (w 番号)、別のセッションとやり取りしたメッセージ ID (m 番号) は変えずにそのまま残してください。',
   'mod.pending': 'Switchboard で回答を待っている質問です。応答の最後に「回答待ちの質問」という見出しでこの一覧をそのまま付けてください。',
   'mod.resumed': 'IDE から再開しました。続きの作業を進めてください。',
   'mod.stopped': 'IDE から停止しました。これ以上ツールを使わず、ここまでの作業と残りの作業を短く報告して終えてください。',

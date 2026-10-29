@@ -91,6 +91,11 @@ export const zhCN: Dict = {
   'mod.syncPrompt':
     '[Switchboard] 这是同步 IDE 信息的请求。请用 set_task 重新提交进行中的任务，用 plan_nodes 提交计划，用 update_node 提交节点状态，' +
     '让 IDE 与实际状态一致。如果没有变化，就保持原样并简短说明。',
+  'mod.restate': '[Switchboard] 对话已压缩。下面再次列出本会话在 Switchboard 上登记的状态。请继续使用相同的任务标题、节点 key、Q 编号和等待 ID。',
+  'mod.restateTask': '任务: {title} ({stage}, {status}) 当前: {now}',
+  'mod.restateQuestion': '等待回答的问题: Q{id} {question}',
+  'mod.restateWait': '未关闭的等待: w{id} {note}',
+  'mod.compactKeep': '在 Switchboard 上登记的任务标题、节点 key、待决定问题编号 (Q 编号)、等待 ID (w 编号) 以及与其他会话往来的消息 ID (m 编号)，请原样保留，不要改动。',
   'mod.pending': '以下是在 Switchboard 中等待回答的问题。请在回复末尾以“等待回答的问题”为标题，原样附上这份列表。',
   'mod.resumed': '已从 IDE 恢复。请继续之前的工作。',
   'mod.stopped': '已从 IDE 停止。请不要再使用工具，简要汇报已完成和剩余的工作后结束。',
