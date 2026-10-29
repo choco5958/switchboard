@@ -3,6 +3,7 @@ import type { DevGit, DevStatus, Session } from '../../../shared/types'
 import { fieldErrors, gitErrorText, makeTarget, targetsOf, type DevDraft, type DevTarget } from '../../../shared/devtargets'
 import { debugStore, sendable, sessionFor, useDebugStore, waitUntilAnswering, whereTo } from '../debugStore'
 import { t } from '../../../shared/i18n'
+import { composing } from '../ime'
 
 const POLL_MS = 3000
 const EMPTY_DRAFT: DevDraft = { name: '', description: '', repo: '', command: '', url: '' }
@@ -192,7 +193,7 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
           value={text}
           onChange={event => setText(event.target.value)}
           onKeyDown={event => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) void sendDirect()
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !composing(event)) void sendDirect()
           }}
         />
         <div className="direct-row">

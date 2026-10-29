@@ -6,6 +6,7 @@ import { AgentBadge } from './parts'
 import type { AgentTag } from '../../shared/agents'
 import { t } from '../../shared/i18n'
 import { tx } from './tx'
+import { composing } from './ime'
 
 export function QuestionCard({
   q,
@@ -50,7 +51,7 @@ export function QuestionCard({
   onKey.current = event => {
     const target = event.target as HTMLElement | null
     const typing = target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT'
-    if (!isOpen || busy || typing || event.metaKey || event.ctrlKey || event.altKey) return
+    if (!isOpen || busy || typing || composing(event) || event.metaKey || event.ctrlKey || event.altKey) return
     const action = keyAction(event.key, options)
     if (action.type === 'none') return
     event.preventDefault()
@@ -66,7 +67,7 @@ export function QuestionCard({
   }, [])
 
   const onMemoKey = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !composing(event)) {
       event.preventDefault()
       void submit(choice, memo)
     }

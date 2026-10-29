@@ -331,7 +331,7 @@ export const pickerSource = (nonce: string): string => `(() => {
   memo.addEventListener('input', () => { saveButton.disabled = !memo.value.trim() })
   memo.addEventListener('keydown', e => {
     e.stopPropagation()
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save() }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); save() }
     if (e.key === 'Escape') { e.preventDefault(); cancel() }
   })
   memo.addEventListener('keyup', e => e.stopPropagation())

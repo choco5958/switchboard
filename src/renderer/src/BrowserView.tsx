@@ -16,6 +16,7 @@ import {
 import { debugStore, failureReason, sessionFor, useDebugStore, waitUntilAnswering, whereTo } from './debugStore'
 import { CaptureLimiter, makeNonce, parseMessage, pickerSource, type PickMessage } from './picker'
 import { commentStatusLabel, t, type Key } from '../../shared/i18n'
+import { composing } from './ime'
 
 const URL_KEY = 'claude-ide:browser-url'
 const SHOT_PAD = 24
@@ -348,7 +349,7 @@ export function BrowserView({
           className="address"
           value={address}
           onChange={event => setAddress(event.target.value)}
-          onKeyDown={event => event.key === 'Enter' && load(address)}
+          onKeyDown={event => event.key === 'Enter' && !composing(event) && load(address)}
         />
         <button
           className={`switch ${commenting ? 'switch-on' : ''}`}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '../../shared/i18n'
+import { composing } from './ime'
 
 // disabled holds the reason the item cannot run now; it shows in place of the hint.
 export type PaletteItem = { id: string; group: string; label: string; hint?: string; disabled?: string; run: () => void }
@@ -42,7 +43,7 @@ export function Palette({ items, onClose }: { items: PaletteItem[]; onClose: () 
             if (event.key === 'Escape') onClose()
             if (event.key === 'ArrowDown') setIndex(i => Math.min(shown.length - 1, i + 1))
             if (event.key === 'ArrowUp') setIndex(i => Math.max(0, i - 1))
-            if (event.key === 'Enter') pick(shown[index])
+            if (event.key === 'Enter' && !composing(event)) pick(shown[index])
           }}
         />
         <div className="palette-list">
