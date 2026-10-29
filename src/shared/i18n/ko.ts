@@ -127,6 +127,8 @@ export const ko = {
   'task.stalled': '멈춤',
   'task.stalledTitle': '턴이 진행 중인데 5분 넘게 움직임이 없습니다. 터미널에서 권한 확인을 기다리는지 보세요.',
   'task.offlineTitle': '진행 중인 작업인데 세션 연결이 끊겼습니다. 터미널이 닫혔거나 Claude Code가 종료되었을 수 있습니다.',
+  'task.limited': '사용량 한도',
+  'task.limitedTitle': '이 세션의 계정이 사용량 한도에 걸렸습니다. 리셋 30초 뒤에 모아 둔 답과 메시지를 넣습니다.',
   'history.recent': '최근 50건',
   'history.empty': '아직 답한 질문이 없습니다. 결정 대기에서 답하면 여기에 쌓입니다.',
   'history.colId': '번호',
@@ -698,6 +700,7 @@ export const ko = {
   'agents.added': '{name}을(를) 추가했습니다. 아래 독의 + {name}으로 엽니다.',
   'notify.many': '새 결정 요청 {count}건',
   'notify.stalled': '{minutes}분째 움직임이 없습니다. 터미널에서 권한 확인을 기다리는지 확인하세요.',
+  'notify.limitReleased': '사용량 한도가 풀렸습니다. 모아 둔 답과 메시지를 세션에 넣습니다.',
 } satisfies Record<string, string>
 
 export type Dict = Record<keyof typeof ko, string>

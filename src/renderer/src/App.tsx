@@ -20,6 +20,7 @@ import { Dock } from './Dock'
 import { AgentBadge, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
 import { stalledSessions } from '../../shared/stall'
+import { limitedUntil } from '../../shared/limit'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
 import { HOME, activeTab, closeTab, openTab, pruneTabs, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
 import { applyTheme } from './theme'
@@ -220,12 +221,17 @@ export function App() {
     () => new Set(stalledSessions(state.activity ?? {}, state.live ?? [], clockNow)),
     [state.activity, state.live, clockNow],
   )
+  const limited = useMemo(
+    () => new Set(state.sessions.filter(s => limitedUntil(s.usage, s.last_seen, clockNow) !== null).map(s => s.id)),
+    [state.sessions, clockNow],
+  )
   const openQuestionsOf = (task: Task) =>
     state.questions.filter(q => q.status !== 'answered' && q.session_id === task.session_id && q.task_title === task.title).length
   const attentionOfTask = (task: Task): Attention | null =>
     attentionOf({
       openQuestions: openQuestionsOf(task),
       stalled: stalled.has(task.session_id),
+      limited: limited.has(task.session_id),
       offline: reachOf(state.sessions.find(s => s.id === task.session_id), state.live ?? []) === 'gone',
       running: isRunning(task),
     })

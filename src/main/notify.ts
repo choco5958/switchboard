@@ -41,3 +41,9 @@ export function planNotification(fresh: Question[]): NotifyPlan | null {
 export function scanStalled(stalled: readonly string[], previous: Set<string>): { ids: Set<string>; fresh: string[] } {
   return { ids: new Set(stalled), fresh: stalled.filter(id => !previous.has(id)) }
 }
+
+// Sessions whose usage limit lifted since the last pass (src/shared/limit.ts), once each.
+export function scanReleased(limited: readonly string[], previous: Set<string>): { ids: Set<string>; released: string[] } {
+  const ids = new Set(limited)
+  return { ids, released: [...previous].filter(id => !ids.has(id)) }
+}

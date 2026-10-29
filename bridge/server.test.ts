@@ -110,6 +110,18 @@ test('a session reports what its turn is doing', async () => {
   assert.equal((await call('GET', '/state')).json.activity.s1.state, 'idle')
 })
 
+test('a session at its usage limit gets nothing until the reset', async () => {
+  await call('POST', '/sessions', { id: 'lim-1', cwd: '/work/lim' })
+  const later = new Date(Date.now() + 3600_000).toISOString()
+  await call('POST', '/sessions/usage', { sessionId: 'lim-1', usage: { rateLimits: [{ kind: 'five_hour', percentUsed: 100, resetsAt: later }] } })
+  const { json: q } = await call('POST', '/questions', { sessionId: 'lim-1', question: '한도 중 질문', options: [{ key: 'a', label: '예' }] })
+  await call('POST', `/questions/${q.id}/answer`, { choice: 'a' })
+  assert.deepEqual((await call('POST', '/deliveries/take', { sessionId: 'lim-1' })).json.items, [])
+  // The next report shows the window open again (the reset came, or the plan changed).
+  await call('POST', '/sessions/usage', { sessionId: 'lim-1', usage: { rateLimits: [{ kind: 'five_hour', percentUsed: 3, resetsAt: later }] } })
+  assert.equal((await call('POST', '/deliveries/take', { sessionId: 'lim-1' })).json.items[0].id, `q${q.id}`)
+})
+
 test('a task upserts by title and keeps its stage when none is given', async () => {
   await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', stage: '설계' })
   const { json } = await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', now: '시안 비교' })

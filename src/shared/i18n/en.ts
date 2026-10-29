@@ -128,6 +128,8 @@ export const en: Dict = {
   'task.stalled': 'Stalled',
   'task.stalledTitle': 'The turn has shown no activity for over 5 minutes. See whether its terminal waits for a permission prompt.',
   'task.offlineTitle': 'A running task whose session dropped. Its terminal may have closed or Claude Code may have exited.',
+  'task.limited': 'Usage limit',
+  'task.limitedTitle': 'This session\'s account hit its usage limit. Answers and messages wait and go in 30 seconds after the reset.',
   'history.recent': 'Latest 50',
   'history.empty': 'No answered questions yet. Answers you give under Decisions collect here.',
   'history.colId': 'No.',
@@ -699,4 +701,5 @@ export const en: Dict = {
   'agents.added': 'Added {name}. Open it with + {name} in the dock below.',
   'notify.many': '{count} new decisions waiting',
   'notify.stalled': 'No activity for {minutes} minutes. Check whether its terminal waits for a permission prompt.',
+  'notify.limitReleased': 'The usage limit lifted. Answers and messages that waited go into the session now.',
 }

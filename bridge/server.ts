@@ -10,6 +10,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
 import type { Activity } from '../src/shared/stall.ts'
+import { limitedUntil } from '../src/shared/limit.ts'
 import { HELD_REPLY_MS, PEER_RECIPIENTS_MAX, clipText, forwardText, forwardedAnswer, peerText, shellText, type PeerRow } from './peer.ts'
 import { eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
 
@@ -326,6 +327,12 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     return open.some(o => live.includes(o.session_id))
   }
 
+  // A session at its usage limit takes nothing until the reset (src/shared/limit.ts).
+  const limitedSession = (sessionId: string): boolean => {
+    const row = db.prepare('select usage, last_seen from sessions where id = ?').get(sessionId) as { usage: string; last_seen: number } | undefined
+    return row !== undefined && limitedUntil(row.usage, row.last_seen, now()) !== null
+  }
+
   const pendingOutbox = (sessionId: string): OutboxRow[] =>
     (db.prepare('select * from outbox where session_id = ? and delivered = 0 order by id').all(sessionId) as OutboxRow[]).filter(
       m => !heldReply(m),
@@ -380,7 +387,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
   // messages the IDE sent, such as screen comments ("m<id>").
   const pushDeliveries = (sessionId: string, only?: ServerResponse) => {
     const targets = only ? new Set([only]) : deliveryWatchers.get(sessionId)
-    if (!targets || targets.size === 0) return
+    if (!targets || targets.size === 0 || limitedSession(sessionId)) return
     const items = [
       ...undelivered(sessionId).map(q => ({ id: `q${q.id}`, text: deliveryText(q, langNow()), at: q.answered_at ?? 0 })),
       ...pendingOutbox(sessionId).map(m => ({ id: `m${m.id}`, text: outboxText(m), at: m.created_at })),
@@ -497,10 +504,14 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
   prune()
   const pruning = setInterval(() => prune(), 3600_000)
   pruning.unref()
-  // A held reply (heldReply) has no event to let it go when its wait runs out: look every minute.
+  // A held reply (heldReply) and a usage limit's reset have no event to let what waits go:
+  // look every minute.
   const releasing = setInterval(() => {
     for (const id of liveSessions()) {
-      if (db.prepare('select 1 from outbox where session_id = ? and delivered = 0 and reply_to is not null limit 1').get(id)) pushDeliveries(id)
+      const waiting =
+        db.prepare('select 1 from outbox where session_id = ? and delivered = 0 limit 1').get(id) ||
+        db.prepare("select 1 from questions where session_id = ? and status = 'answered' and delivered = 0 limit 1").get(id)
+      if (waiting) pushDeliveries(id)
     }
   }, 60_000)
   releasing.unref()
@@ -1138,8 +1149,9 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) {
         return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
       }
-      const answers = undelivered(sessionId)
-      const messages = pendingOutbox(sessionId)
+      const limited = limitedSession(sessionId)
+      const answers = limited ? [] : undelivered(sessionId)
+      const messages = limited ? [] : pendingOutbox(sessionId)
       const items = [
         ...answers.map(q => ({ id: `q${q.id}`, text: deliveryText(q, langNow()), at: q.answered_at ?? 0 })),
         ...messages.map(m => ({ id: `m${m.id}`, text: outboxText(m), at: m.created_at })),

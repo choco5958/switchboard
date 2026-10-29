@@ -128,6 +128,8 @@ export const ja: Dict = {
   'task.stalled': '停止',
   'task.stalledTitle': 'ターンが 5 分以上動いていません。ターミナルで権限の確認を待っていないか見てください。',
   'task.offlineTitle': '進行中の作業ですが、セッションの接続が切れました。ターミナルが閉じたか Claude Code が終了した可能性があります。',
+  'task.limited': '使用量の上限',
+  'task.limitedTitle': 'このセッションのアカウントが使用量の上限に達しました。リセットの 30 秒後に、ためておいた回答とメッセージを入れます。',
   'history.recent': '最新 50件',
   'history.empty': 'まだ回答した質問はありません。判断待ちで回答するとここにたまります。',
   'history.colId': '番号',
@@ -699,4 +701,5 @@ export const ja: Dict = {
   'agents.added': '{name} を追加しました。下のドックの + {name} で開きます。',
   'notify.many': '新しい決定待ち {count} 件',
   'notify.stalled': '{minutes} 分間動きがありません。ターミナルで権限の確認を待っていないか確かめてください。',
+  'notify.limitReleased': '使用量の上限が解除されました。ためておいた回答とメッセージをセッションに入れます。',
 }

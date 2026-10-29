@@ -128,6 +128,8 @@ export const zhCN: Dict = {
   'task.stalled': '停滞',
   'task.stalledTitle': '回合已超过 5 分钟没有动静。请看终端是否在等待权限确认。',
   'task.offlineTitle': '进行中的任务，但会话已断开。终端可能已关闭，或 Claude Code 已退出。',
+  'task.limited': '用量上限',
+  'task.limitedTitle': '此会话的账户已达到用量上限。重置 30 秒后，再送入暂存的回答和消息。',
   'history.recent': '最近 50 条',
   'history.empty': '还没有回答过的问题。在待决定里回答后会记录在这里。',
   'history.colId': '编号',
@@ -699,4 +701,5 @@ export const zhCN: Dict = {
   'agents.added': '已添加 {name}。用下方停靠栏中的 + {name} 打开。',
   'notify.many': '有 {count} 个新的待决定事项',
   'notify.stalled': '已有 {minutes} 分钟没有动静。请检查终端是否在等待权限确认。',
+  'notify.limitReleased': '用量上限已解除。暂存的回答和消息现在送入会话。',
 }

@@ -15,8 +15,9 @@ import { saveShot } from './shots'
 import { onTerminalsChange, registerTerminals, typingTarget } from './terminals'
 import { registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
-import { badgeText, planNotification, scanPending, scanStalled } from './notify'
+import { badgeText, planNotification, scanPending, scanReleased, scanStalled } from './notify'
 import { STALL_MS, stalledSessions } from '../shared/stall'
+import { limitedUntil } from '../shared/limit'
 import { netEntry, type PageLogEntry } from '../shared/pageLog'
 import { resolveLang, setLang, t } from '../shared/i18n'
 
@@ -72,6 +73,7 @@ function send(channel: string, payload: unknown): void {
 // Pending question ids seen by the last scan; null until the first state, which is only a baseline.
 let seenPending: Set<number> | null = null
 let seenStalled = new Set<string>()
+let seenLimited = new Set<string>()
 let scanTimer: ReturnType<typeof setTimeout> | null = null
 
 // Electron drops a notification's click handler once the object is collected, so live ones are held here.
@@ -95,6 +97,7 @@ async function scanQueue(): Promise<void> {
   const reply = await call('GET', '/state')
   if (!reply.ok) return
   notifyStalled(reply.json as unknown as BridgeState)
+  notifyReleased(reply.json as unknown as BridgeState)
   const scan = scanPending((reply.json as unknown as BridgeState).questions ?? [], seenPending)
   seenPending = scan.ids
   app.dock?.setBadge(badgeText(scan.count))
@@ -124,6 +127,27 @@ function notifyStalled(state: BridgeState): void {
   for (const id of scan.fresh) {
     const project = state.sessions.find(s => s.id === id)?.project ?? id
     const notification = new Notification({ title: project, body: t('notify.stalled', { minutes: STALL_MS / 60_000 }) })
+    liveNotifications.add(notification)
+    notification.on('click', () => {
+      liveNotifications.delete(notification)
+      focusWindow()
+    })
+    notification.on('close', () => liveNotifications.delete(notification))
+    notification.show()
+  }
+}
+
+// A usage limit lifted: what waited for the session goes in now (the bridge looks every minute).
+function notifyReleased(state: BridgeState): void {
+  const at = Date.now()
+  const limited = state.sessions.filter(s => limitedUntil(s.usage, s.last_seen, at) !== null).map(s => s.id)
+  const scan = scanReleased(limited, seenLimited)
+  seenLimited = scan.ids
+  if (!Notification.isSupported()) return
+  for (const id of scan.released) {
+    const project = state.sessions.find(s => s.id === id)?.project
+    if (!project) continue
+    const notification = new Notification({ title: project, body: t('notify.limitReleased') })
     liveNotifications.add(notification)
     notification.on('click', () => {
       liveNotifications.delete(notification)

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Question } from '../shared/types'
-import { badgeText, firstLine, planNotification, scanPending, scanStalled } from './notify'
+import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanStalled } from './notify'
 
 const q = (id: number, status: Question['status'] = 'pending', question = `q${id}`): Question =>
   ({ id, status, question, project: 'proj', session_id: 's' }) as Question
@@ -51,4 +51,12 @@ test('a stall notifies once, and again only after the session moved', () => {
   expect(scanStalled(['a'], first.ids).fresh).toEqual([])
   const moved = scanStalled([], first.ids)
   expect(scanStalled(['a'], moved.ids).fresh).toEqual(['a'])
+})
+
+test('a lifted limit notifies once', () => {
+  const first = scanReleased(['a', 'b'], new Set())
+  expect(first.released).toEqual([])
+  const next = scanReleased(['b'], first.ids)
+  expect(next.released).toEqual(['a'])
+  expect(scanReleased(['b'], next.ids).released).toEqual([])
 })

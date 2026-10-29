@@ -173,15 +173,16 @@ export function reachOf(session: Pick<Session, 'id' | 'agent' | 'terminal'> | un
 }
 
 // Why a task needs the person now, the strongest reason first: a decision waits, its
-// session's turn stalled, or a running task's session dropped. null: nothing to do.
+// session's turn stalled, its account is at the usage limit, or a running task's session dropped. null: nothing to do.
 // One function, so the waiting group and each card agree on the order.
-export type Attention = 'question' | 'stalled' | 'offline'
+export type Attention = 'question' | 'stalled' | 'limited' | 'offline'
 
-const ATTENTION_ORDER: Attention[] = ['question', 'stalled', 'offline']
+const ATTENTION_ORDER: Attention[] = ['question', 'stalled', 'limited', 'offline']
 
-export function attentionOf(task: { openQuestions: number; stalled: boolean; offline: boolean; running: boolean }): Attention | null {
+export function attentionOf(task: { openQuestions: number; stalled: boolean; limited?: boolean; offline: boolean; running: boolean }): Attention | null {
   if (task.openQuestions > 0) return 'question'
   if (task.running && task.stalled) return 'stalled'
+  if (task.running && task.limited) return 'limited'
   if (task.running && task.offline) return 'offline'
   return null
 }

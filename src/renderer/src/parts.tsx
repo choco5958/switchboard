@@ -82,6 +82,11 @@ export function TaskItem({
             {t('task.stalled')}
           </span>
         )}
+        {attention === 'limited' && (
+          <span className="tag-chip warn" title={t('task.limitedTitle')}>
+            {t('task.limited')}
+          </span>
+        )}
         {attention === 'offline' && (
           <span className="tag-chip" title={t('task.offlineTitle')}>
             {t('question.gone')}
