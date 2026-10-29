@@ -835,4 +835,8 @@ export const en: Dict = {
   'notify.approval': 'Permission: {tool} {what}',
   'update.available': 'Version {version} is out. Click to open the download page.',
   'update.ready': 'Version {version} is downloaded and installs when the app quits. Click to restart now.',
+  'mac.moveMessage': 'Move Switchboard to the Applications folder?',
+  'mac.moveDetail': 'It runs from the download location or the disk image now. macOS runs an app opened this way from a different temporary path each time, so the launcher that sessions use to start the bridge stops matching on the next run. The app restarts after the move.',
+  'mac.move': 'Move',
+  'mac.later': 'Later',
 }

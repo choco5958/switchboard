@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
-import { copyRuntime, nodeLauncher, pruneRuntimes, runtimeFiles, staleBridge, writeRuntime } from './runtime'
+import { copyRuntime, nodeLauncher, oldBridgePid, pruneRuntimes, runtimeFiles, staleBridge, writeRuntime } from './runtime'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -44,6 +44,14 @@ test('a running bridge of another version is replaced; an unknown one is left al
   expect(staleBridge({ ok: true, version: '0.1.0', pid: 42 }, '0.2.0')).toBe(42)
   expect(staleBridge({ ok: true, version: '0.2.0', pid: 42 }, '0.2.0')).toBe(null)
   expect(staleBridge({ ok: true }, '0.2.0')).toBe(null)
+})
+
+test.skipIf(process.platform === 'win32')('a bridge without a pid is found by its socket, and only when it runs bridge/server.ts', async () => {
+  const seen = (lsof: string, command: string) => (file: string) => Promise.resolve(file === 'lsof' ? lsof : command)
+  expect(await oldBridgePid('/H/.claude-ide/bridge.sock', seen('4242\n', '/usr/bin/node /src/claude-ide/bridge/server.ts\n'))).toBe(4242)
+  expect(await oldBridgePid('/s', seen('4242\n', '/usr/bin/node /src/other/server.ts'))).toBe(null)
+  expect(await oldBridgePid('/s', seen('4242\n4243\n', '/usr/bin/node /src/bridge/server.ts'))).toBe(null)
+  expect(await oldBridgePid('/s', seen('', ''))).toBe(null)
 })
 
 test('each version gets one copy of the Node side, and older copies go', () => {

@@ -102,9 +102,12 @@ export function BrowserView({
   // Webview methods throw (synchronously) until its first dom-ready.
   const ready = useRef(false)
   const latest = useRef('')
+  // Every script runs in a world of its own: the page shares the DOM with it but cannot
+  // replace the functions it calls (getBoundingClientRect, elementFromPoint, console.log)
+  // or read the picker and its nonce.
   const run = (code: string) => {
     if (!ready.current || !view.current) return Promise.resolve(undefined)
-    return view.current.executeJavaScript(code).catch(() => undefined)
+    return window.ideDebug.run(view.current.getWebContentsId(), code).catch(() => undefined)
   }
   const marksCode = () =>
     `window.__claudeIde && window.__claudeIde.marks(${JSON.stringify(openRef.current.map((c, i) => ({ n: i + 1, selector: c.css, url: c.url })))})`

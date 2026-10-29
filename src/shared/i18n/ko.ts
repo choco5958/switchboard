@@ -834,6 +834,10 @@ export const ko = {
   'notify.approval': '권한 확인: {tool} {what}',
   'update.available': '새 버전 {version}이 나왔습니다. 눌러서 내려받는 페이지를 여세요.',
   'update.ready': '새 버전 {version}을 내려받았습니다. 앱을 닫으면 설치됩니다. 지금 다시 시작하려면 누르세요.',
+  'mac.moveMessage': 'Switchboard를 응용 프로그램 폴더로 옮길까요?',
+  'mac.moveDetail': '지금은 내려받은 위치나 디스크 이미지에서 실행 중입니다. macOS는 이렇게 연 앱을 매번 다른 임시 경로로 실행해서, 세션이 브리지를 켜는 시작 파일이 다음 실행 때 맞지 않게 됩니다. 옮기면 앱이 다시 시작됩니다.',
+  'mac.move': '옮기기',
+  'mac.later': '나중에',
 } satisfies Record<string, string>
 
 export type Dict = Record<keyof typeof ko, string>

@@ -6,6 +6,7 @@
 // mod, other CLIs and shells call, pointing at this copy of the app: a moved or updated app
 // fixes them by starting once. A run from the repo (pnpm dev) leaves them to `pnpm run setup`.
 
+import { execFile } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, posix, win32 } from 'node:path'
 
@@ -105,4 +106,19 @@ export function pruneRuntimes(home: string, version: string): void {
 export function staleBridge(health: Record<string, unknown>, version: string): number | null {
   const pid = typeof health.pid === 'number' ? health.pid : null
   return pid !== null && health.version !== version ? pid : null
+}
+
+type Run = (file: string, args: string[]) => Promise<string>
+const runText: Run = (file, args) =>
+  new Promise(resolve => execFile(file, args, { timeout: 3000 }, (error, stdout) => resolve(error ? '' : String(stdout))))
+
+// A bridge from before 0.2.0 says no pid on /health. On macOS and Linux it is the one process
+// that holds the bridge's socket file open (clients connect without opening the file) and runs
+// bridge/server.ts; anything else is left alone. Windows had no bridge before 0.2.0.
+export async function oldBridgePid(socketPath: string, run: Run = runText): Promise<number | null> {
+  if (process.platform === 'win32') return null
+  const pids = (await run('lsof', ['-t', '--', socketPath])).split('\n').map(Number).filter(n => Number.isInteger(n) && n > 0)
+  if (pids.length !== 1) return null
+  const command = await run('ps', ['-o', 'command=', '-p', String(pids[0])])
+  return /[\\/]bridge[\\/]server\.ts(\s|$)/.test(command.trim()) ? pids[0]! : null
 }

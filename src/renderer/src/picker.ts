@@ -1,8 +1,9 @@
-// Runs inside the page the browser view shows (injected with executeJavaScript).
-// It reports back through console messages with a fixed prefix and a nonce the
-// host makes for each injection, which the host reads from the webview's
-// console-message event. The page's own scripts can log too: a message without
-// the nonce is ignored, so a page cannot fake picks, comments or mode changes.
+// Runs inside the page the browser view shows, in a world of its own (the page's scripts
+// cannot reach its globals or its console). It reports back through console messages
+// with a fixed prefix and a nonce the host makes for each injection, which the host
+// reads from the webview's console-message event. The page's own scripts can log too:
+// a message without the nonce is ignored, so a page cannot fake picks, comments or mode
+// changes.
 //
 // Flow: a click in comment mode sends PICK (element, where it is, its box); the
 // host saves a shot of that box, then calls __claudeIde.ask(id), which opens the
@@ -201,7 +202,8 @@ export const pickerSource = (nonce: string): string => `(() => {
   const host = document.createElement('div')
   host.setAttribute('data-claude-ide', '')
   host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647'
-  const root = host.attachShadow({ mode: 'open' })
+  // Closed, so the page cannot reach the memo box and fill or save it.
+  const root = host.attachShadow({ mode: 'closed' })
   root.innerHTML = '<style>' +
     '.box{position:fixed;pointer-events:none;border:2px solid #5b8cff;background:rgba(91,140,255,.12);border-radius:3px;display:none}' +
     '.box.sel{border-color:#f2b84b;background:rgba(242,184,75,.14)}' +
@@ -331,13 +333,15 @@ export const pickerSource = (nonce: string): string => `(() => {
   memo.addEventListener('input', () => { saveButton.disabled = !memo.value.trim() })
   memo.addEventListener('keydown', e => {
     e.stopPropagation()
+    if (!e.isTrusted) return
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); save() }
     if (e.key === 'Escape') { e.preventDefault(); cancel() }
   })
   memo.addEventListener('keyup', e => e.stopPropagation())
   memo.addEventListener('keypress', e => e.stopPropagation())
   root.querySelector('.cancel').addEventListener('click', cancel)
-  saveButton.addEventListener('click', save)
+  // Only the person's own input counts; events a page script makes have isTrusted false.
+  saveButton.addEventListener('click', e => { if (e.isTrusted) save() })
   const move = e => {
     if (!on || ours(e) || !(e.target instanceof Element)) return
     place(hover, e.target.getBoundingClientRect())
@@ -349,6 +353,7 @@ export const pickerSource = (nonce: string): string => `(() => {
   const click = e => {
     if (!on || ours(e) || !(e.target instanceof Element)) return
     e.preventDefault(); e.stopPropagation()
+    if (!e.isTrusted) return
     cancel()
     const el = e.target
     const r = el.getBoundingClientRect()
@@ -366,6 +371,7 @@ export const pickerSource = (nonce: string): string => `(() => {
     })
   }
   const key = e => {
+    if (!e.isTrusted) return
     if (e.altKey && e.code === 'KeyM') { e.preventDefault(); e.stopPropagation(); send(${JSON.stringify(TOGGLE_PREFIX)}); return }
     if (!on || e.key !== 'Escape') return
     if (ours(e)) return

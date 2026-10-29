@@ -67,7 +67,8 @@ export async function startArgv($: Engine): Promise<{ argv: string[]; env: Recor
   try {
     const saved = JSON.parse(String(await $.fs.read(`${dir}/start-bridge.json`))) as { argv?: unknown; env?: unknown }
     if (Array.isArray(saved.argv) && saved.argv.length > 0 && saved.argv.every(a => typeof a === 'string')) {
-      return { argv: saved.argv as string[], env: (saved.env ?? {}) as Record<string, string> }
+      const env = saved.env !== null && typeof saved.env === 'object' ? Object.entries(saved.env) : []
+      return { argv: saved.argv as string[], env: Object.fromEntries(env.filter((pair): pair is [string, string] => typeof pair[1] === 'string')) }
     }
   } catch {
     // Not written yet.

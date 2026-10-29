@@ -82,6 +82,16 @@ export type AgentTranscript = {
   note: string
 }
 
+// The main loop's prompt now running, as register.ts keeps it: a reload of the mod in the
+// middle of a turn reads it back, so the turn's end still closes the requests it carried.
+export type Inflight = {
+  sessionId: string
+  isBusy: boolean
+  turnId: string
+  answering: string[]
+  turnItems: string[]
+}
+
 export type RefreshReason = '' | 'auto' | 'open' | 'key' | 'turnStart' | 'turnEnd' | 'agentTurnEnd'
 
 declare module 'claude-code' {
@@ -91,6 +101,7 @@ declare module 'claude-code' {
       view: Shaped<PaneView>
       turn: MainTurn
       transcript: AgentTranscript | null
+      inflight: Inflight
     }
   }
 }

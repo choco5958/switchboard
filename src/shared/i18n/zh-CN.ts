@@ -835,4 +835,8 @@ export const zhCN: Dict = {
   'notify.approval': '权限确认: {tool} {what}',
   'update.available': '新版本 {version} 已发布。点击打开下载页面。',
   'update.ready': '新版本 {version} 已下载，关闭应用时会安装。点击立即重启。',
+  'mac.moveMessage': '要把 Switchboard 移到“应用程序”文件夹吗？',
+  'mac.moveDetail': '现在是从下载位置或磁盘映像运行的。macOS 每次都会从不同的临时路径运行这样打开的应用，会话用来启动桥接的启动文件在下次运行时就对不上了。移动后应用会重新启动。',
+  'mac.move': '移动',
+  'mac.later': '以后再说',
 }

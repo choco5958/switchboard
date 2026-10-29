@@ -216,6 +216,8 @@ export const TERMINAL_ID = /^[A-Za-z0-9_-]{0,64}$/
 const PROMPT_COMMANDS = ['message', 'report', 'sync']
 // How long cancel_request waits for the recipient's mod to say whether it stopped the turn.
 const CANCEL_WAIT_MS = 3000
+// How long a message taken with `hold` counts as typed in before its acknowledgement comes.
+const HOLD_MS = 5 * 60_000
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 export function defaultSocketPath(): string {
@@ -410,6 +412,14 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
 
   const watchers = new Set<ServerResponse>()
   const deliveryWatchers = new Map<string, Set<ServerResponse>>()
+  // Messages the app took with `hold` (/deliveries/take) and is typing into a terminal, by
+  // outbox id, with when: a cancel in between treats them as delivered and sends the note.
+  const holding = new Map<number, number>()
+  const isHeld = (id: number) => {
+    const at = holding.get(id)
+    if (at !== undefined && now() - at > HOLD_MS) holding.delete(id)
+    return holding.has(id)
+  }
 
   const now = () => Date.now()
   const changed = (type: string) => {
@@ -1219,6 +1229,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const ackMessage = path.match(/^\/deliveries\/m(\d+)\/ack$/)
     if (method === 'POST' && ackMessage) {
       const id = Number(ackMessage[1])
+      holding.delete(id)
       const result = db.prepare('update outbox set delivered = 1 where id = ? and delivered = 0').run(id)
       if (result.changes > 0) {
         const m = db.prepare('select * from outbox where id = ?').get(id) as {
@@ -1562,21 +1573,25 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (bad !== undefined) return send(res, 400, { error: say('bridge.peer.notYours', { id: `m${bad}` }) })
       const reason = str(body.reason).trim()
       const results: Record<string, 'queued' | 'noted' | 'stopped' | 'done'> = {}
+      // The recipient is told to drop it, with its next prompt.
+      const noteCancel = (row: OutboxRow) =>
+        db.prepare("insert into outbox (session_id, kind, text, created_at, piggyback) values (?, '세션메시지', ?, ?, 1)").run(
+          row.session_id,
+          cancelledText(row.id, sessionLabel(from), reason, langNow()),
+          now(),
+        )
       const byRecipient = new Map<string, OutboxRow[]>()
       for (const row of rows as OutboxRow[]) {
         if (row.answered || row.cancelled) {
           results[`m${row.id}`] = 'done'
           continue
         }
+        // One the app is typing in now has reached the session as much as a delivered one.
+        const reached = Boolean(row.delivered) || isHeld(row.id)
+        holding.delete(row.id)
         db.prepare('update outbox set cancelled = 1, answered = 1, delivered = 1 where id = ?').run(row.id)
-        results[`m${row.id}`] = row.delivered ? 'noted' : 'queued'
-        if (row.delivered) {
-          db.prepare("insert into outbox (session_id, kind, text, created_at, piggyback) values (?, '세션메시지', ?, ?, 1)").run(
-            row.session_id,
-            cancelledText(row.id, sessionLabel(from), reason, langNow()),
-            now(),
-          )
-        }
+        results[`m${row.id}`] = reached ? 'noted' : 'queued'
+        if (reached) noteCancel(row)
         byRecipient.set(row.session_id, [...(byRecipient.get(row.session_id) ?? []), row])
         logEvent(from, '세션메시지', say('bridge.event.peerCancelled', { id: row.id, recipient: sessionLabel(row.session_id) }))
       }
@@ -1595,9 +1610,17 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       }
       if (asked.length > 0) changed('commands')
       for (let waited = 0; waited < CANCEL_WAIT_MS && asked.some(a => !commandResult(a.command)); waited += 100) await sleep(100)
+      // `reached`: requests the mod had already put in a prompt it has not acknowledged yet.
       for (const a of asked) {
-        if ((commandResult(a.command) as { stopped?: boolean } | null)?.stopped) {
-          for (const r of a.rows) if (results[`m${r.id}`] === 'noted') results[`m${r.id}`] = 'stopped'
+        const result = commandResult(a.command) as { stopped?: boolean; reached?: string[] } | null
+        for (const r of a.rows) {
+          const key = `m${r.id}`
+          const reached = Array.isArray(result?.reached) && result.reached.includes(key)
+          if (result?.stopped && (results[key] === 'noted' || reached)) results[key] = 'stopped'
+          else if (results[key] === 'queued' && reached) {
+            noteCancel(r)
+            results[key] = 'noted'
+          }
         }
       }
       return send(res, 200, { results })
@@ -1830,6 +1853,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       // `hold`: the caller types the items first and acknowledges each one after
       // (/deliveries/<id>/ack), so a terminal that closes in between loses nothing.
       if (body.hold === true) {
+        for (const m of messages) holding.set(m.id, now())
         answers.length = 0
         messages.length = 0
       }

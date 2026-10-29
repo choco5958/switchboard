@@ -45,6 +45,7 @@ export function typingTarget(key: string): TypingTarget | undefined {
     paste: term.paste,
     foreground: term.alive ? term.proc.process : '',
     expect: term.bins,
+    screen: term.buffer.slice(-4000),
     write: data => {
       if (term.alive) term.proc.write(data)
     },

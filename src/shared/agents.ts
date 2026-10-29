@@ -71,6 +71,9 @@ export const PRESETS: AgentPreset[] = [
     docs: 'https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md',
     how: 'agents.how.gemini',
     mcp: (server, configFile) => ({
+      // `trust`: Switchboard's own tools run without a confirmation, as they do in Claude Code
+      // (the mod's tools); the CLI still asks for its own shell and file tools. open_in_ide's
+      // commands are confirmed by the app (src/main/devservers.ts).
       env: { GEMINI_CLI_SYSTEM_DEFAULTS_PATH: configFile },
       file: { mcpServers: { [MCP_NAME]: { command: server.command, args: server.args, trust: true } } },
     }),

@@ -1,4 +1,6 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Engine, Register } from 'claude-code'
+import type { Inflight } from '../types'
 import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, restateText, staleKeys, toastText, approvalSummary, type Delivery } from './batch'
 import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
@@ -56,6 +58,17 @@ let answering: string[] = []
 let turnItems: string[] = []
 // Requests their sender cancelled: a turn that starts with these alone stops at once.
 const cancelledIds = new Set<string>()
+// The four above outlive a reload of this mod (the session's $.state keeps them).
+const inflight = atom({ plugin: 'ide-bridge', key: 'inflight' } as const, { sessionId: '', isBusy: false, turnId: '', answering: [], turnItems: [] } as Inflight)
+const keepTurn = ($: Engine) => update($, inflight, () => ({ sessionId, isBusy: busy, turnId: mainTurnId, answering, turnItems })).catch(() => undefined)
+async function restoreTurn($: Engine): Promise<void> {
+  const kept = await read($, inflight)
+  if (kept.sessionId !== sessionId) return
+  busy = kept.isBusy
+  mainTurnId = kept.turnId
+  answering = kept.answering
+  turnItems = kept.turnItems
+}
 // The main conversation was compacted: the next prompt restates this session's Switchboard state.
 let restate = false
 let activitySentAt = 0
@@ -207,15 +220,18 @@ async function flush($: Engine): Promise<void> {
       // Known before the turn starts, so a cancel that comes while it is being submitted still finds them.
       const ids = batch.map(d => d.id)
       turnItems = [...turnItems, ...ids]
+      await keepTurn($)
       const submitted = await $.prompt.submit({ text: batchText(batch, currentLang()) }).catch((error: unknown) => ({ drop: String(error) }))
       if (typeof submitted.drop === 'string') {
         turnItems = turnItems.filter(id => !ids.includes(id))
+        await keepTurn($)
         dropped = true
         waiting = [...batch, ...waiting.filter(d => !batch.some(b => b.id === d.id))]
         $.ui.log(t(currentLang(), 'log.retry', { error: submitted.drop }), { to: 'debug' })
       } else {
         await $.store.set(storeKey('sent'), remember(sent, batch.map(d => d.id), ID_CAP))
         answering = [...answering, ...batch.filter(d => d.id.startsWith('m')).map(d => d.id)]
+        await keepTurn($)
         $.ui.toast(toastText(batch, currentLang()))
       }
     }
@@ -340,7 +356,8 @@ async function runCommand($: Engine, command: Command): Promise<void> {
       await saveQueued($)
       const stop = busy && mainTurnId !== '' && turnItems.length > 0 && turnItems.every(id => ids.includes(id))
       if (stop) await $.turn.abort({ turnId: mainTurnId })
-      result = { stopped: stop }
+      // Ones already in the running prompt: unless the turn stopped, the bridge tells the model to drop them.
+      result = { stopped: stop, reached: ids.filter(id => turnItems.includes(id)) }
     } else if (command.kind === 'report') {
       await queueDelivery($, { id: `c${command.id}`, text: t(currentLang(), 'mod.reportPrompt') })
     } else if (command.kind === 'sync') {
@@ -453,6 +470,7 @@ export const register: Register = on => {
     const started = await next(e)
     sessionId = await $.session.id()
     cwd = e.cwd
+    await restoreTurn($).catch(() => undefined)
     await restore($).catch(() => undefined)
 
     // Described in the language the app is set to when the session starts.
@@ -668,6 +686,7 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       busy = true
       mainTurnId = e.turnId
+      void keepTurn($)
       if (turnItems.length > 0 && turnItems.every(id => cancelledIds.has(id))) {
         void $.turn.abort({ turnId: e.turnId }).catch(() => undefined)
       }
@@ -687,6 +706,7 @@ export const register: Register = on => {
       }
       answering = []
       turnItems = []
+      await keepTurn($)
       void flush($)
       void reportUsage($)
       void touchSeen($).catch(() => undefined)

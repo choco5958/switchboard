@@ -862,6 +862,26 @@ describe('messages between sessions', () => {
     assert.deepEqual((await cancelled).json.results, { [working.ids[0]]: 'stopped' })
   })
 
+  test('a request being typed in, or already in a running prompt, counts as delivered when cancelled', async () => {
+    // The app took it to type into a terminal and has not acknowledged it yet.
+    await call('POST', '/sessions', { id: 'ch', cwd: '/w/ch' })
+    const typing = (await call('POST', '/messages', { sessionId: 'ca', to: ['ch'], text: '타이핑 중인 일' })).json
+    assert.equal((await call('POST', '/deliveries/take', { sessionId: 'ch', hold: true })).json.items.length, 1)
+    assert.deepEqual((await call('POST', '/messages/cancel', { sessionId: 'ca', ids: typing.ids })).json.results, { [typing.ids[0]]: 'noted' })
+    await call('POST', `/deliveries/${typing.ids[0]}/ack`)
+    await call('POST', '/outbox', { sessionId: 'ch', text: '다음 일' })
+    assert.match((await take('ch'))[0]!.text, new RegExp(`요청 ${typing.ids[0]}를 취소했습니다`))
+
+    // The mod put it in the prompt now running, with other work, so the turn goes on.
+    await call('POST', '/sessions', { id: 'cm', cwd: '/w/cm' })
+    const running = (await call('POST', '/messages', { sessionId: 'ca', to: ['cm'], text: '같이 들어간 일' })).json
+    const command = frames('cm', 'command', 1)
+    const cancelled = call('POST', '/messages/cancel', { sessionId: 'ca', ids: running.ids })
+    const [got] = await command
+    await call('POST', `/commands/${got.id}/done`, { result: { stopped: false, reached: running.ids } })
+    assert.deepEqual((await cancelled).json.results, { [running.ids[0]]: 'noted' })
+  })
+
   test('peers list the other sessions with their task, connected first', async () => {
     await call('POST', '/tasks', { sessionId: 'pb', title: '주문 API', now: '응답 형식 정리' })
     const stream = hold('pb')

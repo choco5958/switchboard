@@ -20,6 +20,8 @@ declare global {
     ideDebug: {
       call: (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<Reply>
       onNet: (listener: (event: { webContentsId: number; entry: PageLogEntry }) => void) => () => void
+      // Runs a script in the browser view's page, in a world of its own (src/main/index.ts).
+      run: (webContentsId: number, code: string) => Promise<unknown>
     }
   }
 }

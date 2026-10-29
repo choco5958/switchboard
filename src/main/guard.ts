@@ -50,6 +50,8 @@ export function debugPathAllowed(path: unknown): path is string {
 
 // A <webview> (the debugging browser) gets no preload and no Node, whatever the page asked for.
 export const BROWSER_PARTITION = 'persist:claude-ide'
+// The isolated world the browser view's scripts run in (any id above 0, the page's own).
+export const BROWSER_WORLD = 1001
 // What a page in the app may be granted: copying to the clipboard and going full screen.
 export const PAGE_PERMISSIONS = ['clipboard-sanitized-write', 'fullscreen']
 

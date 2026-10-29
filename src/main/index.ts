@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, Notification, powerMonitor, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain as rawIpcMain, nativeImage, Notification, powerMonitor, session, shell, webContents } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
@@ -10,13 +10,13 @@ import { watchBridge } from './bridgeWatch'
 import { registerAccount } from './account'
 import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
-import { BROWSER_PARTITION, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
+import { BROWSER_PARTITION, BROWSER_WORLD, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
 import { onTerminalsChange, openClaudeIn, registerTerminals, typingTarget } from './terminals'
 import { registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
-import { copyRuntime, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
+import { copyRuntime, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
 import { startUpdates } from './updater'
 import { APP_HEADER, requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
 import { loadAppKey } from './appKey'
@@ -78,9 +78,32 @@ async function startBridge(): Promise<boolean> {
   if (health.ok) {
     const outdated = app.isPackaged && staleBridge(health.json, app.getVersion()) !== null
     if (!outdated && (await call('GET', '/app/check')).ok) return true
-    if (typeof health.json.pid === 'number') await stopBridge(health.json.pid)
+    const where = resolveEndpoint()
+    const pid = typeof health.json.pid === 'number' ? health.json.pid : where.kind === 'socket' ? await oldBridgePid(where.path) : null
+    if (pid !== null) await stopBridge(pid)
   }
   return launchBridge()
+}
+
+// macOS runs an app opened from Downloads or the disk image from a new temporary path each
+// time (App Translocation), which the launchers written below would point at. Moving it
+// restarts the app from /Applications.
+async function offerApplicationsFolder(): Promise<void> {
+  if (process.platform !== 'darwin' || !app.isPackaged || process.env.CLAUDE_IDE_CAPTURE || app.isInApplicationsFolder()) return
+  const answer = await dialog.showMessageBox({
+    type: 'question',
+    buttons: [t('mac.move'), t('mac.later')],
+    defaultId: 0,
+    cancelId: 1,
+    message: t('mac.moveMessage'),
+    detail: t('mac.moveDetail'),
+  })
+  if (answer.response !== 0) return
+  try {
+    app.moveToApplicationsFolder()
+  } catch (error) {
+    console.error('could not move the app:', error)
+  }
 }
 
 // The installed app writes the launchers for this copy of itself (src/main/runtime.ts) and
@@ -402,6 +425,13 @@ ipcMain.handle('debug:call', (_e, method: string, path: string, body?: unknown) 
   if (!debugPathAllowed(path)) return { ok: false, status: 0, json: { error: `not allowed: ${String(path)}` } }
   return call(method === 'POST' ? 'POST' : 'GET', path, body)
 })
+// The browser view's scripts (src/renderer/src/BrowserView.tsx) run in a world of their own,
+// and only in a webview of this window.
+ipcMain.handle('browser:run', (_e, webContentsId: number, code: string) => {
+  const contents = webContents.fromId(Number(webContentsId))
+  if (!contents || contents.getType() !== 'webview' || !win || contents.hostWebContents !== win.webContents) return undefined
+  return contents.executeJavaScriptInIsolatedWorld(BROWSER_WORLD, [{ code: String(code) }]).catch(() => undefined)
+})
 registerDevServers(ipcMain, event => send('dev:change', event))
 registerTerminals(ipcMain, send)
 registerAccount(ipcMain, () => ccrPath())
@@ -493,6 +523,7 @@ app.whenReady().then(async () => {
   setLang(resolveLang(undefined, app.getLocale()))
   if (process.env.CLAUDE_IDE_CAPTURE) app.dock?.hide()
   else app.dock?.setIcon(nativeImage.createFromPath(ICON))
+  await offerApplicationsFolder()
   appKey = loadAppKey(join(app.getPath('userData'), 'app-key.bin'))
   await prepareRuntime()
   await startBridge()

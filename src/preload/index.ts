@@ -77,4 +77,5 @@ contextBridge.exposeInMainWorld('ideDebug', {
     ipcRenderer.on('browser:net', handler)
     return () => ipcRenderer.off('browser:net', handler)
   },
+  run: (webContentsId: number, code: string) => ipcRenderer.invoke('browser:run', webContentsId, code),
 })
