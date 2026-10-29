@@ -69,4 +69,10 @@ contextBridge.exposeInMainWorld('ide', api)
 // Dynamic debugging: its own bridge routes (comments, open requests, live sessions).
 contextBridge.exposeInMainWorld('ideDebug', {
   call: (method: 'GET' | 'POST', path: string, body?: unknown) => ipcRenderer.invoke('debug:call', method, path, body),
+  // A failed request of an in-app browser view, for its screen comments.
+  onNet: (listener: (event: { webContentsId: number; entry: unknown }) => void) => {
+    const handler = (_e: unknown, event: { webContentsId: number; entry: unknown }) => listener(event)
+    ipcRenderer.on('browser:net', handler)
+    return () => ipcRenderer.off('browser:net', handler)
+  },
 })

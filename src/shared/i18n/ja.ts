@@ -411,6 +411,7 @@ export const ja: Dict = {
   'prompt.comments.element': '要素: {element}',
   'prompt.comments.place': '場所: {place}',
   'prompt.comments.shot': 'スクリーンショット: {path}',
+  'prompt.comments.logs': 'そのときのページのコンソール警告とエラー、失敗したリクエスト:',
   'prompt.comments.request': '依頼: {text}',
   'prompt.comments.ask': 'それぞれの要素をコードで見つけて依頼どおりに直し、何を変えたかをコメント番号ごとに短く報告してください。',
   // Dynamic debugging: where comments go, why a page failed

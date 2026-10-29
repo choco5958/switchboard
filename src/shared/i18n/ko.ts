@@ -410,6 +410,7 @@ export const ko = {
   'prompt.comments.element': '요소: {element}',
   'prompt.comments.place': '위치: {place}',
   'prompt.comments.shot': '스크린샷: {path}',
+  'prompt.comments.logs': '그때 페이지의 콘솔 경고와 오류, 실패한 요청:',
   'prompt.comments.request': '요청: {text}',
   'prompt.comments.ask': '각 요소를 코드에서 찾아 요청대로 고치고, 무엇을 바꿨는지 코멘트 번호별로 짧게 보고하세요.',
   // Dynamic debugging: where comments go, why a page failed

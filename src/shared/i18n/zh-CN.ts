@@ -411,6 +411,7 @@ export const zhCN: Dict = {
   'prompt.comments.element': '元素：{element}',
   'prompt.comments.place': '位置：{place}',
   'prompt.comments.shot': '截图：{path}',
+  'prompt.comments.logs': '当时页面的控制台警告和错误，以及失败的请求：',
   'prompt.comments.request': '要求：{text}',
   'prompt.comments.ask': '请在代码中找到每个元素，按要求修改，并按评论编号简要说明改了什么。',
   // Dynamic debugging: where comments go, why a page failed

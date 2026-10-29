@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { DevStatus, DevTarget, Reply } from '../../shared/types'
 import { t } from '../../shared/i18n'
+import type { PageLogEntry } from '../../shared/pageLog'
 
 // Shared by the debugging sidebar (DebugPanel) and the browser (DebugPage),
 // which App renders in different places: the chosen session, the selected dev
@@ -16,7 +17,10 @@ export type DebugState = {
 // The debugging page's own bridge routes (bridge/debug.ts), exposed by the preload.
 declare global {
   interface Window {
-    ideDebug: { call: (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<Reply> }
+    ideDebug: {
+      call: (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<Reply>
+      onNet: (listener: (event: { webContentsId: number; entry: PageLogEntry }) => void) => () => void
+    }
   }
 }
 

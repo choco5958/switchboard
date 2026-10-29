@@ -87,6 +87,9 @@ export async function debugRoutes(ctx: DebugContext, req: IncomingMessage, res: 
   const { db } = ctx
   if (!ready.has(db)) {
     db.exec(SCHEMA)
+    // Added after the first release: the page's console and failed requests with a comment.
+    const columns = (db.prepare('pragma table_info(comments)').all() as { name: string }[]).map(c => c.name)
+    if (!columns.includes('logs')) db.exec("alter table comments add column logs text not null default ''")
     ready.add(db)
   }
   const now = Date.now()
@@ -113,10 +116,10 @@ export async function debugRoutes(ctx: DebugContext, req: IncomingMessage, res: 
     if (!page || !text) return reply(400, { error: 'url and text are required' })
     const result = db
       .prepare(
-        `insert into comments (url, place, css, element, text, shot, session_id, created_at, updated_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `insert into comments (url, place, css, element, text, shot, session_id, created_at, updated_at, logs)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(page, str(body.place), str(body.css), str(body.element), text, str(body.shot) || null, str(body.sessionId), now, now)
+      .run(page, str(body.place), str(body.css), str(body.element), text, str(body.shot) || null, str(body.sessionId), now, now, str(body.logs).slice(0, 8000))
     emit(ctx, { type: 'comments' })
     return reply(200, one(Number(result.lastInsertRowid)))
   }

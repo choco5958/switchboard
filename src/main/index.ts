@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, Notification, shell } from 'electron'
+import { app, BrowserWindow, ipcMain as rawIpcMain, nativeImage, Notification, session, shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
@@ -17,6 +17,7 @@ import { registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { badgeText, planNotification, scanPending, scanStalled } from './notify'
 import { STALL_MS, stalledSessions } from '../shared/stall'
+import { netEntry, type PageLogEntry } from '../shared/pageLog'
 import { resolveLang, setLang, t } from '../shared/i18n'
 
 const DIR = join(homedir(), '.claude-ide')
@@ -348,10 +349,23 @@ app.whenReady().then(async () => {
   await startBridge()
   createWindow()
   watch()
+  watchBrowserRequests()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+// Requests of the in-app browser that failed go to the view that made them, which keeps
+// them for its screen comments (src/shared/pageLog.ts).
+function watchBrowserRequests(): void {
+  const requests = session.fromPartition('persist:claude-ide').webRequest
+  const filter = { urls: ['http://*/*', 'https://*/*'] }
+  const report = (webContentsId: number | undefined, entry: PageLogEntry | null) => {
+    if (entry && webContentsId !== undefined) send('browser:net', { webContentsId, entry })
+  }
+  requests.onCompleted(filter, d => report(d.webContentsId, netEntry(Date.now(), { method: d.method, url: d.url, statusCode: d.statusCode })))
+  requests.onErrorOccurred(filter, d => report(d.webContentsId, netEntry(Date.now(), { method: d.method, url: d.url, error: d.error })))
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

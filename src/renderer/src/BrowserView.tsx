@@ -17,6 +17,7 @@ import { debugStore, failureReason, sessionFor, useDebugStore, waitUntilAnswerin
 import { CaptureLimiter, makeNonce, parseMessage, pickerSource, type PickMessage } from './picker'
 import { commentStatusLabel, t, type Key } from '../../shared/i18n'
 import { composing } from './ime'
+import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
 
 const URL_KEY = 'claude-ide:browser-url'
 const SHOT_PAD = 24
@@ -87,6 +88,8 @@ export function BrowserView({
   const picks = useRef(new Map<number, Promise<{ pick: PickMessage; shot: string | null }>>())
   // A fresh nonce for every injection; page messages without it are ignored.
   const nonce = useRef('')
+  // Console warnings and errors and failed requests of the page shown now, for its comments.
+  const pageLog = useRef<PageLogEntry[]>([])
   const limiter = useRef(new CaptureLimiter())
   const commentingRef = useRef(commenting)
   commentingRef.current = commenting
@@ -156,8 +159,12 @@ export function BrowserView({
         .then(() => run(marksCode()))
     }
     const onConsole = (event: Event) => {
-      const message = parseMessage((event as unknown as { message: string }).message, nonce.current)
-      if (!message) return
+      const raw = event as unknown as { message: string; level: unknown; sourceId?: string; line?: number }
+      const message = parseMessage(raw.message, nonce.current)
+      if (!message) {
+        pageLog.current = pushEntry(pageLog.current, consoleEntry(Date.now(), raw.level, raw.message, raw.sourceId, raw.line))
+        return
+      }
       if (message.kind === 'exit') return setCommenting(false)
       if (message.kind === 'toggle') return setCommenting(on => !on)
       if (message.kind === 'cancel') {
@@ -169,7 +176,7 @@ export function BrowserView({
         picks.current.delete(message.id)
         if (!picked) return
         void picked.then(async ({ pick, shot }) => {
-          const reply = await window.ideDebug.call('POST', '/comments', commentBody(pick, message.memo, shot, targetIdRef.current))
+          const reply = await window.ideDebug.call('POST', '/comments', commentBody(pick, message.memo, shot, targetIdRef.current, logText(pageLog.current)))
           if (!reply.ok) setStatus(t('browser.saveFailed', { error: String(reply.json.error ?? '') }))
           setFilter('열림')
           await loadComments(pageRef.current)
@@ -197,6 +204,9 @@ export function BrowserView({
       // The popover opens after the shot, so it is not in the picture.
       void shot.then(() => run(`window.__claudeIde.ask(${pick.id})`))
     }
+    const offNet = window.ideDebug.onNet(({ webContentsId, entry }) => {
+      if (ready.current && webContentsId === wv.getWebContentsId()) pageLog.current = pushEntry(pageLog.current, entry)
+    })
     const onNavigate = (event: Event) => {
       const url = (event as unknown as { url: string }).url
       setAddress(url)
@@ -212,7 +222,10 @@ export function BrowserView({
     // The newest main-frame navigation: a failure of one it replaced is old news.
     const onStartNavigation = (event: Event) => {
       const { url, isMainFrame, isInPlace } = event as unknown as { url: string; isMainFrame: boolean; isInPlace: boolean }
-      if (isMainFrame && !isInPlace) latest.current = url
+      if (!isMainFrame || isInPlace) return
+      latest.current = url
+      // A new document starts a new log; a route change inside the page keeps it.
+      pageLog.current = []
     }
     const onTitle = (event: Event) => setTitle((event as unknown as { title: string }).title)
     const onFail = (event: Event) => {
@@ -236,6 +249,7 @@ export function BrowserView({
     wv.addEventListener('did-navigate', onNavigate)
     wv.addEventListener('did-navigate-in-page', onNavigate)
     return () => {
+      offNet()
       wv.removeEventListener('did-fail-load', onFail)
       wv.removeEventListener('did-start-loading', onStart)
       wv.removeEventListener('did-start-navigation', onStartNavigation)

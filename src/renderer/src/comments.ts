@@ -14,6 +14,7 @@ export type Comment = {
   element: string // button "저장"
   text: string
   shot: string | null
+  logs?: string // console and failed requests of the page when the comment was made (src/shared/pageLog.ts)
   session_id: string
   status: CommentStatus
   created_at: number
@@ -33,8 +34,9 @@ export function pageKey(url: string): string {
 }
 
 // What POST /comments takes for a pick and its memo.
-export function commentBody(pick: Pick, memo: string, shot: string | null, sessionId: string) {
+export function commentBody(pick: Pick, memo: string, shot: string | null, sessionId: string, logs = '') {
   return {
+    logs,
     url: pageKey(pick.url),
     place: pick.crumbs?.length ? pick.crumbs.join(' › ') : '',
     css: pick.selector,
@@ -67,6 +69,10 @@ export function commentPrompt(comments: Comment[]): string {
     lines.push(`   CSS: ${c.css}`)
     if (urls.length > 1) lines.push(`   ${t('prompt.comments.url', { url: c.url })}`)
     if (c.shot) lines.push(`   ${t('prompt.comments.shot', { path: c.shot })}`)
+    if (c.logs) {
+      lines.push(`   ${t('prompt.comments.logs')}`)
+      for (const line of c.logs.split('\n')) lines.push(`     ${line}`)
+    }
     lines.push(`   ${t('prompt.comments.request', { text: c.text })}`)
   })
   lines.push('')

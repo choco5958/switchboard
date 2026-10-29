@@ -411,6 +411,7 @@ export const en: Dict = {
   'prompt.comments.element': 'Element: {element}',
   'prompt.comments.place': 'Location: {place}',
   'prompt.comments.shot': 'Screenshot: {path}',
+  'prompt.comments.logs': 'Console warnings and errors and failed requests on the page at that moment:',
   'prompt.comments.request': 'Request: {text}',
   'prompt.comments.ask': 'Find each element in the code and change it as requested, then briefly report what you changed for each comment number.',
   // Dynamic debugging: where comments go, why a page failed
