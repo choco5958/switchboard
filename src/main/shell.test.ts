@@ -24,3 +24,11 @@ test('PowerShell in front of a terminal counts as the shell, not a CLI', () => {
   expect(cliInFront('C:\\Windows\\System32\\cmd.exe', 'powershell.exe')).toBe(false)
   expect(cliInFront('node.exe', 'powershell.exe')).toBe(true)
 })
+
+test('answers go only to the CLI the terminal started, not to ssh or python started after it', () => {
+  expect(cliInFront('codex', '/bin/zsh', ['codex', 'node'])).toBe(true)
+  expect(cliInFront('node', '/bin/zsh', ['codex', 'node'])).toBe(true)
+  expect(cliInFront('ssh', '/bin/zsh', ['codex', 'node'])).toBe(false)
+  expect(cliInFront('python3', '/bin/zsh', ['codex', 'node'])).toBe(false)
+  expect(cliInFront('codex.exe', 'powershell.exe', ['codex', 'node'])).toBe(true)
+})

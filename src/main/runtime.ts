@@ -84,8 +84,21 @@ export function copyRuntime(source: string, home: string, version: string): stri
     cpSync(source, partial, { recursive: true })
     renameSync(partial, target)
   }
-  for (const name of readdirSync(base)) if (name !== version) rmSync(join(base, name), { recursive: true, force: true })
   return target
+}
+
+// Other versions' copies, once this one is in use. Each on its own: a file another program
+// holds open (Windows) keeps that folder for the next start, and nothing else stops.
+export function pruneRuntimes(home: string, version: string): void {
+  const base = join(home, '.claude-ide', 'runtime')
+  for (const name of readdirSync(base)) {
+    if (name === version) continue
+    try {
+      rmSync(join(base, name), { recursive: true, force: true })
+    } catch {
+      // Left for the next start.
+    }
+  }
 }
 
 // The bridge a start finds running may be from before an update; the app replaces it.

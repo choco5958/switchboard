@@ -254,6 +254,8 @@ export function createSession(options: Options, deps: Deps) {
     }
     if (name === 'routine_no_update' || name === 'routine_report_failure' || name === 'await_event' || name === 'close_wait') {
       const waitId = String(a.id ?? '').replace(/^w/, '')
+      // The id goes into the path: digits only, so it can name no other route.
+      if (name === 'close_wait' && !/^\d+$/.test(waitId)) return { text: say('tool.sendFailed', { error: `bad wait id: ${String(a.id)}` }), isError: true }
       const [path, body, done] =
         name === 'routine_no_update'
           ? ['/routines/report', { sessionId, kind: 'quiet' }, () => say('tool.quietOk')]
@@ -261,7 +263,7 @@ export function createSession(options: Options, deps: Deps) {
             ? ['/routines/report', { sessionId, kind: 'failed', reason: a.reason }, () => say('tool.failureOk')]
             : name === 'await_event'
               ? ['/waits', { sessionId, note: a.note }, (json: Record<string, unknown>) => say('tool.waitOpened', { id: String(json.id) })]
-              : [`/waits/${waitId}/close`, {}, () => say('tool.waitClosed', { id: `w${waitId}` })]
+              : [`/waits/${waitId}/close`, { sessionId }, () => say('tool.waitClosed', { id: `w${waitId}` })]
       const reply = await call('POST', path as string, body)
       if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
       return { text: (done as (json: Record<string, unknown>) => string)(reply.json) }

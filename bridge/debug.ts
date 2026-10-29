@@ -2,6 +2,7 @@
 // restarts, the session asking the IDE to open a page (open_in_ide), and which
 // sessions are alive right now. server.ts hands every request it does not know
 // to debugRoutes before its 404.
+import { randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { DatabaseSync } from 'node:sqlite'
 import { planOpen, targetsOf } from '../src/shared/devtargets.ts'
@@ -196,13 +197,18 @@ export async function debugRoutes(ctx: DebugContext, req: IncomingMessage, res: 
     return reply(200, { open: lastOpen.get(db) ?? null })
   }
 
+  // What a browser_* tool may ask the app's browser to do (mod/hooks/tools.ts BROWSER_TOOLS).
+const BROWSER_ACTIONS = ['snapshot', 'click', 'type', 'navigate', 'console', 'screenshot']
+
   // browser_* tools: a session drives the app's in-app browser. The bridge hands the action
   // to the app (the 'browserAct' event) and holds the request until the app posts what it
   // saw (/browser/result), or BROWSER_WAIT_MS passes.
   if (method === 'POST' && path === '/browser/act') {
     const body = await readJson(req)
     if (ctx.watchers.size === 0) return reply(503, { error: 'Switchboard is not running, so its browser cannot be used' })
-    const id = `b${now.toString(36)}-${++seq}`
+    if (!BROWSER_ACTIONS.includes(str(body.action))) return reply(400, { error: `unknown browser action: ${str(body.action)}` })
+    // Not guessable: only the app, which got it in the event, can post the result.
+    const id = `b${randomBytes(16).toString('hex')}`
     const answer = new Promise<{ status: number; body: Json }>(resolve => {
       const timer = setTimeout(() => {
         pendingActs.delete(id)

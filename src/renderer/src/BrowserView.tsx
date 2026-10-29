@@ -307,6 +307,8 @@ export function BrowserView({
       revision.current += 1
       const read = (await run(snapshotScript(revision.current))) as Snapshot | undefined
       if (!read) throw new Error('the page cannot be read yet')
+      // Checked again after every move: a redirect or a link may have left the local pages.
+      if (!isLocalUrl(read.url)) throw new Error('the page is no longer local (a redirect or a link left it); open a local page with browser_navigate')
       return snapshotText(read)
     }
     const element = (ref: unknown) => {

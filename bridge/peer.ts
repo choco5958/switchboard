@@ -7,6 +7,7 @@
 // Evidence); a reply and plain information expect none, so two sessions never answer
 // each other's answers back and forth.
 
+import { randomBytes } from 'node:crypto'
 import { tIn, type Lang } from '../src/shared/i18n/index.ts'
 
 export const PEER_TEXT_MAX = 20_000
@@ -16,12 +17,17 @@ export const HELD_REPLY_MS = 15 * 60_000
 // Requests one person's request may lead to between sessions, all hand-offs counted: a
 // session that hands work on and on stops here instead of circling.
 export const DELEGATION_MAX = 8
+// Requests one session may send to the same other session in PAIR_WINDOW_MS: two sessions
+// answering each other with new requests start a new run each time, so the run cap alone
+// would not stop them.
+export const PAIR_WINDOW_MS = 30 * 60_000
+
 // A session gone this long gets its sender told not to wait (a bridge restart is shorter).
 export const OFFLINE_NOTE_MS = 2 * 60_000
 // A request a session got this long ago no longer makes what it sends part of that run.
 export const CHAIN_WINDOW_MS = 6 * 3600_000
 
-export type NoReply = 'offline' | 'interrupted' | 'late'
+export type NoReply = 'offline' | 'interrupted' | 'late' | 'empty'
 
 export type PeerRow = {
   id: number
@@ -42,7 +48,13 @@ export type ForwardedQuestion = {
 
 // `autoReply`: the recipient is a Claude Code session, whose mod sends its last answer when
 // the turn ends without a reply; other CLIs must reply themselves.
-export function peerText(row: PeerRow, sender: string, lang: Lang, autoReply: boolean): string {
+// A fence made for one message: the text between its two lines cannot pose as a header of
+// ours (a request from the person, another message) since it cannot know the fence.
+export function newFence(): string {
+  return randomBytes(6).toString('hex')
+}
+
+export function peerText(row: PeerRow, sender: string, lang: Lang, autoReply: boolean, fence = newFence()): string {
   const lines = [tIn(lang, 'peer.head', { sender }), tIn(lang, 'peer.messageId', { id: row.id })]
   if (row.reply_to) lines.push(tIn(lang, 'peer.replyTo', { id: row.reply_to }))
   lines.push(tIn(lang, 'peer.collaborator'))
@@ -52,7 +64,7 @@ export function peerText(row: PeerRow, sender: string, lang: Lang, autoReply: bo
     lines.push(tIn(lang, 'peer.requestRules', { id: row.id }))
     if (autoReply) lines.push(tIn(lang, 'peer.autoReply'))
   }
-  lines.push(tIn(lang, 'peer.body'), row.text)
+  lines.push(tIn(lang, 'peer.fenceRule'), tIn(lang, 'peer.bodyFenced', { fence }), row.text, tIn(lang, 'peer.bodyEnd', { fence }))
   return lines.join('\n')
 }
 
@@ -127,7 +139,7 @@ export function waitText(wait: { id: number; note: string; payload: string }, la
 
 // The sender of a request that will not be answered, or not in time: it should stop waiting.
 export function noReplyText(id: number, recipient: string, reason: NoReply, lang: Lang): string {
-  const key = ({ offline: 'peer.noReplyOffline', interrupted: 'peer.noReplyInterrupted', late: 'peer.noReplyLate' } as const)[reason]
+  const key = ({ offline: 'peer.noReplyOffline', interrupted: 'peer.noReplyInterrupted', late: 'peer.noReplyLate', empty: 'peer.noReplyEmpty' } as const)[reason]
   return tIn(lang, key, { id, recipient, minutes: Math.round(HELD_REPLY_MS / 60_000) })
 }
 

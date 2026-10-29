@@ -30,7 +30,8 @@ const { homedir } = require('node:os')
 const { join } = require('node:path')
 const url = process.argv[2] || ''
 const isLocalAddress = (${isLocalAddress.toString()})
-const opener = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]]
+// Not cmd /c start on Windows: cmd would read & and | in the address as commands.
+const opener = process.platform === 'win32' ? ['rundll32', ['url.dll,FileProtocolHandler', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]]
 const own = () => {
   spawn(opener[0], opener[1], { stdio: 'ignore', detached: true }).unref()
   process.exit(0)

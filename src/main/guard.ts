@@ -21,7 +21,7 @@ export function isAppUrl(url: string | undefined | null, appUrl: string): boolea
   const page = bare(url)
   const app = bare(appUrl)
   if (!page || !app) return false
-  if (app.protocol === 'file:') return page.protocol === 'file:' && page.pathname === app.pathname
+  if (app.protocol === 'file:') return page.protocol === 'file:' && page.host === app.host && page.pathname === app.pathname
   return page.origin === app.origin
 }
 
@@ -49,11 +49,24 @@ export function debugPathAllowed(path: unknown): path is string {
 }
 
 // A <webview> (the debugging browser) gets no preload and no Node, whatever the page asked for.
-export function hardenWebview(prefs: WebPreferences): void {
+export const BROWSER_PARTITION = 'persist:claude-ide'
+// What a page in the app may be granted: copying to the clipboard and going full screen.
+export const PAGE_PERMISSIONS = ['clipboard-sanitized-write', 'fullscreen']
+
+// Whatever the page asked for, a webview runs sandboxed, without Node or a preload, in the
+// in-app browser's own session.
+export function hardenWebview(prefs: WebPreferences, params?: Record<string, string>): void {
   delete prefs.preload
   prefs.nodeIntegration = false
   prefs.nodeIntegrationInSubFrames = false
   prefs.contextIsolation = true
+  prefs.sandbox = true
+  prefs.webSecurity = true
+  prefs.allowRunningInsecureContent = false
+  if (params) {
+    delete params.preload
+    params.partition = BROWSER_PARTITION
+  }
 }
 
 type AnyEvent = IpcMainEvent | IpcMainInvokeEvent

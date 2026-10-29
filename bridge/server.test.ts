@@ -679,7 +679,7 @@ describe('messages between sessions', () => {
     assert.match(got!.text, /협업자 입력/)
     assert.match(got!.text, new RegExp(`replyTo "${sent.ids[0]}"`))
     assert.match(got!.text, /마지막 답변이 그대로 결과로/)
-    assert.match(got!.text, /--- 메시지 ---\n주문 API 응답 형식을 알려줘$/)
+    assert.match(got!.text, /--- 메시지 시작 \(경계 [0-9a-f]{12}\) ---\n주문 API 응답 형식을 알려줘\n--- 메시지 끝 \(경계 [0-9a-f]{12}\) ---$/)
 
     // A reply needs no `to`, wants no answer, and the turn's end then sends nothing more.
     assert.equal((await call('POST', '/messages', { sessionId: 'pa', replyTo: sent.ids[0], text: 'x' })).status, 400)
@@ -698,9 +698,11 @@ describe('messages between sessions', () => {
     assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '' })).json.relayed, 0)
     assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '상태: 완료' })).json.relayed, 1)
     assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '상태: 완료' })).json.relayed, 0)
+    // The empty turn told the sender no answer was coming; a later answer still comes.
     const items = await take('pa')
-    assert.equal(items.length, 1)
-    assert.match(items[0]!.text, /상태: 완료$/)
+    assert.equal(items.length, 2)
+    assert.match(items[0]!.text, /답 없이 턴을 끝내/)
+    assert.match(items[1]!.text, /상태: 완료\n--- 메시지 끝/)
   })
 
   test('information wants no answer and the turn end relays nothing', async () => {
@@ -719,7 +721,7 @@ describe('messages between sessions', () => {
     await call('POST', '/messages', { sessionId: 'pb', replyTo: sent.ids[0], text: 'b 의견' })
     assert.equal((await take('pa')).length, 0)
     await call('POST', '/messages', { sessionId: 'pc', replyTo: sent.ids[1], text: 'c 의견' })
-    assert.deepEqual((await take('pa')).map(item => item.text.split('\n').at(-1)), ['b 의견', 'c 의견'])
+    assert.deepEqual((await take('pa')).map(item => item.text.split('\n').at(-2)), ['b 의견', 'c 의견'])
     for (const stream of streams) stream.destroy()
     await take('pb')
     await take('pc')
@@ -773,7 +775,7 @@ describe('messages between sessions', () => {
     for (const stream of streams) stream.destroy()
     const late = await take('na')
     assert.equal(late.length, 2)
-    assert.match(late[0]!.text, /b 의견$/)
+    assert.match(late[0]!.text, /b 의견\n--- 메시지 끝/)
     assert.match(late[1]!.text, new RegExp(`요청 ${three.ids[1]}: 15분 안에 답이 없어 먼저 온 답부터`))
     await take('nb')
     await take('nc')
@@ -790,14 +792,14 @@ describe('messages between sessions', () => {
     await call('POST', '/outbox', { sessionId: 'ha', text: '진행 상황 알려줘' })
     const items = await take('ha')
     assert.equal(items.length, 2)
-    assert.match(items[0]!.text, /b 의견$/)
+    assert.match(items[0]!.text, /b 의견\n--- 메시지 끝/)
 
     // The person types in the terminal: the mod takes what is held for that prompt.
     const again = (await call('POST', '/messages', { sessionId: 'ha', to: ['hb', 'hc'], text: '다시 의견' })).json
     await call('POST', '/messages', { sessionId: 'hc', replyTo: again.ids[1], text: 'c 의견' })
     const released = (await call('POST', '/messages/release', { sessionId: 'ha' })).json.items
     assert.equal(released.length, 1)
-    assert.match(released[0].text, /c 의견$/)
+    assert.match(released[0].text, /c 의견\n--- 메시지 끝/)
     assert.equal((await call('POST', '/messages/release', { sessionId: 'ha' })).json.items.length, 0)
     for (const stream of streams) stream.destroy()
     await take('hb')
@@ -868,6 +870,65 @@ describe('messages between sessions', () => {
     assert.equal(peers[0].live, true)
     assert.equal(peers[0].task, '주문 API')
     stream.destroy()
+  })
+})
+
+describe('hardening', () => {
+  const raw = (method: string, path: string, body?: string): Promise<number> =>
+    new Promise((resolve, reject) => {
+      const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json' } }, res => {
+        res.resume()
+        res.on('end', () => resolve(res.statusCode ?? 0))
+      })
+      // The bridge drops a body over the limit mid-way: any error here means refused.
+      req.on('error', () => resolve(0))
+      void reject
+      if (body !== undefined) req.write(body)
+      req.end()
+    })
+
+  test('a path with dot segments or encoded separators reaches no route', async () => {
+    assert.equal(await raw('POST', '/waits/../routines/1/delete?/close', '{}'), 400)
+    assert.equal(await raw('POST', '/waits/%2e%2e/routines/1/delete', '{}'), 400)
+    assert.equal(await raw('POST', '/waits/1%2fclose', '{}'), 400)
+    // An encoded slash in the query is fine.
+    assert.equal(await raw('GET', `/comments?url=${encodeURIComponent('http://127.0.0.1:1/x')}`), 200)
+  })
+
+  test('a session closes only its own wait', async () => {
+    for (const id of ['wa', 'wb']) await call('POST', '/sessions', { id, cwd: `/w/${id}` })
+    const wait = (await call('POST', '/waits', { sessionId: 'wa', note: '빌드' })).json
+    assert.equal((await call('POST', `/waits/${wait.id}/close`, { sessionId: 'wb' })).status, 403)
+    assert.equal((await call('POST', `/waits/${wait.id}/close`, { sessionId: 'wa' })).status, 200)
+  })
+
+  test('a body over the limit is refused', async () => {
+    assert.notEqual(await raw('POST', '/outbox', `{"sessionId":"x","text":"${'a'.repeat(9 * 1024 * 1024)}"}`), 200)
+    assert.equal((await call('GET', '/health')).status, 200)
+  })
+
+  test('a long agent description does not stall the bridge', async () => {
+    await call('POST', '/sessions', { id: 'rd', cwd: '/w/rd' })
+    const started = Date.now()
+    await call('POST', '/agents', { sessionId: 'rd', agents: [{ id: 'g1', description: `[${'a::'.repeat(200_000)}`, type: 'x', status: 'running' }] })
+    assert.ok(Date.now() - started < 2000)
+  })
+
+  test('the browser takes only the actions its tools name', async () => {
+    assert.equal((await call('POST', '/browser/act', { sessionId: 'rd', action: 'evaluate', args: {} })).status, 503)
+  })
+
+  test('two sessions cannot keep handing requests back and forth', async () => {
+    for (const id of ['pp', 'pq']) await call('POST', '/sessions', { id, cwd: `/w/${id}` })
+    let last = 0
+    for (let i = 0; i < 9; i++) {
+      const sent = await call('POST', '/messages', { sessionId: 'pp', to: ['pq'], text: `요청 ${i}` })
+      last = sent.status
+      if (sent.status === 200) await call('POST', '/messages', { sessionId: 'pq', replyTo: sent.json.ids[0], text: '상태: 완료' })
+    }
+    assert.equal(last, 429)
+    await call('POST', '/deliveries/take', { sessionId: 'pp' })
+    await call('POST', '/deliveries/take', { sessionId: 'pq' })
   })
 })
 

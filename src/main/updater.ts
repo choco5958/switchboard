@@ -17,7 +17,9 @@ function notify(body: string, onClick: () => void): void {
   note.show()
 }
 
-export function startUpdates(): void {
+// `bridgePid`: the bridge runs on this app's own executable, which Windows keeps locked while
+// it runs, so a downloaded update stops it before installing.
+export function startUpdates(bridgePid: () => Promise<number | null>): void {
   if (!app.isPackaged || process.env.CLAUDE_IDE_CAPTURE) return
   const { autoUpdater } = updater
   const installs = process.platform !== 'darwin'
@@ -29,9 +31,23 @@ export function startUpdates(): void {
     told = info.version
     notify(t('update.available', { version: info.version }), () => void shell.openExternal(RELEASES_URL))
   })
+  let bridge: number | null = null
+  const stopBridge = () => {
+    if (process.platform !== 'win32' || bridge === null) return
+    try {
+      process.kill(bridge)
+    } catch {
+      // Gone already.
+    }
+  }
   autoUpdater.on('update-downloaded', info => {
-    notify(t('update.ready', { version: info.version }), () => autoUpdater.quitAndInstall())
+    void bridgePid().then(pid => (bridge = pid))
+    notify(t('update.ready', { version: info.version }), () => {
+      stopBridge()
+      autoUpdater.quitAndInstall()
+    })
   })
+  app.on('before-quit', stopBridge)
   autoUpdater.on('error', error => console.error('update check failed:', error.message))
   const check = () => void autoUpdater.checkForUpdates().catch(() => undefined)
   check()

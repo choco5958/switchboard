@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { connect } from 'node:net'
 import { DatabaseSync } from 'node:sqlite'
-import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import { homedir } from 'node:os'
@@ -20,6 +20,7 @@ import {
   DELEGATION_MAX,
   HELD_REPLY_MS,
   OFFLINE_NOTE_MS,
+  PAIR_WINDOW_MS,
   PEER_RECIPIENTS_MAX,
   cancelledText,
   clipText,
@@ -203,7 +204,8 @@ export const TASK_FIELDS = ['why', 'what', 'result', 'artifact', 'tests', 'branc
 
 // "[task::node] what it does": an Agent description in this shape ties the agent to a node.
 export function agentTarget(description: string): { taskTitle: string; nodeKey: string } {
-  const match = /^\[([^\]]+?)::([^\]]+?)\]/.exec(description)
+  // Capped first: the lazy groups are quadratic on a long line of brackets and colons.
+  const match = /^\[([^\]]+?)::([^\]]+?)\]/.exec(description.slice(0, 300))
   return match ? { taskTitle: match[1]!.trim(), nodeKey: match[2]!.trim() } : { taskTitle: '', nodeKey: '' }
 }
 
@@ -235,9 +237,20 @@ class BridgeError extends Error {
   }
 }
 
+// The largest body any route takes (a screen comment with its logs is well under it).
+export const BODY_MAX = 8 * 1024 * 1024
+
 async function readJson(req: IncomingMessage): Promise<Json> {
   const chunks: Buffer[] = []
-  for await (const chunk of req) chunks.push(chunk as Buffer)
+  let size = 0
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length
+    if (size > BODY_MAX) {
+      req.destroy()
+      throw new BridgeError('bridge.tooLarge')
+    }
+    chunks.push(chunk as Buffer)
+  }
   if (chunks.length === 0) return {}
   let parsed: unknown
   try {
@@ -445,7 +458,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       | undefined
     if (!request?.group_key || at - request.created_at >= HELD_REPLY_MS) return false
     const open = db
-      .prepare('select session_id from outbox where group_key = ? and id != ? and answered = 0')
+      .prepare("select session_id from outbox where group_key = ? and id != ? and answered = 0 and no_reply = ''")
       .all(request.group_key, m.reply_to) as { session_id: string }[]
     const live = liveSessions()
     return open.some(o => live.includes(o.session_id))
@@ -890,6 +903,10 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   })
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    // A path is taken as written: no dot segments, which URL would resolve into another route
+    // (a tool argument such as close_wait's id ends up in the path).
+    const rawPath = (req.url ?? '/').split('?')[0]!
+    if (/(^|\/)(\.|%2e){1,2}(\/|$)/i.test(rawPath) || /%2f|%5c|\\/i.test(rawPath)) return send(res, 400, { error: say('bridge.badPath') })
     const url = new URL(req.url ?? '/', 'http://bridge')
     const path = url.pathname
     const method = req.method ?? 'GET'
@@ -898,6 +915,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     // Over TCP only the token opens the bridge, and a web page (it sends Origin) never does.
     if (options.token !== undefined) {
       if (req.headers.origin !== undefined) return send(res, 403, { error: 'forbidden' })
+      // Only this machine's loopback by name: a page that rebound a name to 127.0.0.1 sends its own.
+      if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host ?? '')) return send(res, 403, { error: 'forbidden' })
       if (!sameSecret(req.headers.authorization ?? '', `Bearer ${options.token}`)) return send(res, 401, { error: 'unauthorized' })
     }
 
@@ -929,13 +948,15 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const same = requestKey ? (db.prepare('select id from approvals where session_id = ? and request_key = ?').get(sessionId, requestKey) as { id: number } | undefined) : undefined
       if (same) return send(res, 200, { id: same.id, duplicate: true })
       const tool = str(body.tool).slice(0, 200)
-      const summary = maskSecrets(str(body.summary)).slice(0, 4000)
+      // Kept as it is (this database is the person's own): the app shows exactly what would run.
+      // Telegram gets it masked, and then offers no allow (bridge/telegram.ts).
+      const summary = str(body.summary).slice(0, 4000)
       const id = Number(
         db
           .prepare('insert into approvals (session_id, project, tool, summary, cwd, reason, request_key, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)')
           .run(sessionId, projectOf(sessionId), tool, summary, str(body.cwd), maskSecrets(str(body.reason)).slice(0, 500), requestKey, now()).lastInsertRowid,
       )
-      logEvent(sessionId, '권한', `A${id} ${tool}: ${summary.split('\n')[0]?.slice(0, 160) ?? ''}`)
+      logEvent(sessionId, '권한', `A${id} ${tool}: ${maskSecrets(summary.split('\n')[0]?.slice(0, 160) ?? '')}`)
       changed('approvals')
       telegram.approvalPosted(db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow)
       return send(res, 200, { id })
@@ -1484,12 +1505,18 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         const parent = db
           .prepare(
             `select id, chain from outbox where session_id = ? and delivered = 1 and expects_reply = 1 and answered = 0 and cancelled = 0
-             and routine_run is null and wait_id is null and created_at > ? order by id desc limit 1`,
+             and no_reply = '' and routine_run is null and wait_id is null and created_at > ? order by id desc limit 1`,
           )
           .get(from, now() - CHAIN_WINDOW_MS) as { id: number; chain: number | null } | undefined
         chain = parent ? (parent.chain ?? parent.id) : null
         const used = chain === null ? 0 : (db.prepare("select count(*) as n from outbox where chain = ? and from_session != '' and expects_reply = 1").get(chain) as { n: number }).n
         if (used + to.length > DELEGATION_MAX) return send(res, 400, { error: say('bridge.peer.chainFull', { max: DELEGATION_MAX }) })
+        for (const recipient of to) {
+          const recent = (db
+            .prepare("select count(*) as n from outbox where from_session = ? and session_id = ? and expects_reply = 1 and created_at > ?")
+            .get(from, recipient, now() - PAIR_WINDOW_MS) as { n: number }).n
+          if (recent >= DELEGATION_MAX) return send(res, 429, { error: say('bridge.peer.tooOften', { max: DELEGATION_MAX }) })
+        }
       }
       if (replied) db.prepare('update outbox set answered = 1 where id = ?').run(replied.id)
       const ids = sendPeer(from, to, text, replied?.id ?? null, expectsReply, requestKey, chain)
@@ -1606,7 +1633,12 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
           noteNoReply(row, 'interrupted')
           continue
         }
-        if (!row || aborted || !row.expects_reply || row.answered || row.cancelled || !answerText) continue
+        if (!row || aborted || !row.expects_reply || row.answered || row.cancelled) continue
+        // A turn that ended with no text (only tool calls, an API error) answered nothing.
+        if (!answerText) {
+          if (row.from_session && !row.question_id) noteNoReply(row, 'empty')
+          continue
+        }
         if (row.question_id) answerForwarded(row, sessionId, answerText)
         else if (!row.from_session) keepShellReply(row, answerText)
         else if (row.from_session) {
@@ -1719,6 +1751,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const body = await readJson(req)
       const wait = db.prepare('select * from waits where id = ?').get(Number(waitAction[1])) as { id: number; session_id: string; fired_at: number | null; closed_at: number | null } | undefined
       if (!wait || wait.fired_at || wait.closed_at) return send(res, 404, { error: say('bridge.notFound') })
+      // A session closes only its own wait; the shell (no sessionId) fires and closes any.
+      if (str(body.sessionId) && str(body.sessionId) !== wait.session_id) return send(res, 403, { error: say('bridge.notFound') })
       if (waitAction[2] === 'close') {
         db.prepare('update waits set closed_at = ? where id = ?').run(now(), wait.id)
       } else {
@@ -1842,12 +1876,19 @@ export async function listenTcp(server: Server, token: string, home = homedir())
   const dir = ideDir(home)
   privateDir(dir)
   const lock = join(dir, 'bridge.lock')
-  try {
-    writeFileSync(lock, String(process.pid), { flag: 'wx', mode: 0o600 })
-  } catch {
-    const holder = Number(readFileSync(lock, 'utf8'))
-    if (holder && holder !== process.pid && alive(holder)) throw new Error(`다른 브리지(pid ${holder})가 이미 돌고 있습니다`)
-    writePrivate(lock, String(process.pid))
+  // Made with wx only: a lock left by a bridge that died is removed, then made again, so two
+  // starts at once cannot both hold it. One just made may still be empty for a moment.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      writeFileSync(lock, String(process.pid), { flag: 'wx', mode: 0o600 })
+      break
+    } catch {
+      const holder = Number(readFileSync(lock, 'utf8').trim() || 0)
+      if (holder && holder !== process.pid && alive(holder)) throw new Error(`다른 브리지(pid ${holder})가 이미 돌고 있습니다`)
+      if (attempt >= 20) throw new Error('bridge.lock을 만들 수 없습니다')
+      if (holder) rmSync(lock, { force: true })
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
   }
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
@@ -1864,6 +1905,29 @@ export async function listenTcp(server: Server, token: string, home = homedir())
     }
   })
   return port
+}
+
+// Whether this bridge still serves where clients look: another start may have taken the
+// socket path (or bridge.json) over in a race. A bridge nobody reaches would keep its timers
+// running on the same database, so it leaves.
+export function servingCheck(where: { socketPath: string } | { home: string }): () => boolean {
+  if ('socketPath' in where) {
+    const inode = statSync(where.socketPath).ino
+    return () => {
+      try {
+        return statSync(where.socketPath).ino === inode
+      } catch {
+        return false
+      }
+    }
+  }
+  return () => {
+    try {
+      return (JSON.parse(readFileSync(endpointFile(where.home), 'utf8')) as { pid?: number }).pid === process.pid
+    } catch {
+      return false
+    }
+  }
 }
 
 function isAnswering(socketPath: string): Promise<boolean> {
@@ -1885,7 +1949,13 @@ export async function listen(server: Server, socketPath: string): Promise<void> 
     if (await isAnswering(socketPath)) throw new Error(`다른 브리지가 이미 ${socketPath}에서 돌고 있습니다`)
     unlinkSync(socketPath)
   }
-  await new Promise<void>(resolve => server.listen(socketPath, resolve))
+  // Created private: no moment where the socket is open to others before the chmod.
+  const mask = process.umask(0o077)
+  try {
+    await new Promise<void>(resolve => server.listen(socketPath, resolve))
+  } finally {
+    process.umask(mask)
+  }
   chmodSync(socketPath, 0o600)
 }
 
@@ -1897,6 +1967,14 @@ if (import.meta.main) {
     if (token === undefined) await listen(bridge.server, where)
     else where = `127.0.0.1:${await listenTcp(bridge.server, token)}`
     console.log(`claude-ide bridge listening on ${where}`)
+    const serving = servingCheck(token === undefined ? { socketPath: where } : { home: homedir() })
+    const watch = setInterval(() => {
+      if (serving()) return
+      console.log('claude-ide bridge: another bridge took over; leaving')
+      clearInterval(watch)
+      bridge.close()
+      process.exit(0)
+    }, 30_000)
   } catch (error) {
     console.log(`claude-ide bridge not started: ${error instanceof Error ? error.message : String(error)}`)
     bridge.close()

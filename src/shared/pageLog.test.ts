@@ -24,6 +24,28 @@ test('credentials are masked as they come in', () => {
   expect(maskSecrets('Authorization: Bearer abc.def.ghijkl')).toBe('Authorization: Bearer ***')
   expect(maskSecrets('GET /cb?code=1&access_token=s3cr3t&x=2')).toBe('GET /cb?code=1&access_token=***&x=2')
   expect(maskSecrets('key sk-ant-api03-abcdefghijklmnop')).toBe('key sk-***')
+  for (const [raw, masked] of [
+    ['DB_PASSWORD=hunter22 npm start', 'DB_PASSWORD=*** npm start'],
+    ['export AWS_SECRET_ACCESS_KEY=abcd1234', 'export AWS_SECRET_ACCESS_KEY=***'],
+    ['{"token":"t0ps3cret","n":1}', '{"token":"***","n":1}'],
+    ['X-Api-Key: zzz999', 'X-Api-Key: ***'],
+    ['postgres://admin:pa55word@db:5432/app', 'postgres://admin:***@db:5432/app'],
+    ['id AKIAABCDEFGHIJKLMNOP', 'id AKIA***'],
+    ['github_pat_11ABCDEFG0123456789abcdef', 'github_pat-***'],
+    ['glpat-abcdefghij0123456789', 'glpat-***'],
+    ['jwt eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0.abcdefghijklmn', 'jwt eyJ***'],
+    ['-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----', '-----BEGIN PRIVATE KEY----- *** -----END PRIVATE KEY-----'],
+  ] as const) expect(maskSecrets(raw), raw).toBe(masked)
+  // Words that only start like a name stay: keyboard, monkey business.
+  expect(maskSecrets('keyboard shortcuts: 12')).toBe('keyboard shortcuts: 12')
+})
+
+test('masking stays fast on long hostile input', () => {
+  for (const hostile of ['key='.repeat(50_000), `${'a'.repeat(40)}token`.repeat(5000), `${'x://'.repeat(30_000)}`, `-----BEGIN PRIVATE KEY-----${'a'.repeat(200_000)}`]) {
+    const started = performance.now()
+    maskSecrets(hostile)
+    expect(performance.now() - started).toBeLessThan(500)
+  }
 })
 
 test('the list keeps the newest, and a comment carries the newest of each kind', () => {

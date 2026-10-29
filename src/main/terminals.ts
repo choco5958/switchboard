@@ -13,6 +13,7 @@ import { t } from '../shared/i18n'
 import { writeOpenUrl } from './openUrl'
 import { nodeRoot } from './appRoot'
 import { loginShell } from './shell'
+import { shellWord } from '../shared/agents'
 
 // Terminals in the IDE's bottom dock. Each is a login shell in a project folder;
 // a Claude terminal types `claude --plugin-dir <this app's mod>` into it first,
@@ -23,7 +24,7 @@ import { loginShell } from './shell'
 // seq numbers every output chunk, so a view that replays the buffer can skip live chunks it already holds.
 // key names the terminal to an agent's MCP server (SWITCHBOARD_TERMINAL); lastOutput and
 // paste tell the answer typing whether the CLI waits for input and takes bracketed paste.
-type Live = TermInfo & { proc: pty.IPty; buffer: string; seq: number; key: string; shell: string; lastOutput: number; paste: boolean }
+type Live = TermInfo & { proc: pty.IPty; buffer: string; seq: number; key: string; shell: string; lastOutput: number; paste: boolean; bins: string[] }
 
 const BUFFER_MAX = 256 * 1024
 const terms = new Map<string, Live>()
@@ -43,6 +44,7 @@ export function typingTarget(key: string): TypingTarget | undefined {
     lastOutput: term.lastOutput,
     paste: term.paste,
     foreground: term.alive ? term.proc.process : '',
+    expect: term.bins,
     write: data => {
       if (term.alive) term.proc.write(data)
     },
@@ -85,6 +87,8 @@ export type TermStart = {
   title: string // without the number a second terminal of the project gets
   claude?: boolean
   agent?: string
+  // The program names that mean the terminal's CLI is in front, the only time answers are typed.
+  bins?: string[]
   // Env vars for the shell and the command typed into it once it starts. They may name
   // the terminal's key, which exists only now.
   prepare?: (key: string) => { env?: Record<string, string>; line?: string }
@@ -123,7 +127,7 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
   const title = `${start.title}${same > 0 ? ` ${same + 1}` : ''}`
   const term: Live = {
     id, project, cwd: folder, title, claude: start.claude === true, agent: start.agent, alive: true, exitCode: null,
-    proc, buffer: '', seq: 0, key, shell: shell.file, lastOutput: Date.now(), paste: false,
+    proc, buffer: '', seq: 0, key, shell: shell.file, lastOutput: Date.now(), paste: false, bins: start.bins ?? [],
   }
   terms.set(id, term)
   proc.onData(data => {
@@ -164,7 +168,7 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
       rows,
       claude,
       title: claude ? 'claude' : t('term.shell'),
-      prepare: () => ({ line: claude ? claudeLine(claudeLauncher(), shellQuote(modDir()), slot, ccrPaths().count) : undefined }),
+      prepare: () => ({ line: claude ? claudeLine(claudeLauncher(), shellWord(modDir()), slot, ccrPaths().count) : undefined }),
     }),
   )
   openClaudeIn = cwd =>
@@ -174,7 +178,7 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
       rows: 30,
       claude: true,
       title: 'claude',
-      prepare: () => ({ line: claudeLine(claudeLauncher(), shellQuote(modDir()), undefined, ccrPaths().count) }),
+      prepare: () => ({ line: claudeLine(claudeLauncher(), shellWord(modDir()), undefined, ccrPaths().count) }),
     })
 
   ipcMain.handle('term:buffer', (_e, id: string) => {

@@ -29,7 +29,8 @@ if (import.meta.main) {
   mkdirSync(ideDir(), { recursive: true, mode: 0o700 })
   const log = openSync(join(ideDir(), 'bridge.log'), 'a')
   const server = join(dirname(fileURLToPath(import.meta.url)), 'server.ts')
-  spawn(process.execPath, [server], { detached: true, stdio: ['ignore', log, log], windowsHide: true }).unref()
+  // An AppImage's own executable lives in a folder mounted for one run; the file itself stays.
+  spawn(process.env.APPIMAGE ?? process.execPath, [server], { detached: true, stdio: ['ignore', log, log], windowsHide: true }).unref()
   for (let i = 0; i < 50; i++) {
     await new Promise(resolve => setTimeout(resolve, 100))
     if (await healthy()) process.exit(0)

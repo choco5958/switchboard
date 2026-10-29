@@ -55,4 +55,5 @@ publish:
   provider: github
   owner: choco5958
   repo: switchboard
-  releaseType: release
+  # The workflow makes the draft and publishes it after every build (release.yml).
+  releaseType: draft

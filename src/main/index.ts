@@ -10,13 +10,13 @@ import { watchBridge } from './bridgeWatch'
 import { registerAccount } from './account'
 import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
-import { bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
+import { BROWSER_PARTITION, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
 import { onTerminalsChange, openClaudeIn, registerTerminals, typingTarget } from './terminals'
 import { registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
-import { copyRuntime, staleBridge, writeRuntime } from './runtime'
+import { copyRuntime, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
 import { startUpdates } from './updater'
 import { requestTarget, resolveEndpoint, startCommand } from '../../bridge/endpoint.ts'
 import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled } from './notify'
@@ -54,6 +54,7 @@ async function prepareRuntime(): Promise<void> {
     useNodeRoot(copyRuntime(nodeRoot(), homedir(), app.getVersion()))
     // An AppImage runs from a folder mounted for this run only; the file itself stays.
     writeRuntime({ execPath: process.env.APPIMAGE ?? process.execPath, root: nodeRoot(), home: homedir(), version: app.getVersion() })
+    pruneRuntimes(homedir(), app.getVersion())
   } catch (error) {
     console.error('could not write the launchers:', error)
   }
@@ -394,8 +395,8 @@ function createWindow(): void {
     // Captures run without a window on screen, so checks never cover what the person is doing.
     show: !process.env.CLAUDE_IDE_CAPTURE,
     webPreferences: {
-      preload: join(import.meta.dirname, '../preload/index.mjs'),
-      sandbox: false,
+      preload: join(import.meta.dirname, '../preload/index.cjs'),
+      sandbox: true,
       contextIsolation: true,
       webviewTag: true,
     },
@@ -414,7 +415,7 @@ function createWindow(): void {
     if (isExternalUrl(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  win.webContents.on('will-attach-webview', (_event, webPreferences) => hardenWebview(webPreferences))
+  win.webContents.on('will-attach-webview', (_event, webPreferences, params) => hardenWebview(webPreferences, params))
 
   // For checks without a person at the screen: save one capture of the window, then quit.
   const capture = process.env.CLAUDE_IDE_CAPTURE
@@ -469,7 +470,10 @@ app.whenReady().then(async () => {
   createWindow()
   watch()
   watchBrowserRequests()
-  startUpdates()
+  startUpdates(async () => {
+    const health = await call('GET', '/health')
+    return health.ok && typeof health.json.pid === 'number' ? health.json.pid : null
+  })
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -478,7 +482,13 @@ app.whenReady().then(async () => {
 // Requests of the in-app browser that failed go to the view that made them, which keeps
 // them for its screen comments (src/shared/pageLog.ts).
 function watchBrowserRequests(): void {
-  const requests = session.fromPartition('persist:claude-ide').webRequest
+  // Pages get no camera, microphone, location or notifications: no page here needs them, and
+  // without a handler Electron grants each one it asks for.
+  for (const one of [session.defaultSession, session.fromPartition(BROWSER_PARTITION)]) {
+    one.setPermissionRequestHandler((_contents, permission, callback) => callback(PAGE_PERMISSIONS.includes(permission)))
+    one.setPermissionCheckHandler((_contents, permission) => PAGE_PERMISSIONS.includes(permission))
+  }
+  const requests = session.fromPartition(BROWSER_PARTITION).webRequest
   const filter = { urls: ['http://*/*', 'https://*/*'] }
   const report = (webContentsId: number | undefined, entry: PageLogEntry | null) => {
     if (entry && webContentsId !== undefined) send('browser:net', { webContentsId, entry })

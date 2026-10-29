@@ -18,11 +18,19 @@ export function consoleLevel(level: unknown): PageLogEntry['level'] | null {
   return null
 }
 
+// Every pattern is bounded or anchored on a fixed prefix, so the time stays linear in the text.
 export function maskSecrets(text: string): string {
   return text
+    .replace(/-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]{0,40}PRIVATE KEY-----|$)/g, '-----BEGIN PRIVATE KEY----- *** -----END PRIVATE KEY-----')
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, '$1 ***')
-    .replace(/([?&;\s"'](?:access_token|token|key|api_key|apikey|secret|password|passwd|session|sig|signature)=)[^&\s"';]+/gi, '$1***')
-    .replace(/\b(sk|pk|rk|ghp|gho|ghs|xox[abprs])[-_][A-Za-z0-9_-]{12,}/g, '$1-***')
+    // name=value, name: value, "name": "value", at a line start too: API_KEY=, DB_PASSWORD=, X-Api-Key:
+    .replace(/(^|[^A-Za-z0-9])([A-Za-z0-9_-]{0,40}?(?:token|key|secret|password|passwd|pwd|session|sig|signature|credential)s?)(["']?\s{0,4}[=:]\s{0,4}["']?)([^\s"'&;,}]{3,})/gim, '$1$2$3***')
+    // user:password@ in an address
+    .replace(/\b([a-z][a-z0-9+.-]{1,20}:\/\/[^\s/:@]{1,100}:)[^\s/@]{1,200}@/gi, '$1***@')
+    .replace(/\b(sk|pk|rk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat|github_pat)[-_][A-Za-z0-9_-]{12,}/g, '$1-***')
+    .replace(/\b(AKIA|ASIA)[A-Z0-9]{16}\b/g, '$1***')
+    .replace(/\bAIza[0-9A-Za-z_-]{35}\b/g, 'AIza***')
+    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, 'eyJ***')
 }
 
 function clip(text: string): string {

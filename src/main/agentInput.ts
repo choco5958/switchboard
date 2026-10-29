@@ -38,15 +38,18 @@ export function pasteModeAfter(current: boolean, output: string): boolean {
 
 // The pty's foreground process is the login shell again once the CLI has quit:
 // typing then would run the answer as shell commands.
-export function cliInFront(foreground: string, shell: string): boolean {
-  const name = (path: string) => path.split(/[\\/]/).pop()?.replace(/^-/, '').toLowerCase() ?? ''
+export function cliInFront(foreground: string, shell: string, expect: readonly string[] = []): boolean {
+  const name = (path: string) => path.split(/[\\/]/).pop()?.replace(/^-/, '').replace(/\.(exe|cmd)$/i, '').toLowerCase() ?? ''
   const front = name(foreground)
-  return front !== '' && front !== name(shell) && !SHELL_NAMES.includes(front)
+  if (front === '' || front === name(shell) || SHELL_NAMES.includes(front)) return false
+  // Another program the person started there (ssh, python) is not the CLI.
+  return expect.length === 0 || expect.some(bin => name(bin) === front)
 }
 
-export function readyToType(t: { alive: boolean; foreground: string; shell: string; lastOutput: number }, now: number): boolean {
-  return t.alive && cliInFront(t.foreground, t.shell) && now - t.lastOutput >= QUIET_MS
+export function readyToType(t: { alive: boolean; foreground: string; shell: string; lastOutput: number; expect?: string[] }, now: number): boolean {
+  return t.alive && cliInFront(t.foreground, t.shell, t.expect) && now - t.lastOutput >= QUIET_MS
 }
 
 // A terminal as the answer typing sees it, at the moment it asks.
-export type TypingTarget = { alive: boolean; shell: string; lastOutput: number; paste: boolean; foreground: string; write: (data: string) => void }
+// `expect`: the program names of the terminal's CLI; when given, only they count as it.
+export type TypingTarget = { alive: boolean; shell: string; lastOutput: number; paste: boolean; foreground: string; expect?: string[]; write: (data: string) => void }

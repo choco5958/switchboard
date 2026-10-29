@@ -8,12 +8,13 @@
 // is answered anywhere, the Telegram message is edited to say so and loses its buttons.
 // Telegram's servers see what is sent: values that look like credentials are masked.
 
-import { randomInt } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { maskSecrets } from '../src/shared/pageLog.ts'
 import { tIn, type Lang } from '../src/shared/i18n/index.ts'
 
 export const TELEGRAM_API = 'https://api.telegram.org'
 const PAIR_MS = 10 * 60_000
+const PAIR_TRIES = 5
 const POLL_SECONDS = 25
 
 export type TelegramQuestion = {
@@ -56,22 +57,30 @@ export type TelegramDeps = {
 export type TelegramApproval = { id: number; project: string; tool: string; summary: string; cwd: string; reason: string; status: string }
 
 // A permission ask as it goes out: what would run and where. Allow asks once more (approvalConfirm).
+// Telegram may allow only what it shows whole: a summary that masking changed (a value that
+// looks like a secret, which may also be a command reading one) or one too long is answered
+// in the app or the terminal.
+export function allowsHere(a: TelegramApproval): boolean {
+  return a.summary.length <= SUMMARY_SHOWN && maskSecrets(a.summary) === a.summary
+}
+const SUMMARY_SHOWN = 3000
+
 export function approvalMessage(a: TelegramApproval, lang: Lang): { text: string; keyboard: { text: string; callback_data: string }[][] } {
+  const here = allowsHere(a)
   const text = [
     tIn(lang, 'telegram.approvalHead', { project: a.project, id: a.id }),
     tIn(lang, 'telegram.approvalTool', { tool: a.tool }),
     a.cwd ? tIn(lang, 'telegram.approvalCwd', { cwd: a.cwd }) : '',
     '',
-    a.summary.length > 1500 ? `${a.summary.slice(0, 1499)}…` : a.summary,
+    a.summary.length > SUMMARY_SHOWN ? `${a.summary.slice(0, SUMMARY_SHOWN - 1)}…` : a.summary,
     a.reason ? `\n${a.reason}` : '',
+    here ? '' : `\n${tIn(lang, 'telegram.allowElsewhere')}`,
   ].filter((line, i) => line !== '' || i === 3).join('\n')
+  const first = here ? [{ text: tIn(lang, 'telegram.allow'), callback_data: `p:${a.id}:allow` }] : []
   return {
     text: maskSecrets(text),
     keyboard: [
-      [
-        { text: tIn(lang, 'telegram.allow'), callback_data: `p:${a.id}:allow` },
-        { text: tIn(lang, 'telegram.deny'), callback_data: `p:${a.id}:deny` },
-      ],
+      [...first, { text: tIn(lang, 'telegram.deny'), callback_data: `p:${a.id}:deny` }],
       [{ text: tIn(lang, 'telegram.terminal'), callback_data: `p:${a.id}:terminal` }],
     ],
   }
@@ -95,12 +104,13 @@ function options(q: TelegramQuestion): { key: string; label: string }[] {
 // The message a question goes out as, and its buttons: one per option, then hold.
 export function questionMessage(q: TelegramQuestion, lang: Lang): { text: string; keyboard: { text: string; callback_data: string }[][] } {
   const opts = options(q)
-  const lines = [`[${q.task_title || q.project}] Q${q.id}`, q.question]
+  const lines = [`[${q.task_title || q.project}] Q${q.id}`, q.question.length > 1500 ? `${q.question.slice(0, 1499)}…` : q.question]
   if (q.body) lines.push('', q.body.length > 800 ? `${q.body.slice(0, 799)}…` : q.body)
   if (opts.length > 0) lines.push('')
   for (const o of opts) lines.push(`(${o.key}) ${o.label}${o.key === q.recommend ? ` ${tIn(lang, 'telegram.recommended')}` : ''}`)
   lines.push('', tIn(lang, 'telegram.howTo'))
-  const keyboard = opts.map(o => [{ text: `(${o.key}) ${o.label}`.slice(0, 60), callback_data: `a:${q.id}:${o.key}` }])
+  // A key Telegram's 64-byte callback cannot carry is answered by reply instead.
+  const keyboard = opts.filter(o => /^[A-Za-z0-9]{1,8}$/.test(o.key)).map(o => [{ text: `(${o.key}) ${o.label}`.slice(0, 60), callback_data: `a:${q.id}:${o.key}` }])
   keyboard.push([{ text: tIn(lang, 'telegram.hold'), callback_data: `h:${q.id}` }])
   return { text: maskSecrets(lines.join('\n')), keyboard }
 }
@@ -120,6 +130,7 @@ export function createTelegram(deps: TelegramDeps) {
   let bot = ''
   let pairCode = ''
   let pairUntil = 0
+  let pairFails = 0
 
   const token = () => deps.secret('telegram.token')
   const chat = () => Number(deps.secret('telegram.chat')) || 0
@@ -191,6 +202,8 @@ export function createTelegram(deps: TelegramDeps) {
       const code = message.text.split(/\s+/)[1] ?? ''
       if (message.chat.type !== 'private') return
       if (!pairCode || code !== pairCode || Date.now() > pairUntil) {
+        // A few wrong tries end the code, so it cannot be guessed.
+        if (pairCode && ++pairFails >= PAIR_TRIES) pairCode = ''
         await call('sendMessage', { chat_id: message.chat.id, text: say('telegram.badCode') })
         return
       }
@@ -228,8 +241,14 @@ export function createTelegram(deps: TelegramDeps) {
       if (kind === 'p' || kind === 'P') {
         const a = deps.approval(Number(id))
         const messageId = press.message?.message_id
-        if (!a || a.status !== 'pending') {
+        // Only the buttons of this ask's own message: an old message's buttons (a database made
+        // again numbers asks from 1) do nothing.
+        if (!a || a.status !== 'pending' || messageId === undefined || deps.approvalMessage(a.id) !== messageId) {
           await call('answerCallbackQuery', { callback_query_id: press.id, text: say('telegram.approvalGone') })
+          return
+        }
+        if (key === 'allow' && !allowsHere(a)) {
+          await call('answerCallbackQuery', { callback_query_id: press.id, text: say('telegram.allowElsewhere') })
           return
         }
         if (kind === 'p' && key === 'allow') {
@@ -237,7 +256,7 @@ export function createTelegram(deps: TelegramDeps) {
           await call('editMessageText', {
             chat_id: chat(),
             message_id: messageId,
-            text: maskSecrets(`${say('telegram.approvalSure')}\n\n${a.tool}\n${a.summary.slice(0, 1500)}`),
+            text: maskSecrets(`${say('telegram.approvalSure')}\n\n${a.tool}\n${a.summary}`),
             reply_markup: { inline_keyboard: [[{ text: say('telegram.allowSure'), callback_data: `P:${a.id}:allow` }, { text: say('telegram.back'), callback_data: `p:${a.id}:back` }]] },
           })
           return
@@ -256,7 +275,7 @@ export function createTelegram(deps: TelegramDeps) {
         return
       }
       const q = deps.question(Number(id))
-      if (!q || q.status === 'answered') {
+      if (!q || q.status === 'answered' || deps.sentMessage(q.id) !== press.message?.message_id) {
         await call('answerCallbackQuery', { callback_query_id: press.id, text: say('telegram.already', { id: Number(id) }) })
         return
       }
@@ -345,8 +364,10 @@ export function createTelegram(deps: TelegramDeps) {
     },
     pair: async () => {
       if (!bot && token()) bot = ((await call('getMe', {}).catch(() => ({ username: '' }))) as { username: string }).username
-      pairCode = String(randomInt(100000, 1000000))
+      // 128 bits, in the characters Telegram's start link takes.
+      pairCode = randomBytes(16).toString('base64url')
       pairUntil = Date.now() + PAIR_MS
+      pairFails = 0
       return { code: pairCode, link: bot ? `https://t.me/${bot}?start=${pairCode}` : '' }
     },
     unpair: () => {

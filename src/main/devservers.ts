@@ -1,4 +1,4 @@
-import { app, type IpcMain } from 'electron'
+import { app, BrowserWindow, dialog, type IpcMain } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { request as httpGet } from 'node:http'
@@ -11,6 +11,7 @@ import { appendLines, portOf } from '../shared/devtargets'
 import { killStale, removePid, stopGroup, writePid } from './procgroups'
 import { t } from '../shared/i18n'
 import { loginShell } from './shell'
+import { commandKey, loadApproved, saveApproved } from './approvedCommands'
 
 // Dev servers of the debugging page. The list itself lives in bridge settings
 // ('devTargets'); the renderer passes the target to run, this file only keeps
@@ -129,11 +130,34 @@ export function registerDevServers(ipcMain: IpcMain, onChange: (event: { id: str
   // Groups an app that crashed or was killed left running would hold the ports; end them before any start.
   const cleared = killStale(PID_DIR, QUIT_WAIT_MS).catch(() => [])
 
-  const start = (target: DevTarget): DevResult => {
+  const approvedFile = join(homedir(), '.claude-ide', 'approved-commands.json')
+  const approved = loadApproved(approvedFile)
+  // The person sees the command and its folder and says yes once (approvedCommands.ts).
+  const confirmed = async (cwd: string, command: string): Promise<boolean> => {
+    const key = commandKey(cwd, command)
+    if (approved.has(key)) return true
+    const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const options = {
+      type: 'warning' as const,
+      buttons: [t('devMain.confirmRun'), t('common.cancel')],
+      defaultId: 1,
+      cancelId: 1,
+      message: t('devMain.confirmTitle'),
+      detail: t('devMain.confirmDetail', { command, path: cwd }),
+    }
+    const answer = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
+    if (answer.response !== 0) return false
+    approved.add(key)
+    saveApproved(approvedFile, approved)
+    return true
+  }
+
+  const start = async (target: DevTarget): Promise<DevResult> => {
     const current = servers.get(target.id)
     if (current?.alive) return { ok: true, out: t('devMain.alreadyUp') }
     const cwd = home(target.repo)
     if (!existsSync(cwd)) return { ok: false, out: t('devMain.noRepo', { path: cwd }) }
+    if (!(await confirmed(cwd, target.command))) return { ok: false, out: t('devMain.notConfirmed') }
     const shell = loginShell()
     const child = spawn(shell.file, shell.command(target.command), {
       cwd,

@@ -68,8 +68,10 @@ export function registerAgentTerms(ipcMain: IpcMain, call: (method: string, path
     const found = await detect()
     if (preset && !found.found[preset.bin]) return { error: t('agents.notInstalled', { label: preset.label, install: preset.install }) }
     const needsServer = preset ? preset.mcp !== null : custom!.mcp !== 'none'
-    // The installed app runs the MCP server with its own Node (src/main/runtime.ts).
-    const node = app.isPackaged ? nodeLauncher(homedir()) : found.node
+    // The installed app runs the MCP server with its own Node (src/main/runtime.ts). On Windows a
+    // .cmd launcher cannot be what a Node-based CLI starts without a shell, so the person's own
+    // Node runs it when there is one.
+    const node = !app.isPackaged ? found.node : process.platform === 'win32' && found.node ? found.node : nodeLauncher(homedir())
     if (needsServer && !node) return { error: t('agents.noNode') }
     const id = preset?.id ?? custom!.id
     return openTerminal({
@@ -78,6 +80,8 @@ export function registerAgentTerms(ipcMain: IpcMain, call: (method: string, path
       rows,
       title: preset ? preset.bin : custom!.name,
       agent: id,
+      // npm-installed CLIs run as node.
+      bins: [preset ? preset.bin : (custom!.command.trim().split(/\s+/)[0] ?? ''), 'node'].filter(Boolean),
       prepare: key => {
         const server = serverFor(node ?? 'node', join(nodeRoot(), 'mcp', 'server.ts'), id, key, process.env.CLAUDE_IDE_SOCKET)
         const configFile = join(DIR, `${key}-${id}.json`)

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
-import { copyRuntime, nodeLauncher, runtimeFiles, staleBridge, writeRuntime } from './runtime'
+import { copyRuntime, nodeLauncher, pruneRuntimes, runtimeFiles, staleBridge, writeRuntime } from './runtime'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -59,5 +59,7 @@ test('each version gets one copy of the Node side, and older copies go', () => {
   expect(readFileSync(join(first, 'bridge', 'server.ts'), 'utf8')).toBe('v1')
   const second = copyRuntime(source, home, '0.2.0')
   expect(readFileSync(join(second, 'bridge', 'server.ts'), 'utf8')).toBe('v2')
+  expect(existsSync(first)).toBe(true)
+  pruneRuntimes(home, '0.2.0')
   expect(existsSync(first)).toBe(false)
 })

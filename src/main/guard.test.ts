@@ -60,8 +60,14 @@ describe('bridgePathAllowed', () => {
 describe('hardenWebview', () => {
   it('strips the preload and Node from a webview', () => {
     const prefs = { preload: '/x/preload.js', nodeIntegration: true, contextIsolation: false, partition: 'persist:claude-ide' }
-    hardenWebview(prefs)
-    expect(prefs).toEqual({ nodeIntegration: false, nodeIntegrationInSubFrames: false, contextIsolation: true, partition: 'persist:claude-ide' })
+    const params: Record<string, string> = { src: 'http://localhost:5173', partition: 'persist:other', preload: 'file:///x.js' }
+    hardenWebview(prefs, params)
+    expect(prefs).toEqual({
+      nodeIntegration: false, nodeIntegrationInSubFrames: false, contextIsolation: true, partition: 'persist:claude-ide',
+      sandbox: true, webSecurity: true, allowRunningInsecureContent: false,
+    })
+    // The page cannot pick another session or a preload of its own.
+    expect(params).toEqual({ src: 'http://localhost:5173', partition: 'persist:claude-ide' })
   })
 })
 

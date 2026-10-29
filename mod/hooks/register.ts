@@ -54,6 +54,8 @@ let answering: string[] = []
 // Every delivery that went in with the prompt now running: a cancel_request stops the turn
 // only when it is made of cancelled requests alone, never the person's own work.
 let turnItems: string[] = []
+// Requests their sender cancelled: a turn that starts with these alone stops at once.
+const cancelledIds = new Set<string>()
 // The main conversation was compacted: the next prompt restates this session's Switchboard state.
 let restate = false
 let activitySentAt = 0
@@ -202,15 +204,18 @@ async function flush($: Engine): Promise<void> {
     const done = waiting.filter(d => sent.includes(d.id))
     waiting = []
     if (batch.length > 0) {
+      // Known before the turn starts, so a cancel that comes while it is being submitted still finds them.
+      const ids = batch.map(d => d.id)
+      turnItems = [...turnItems, ...ids]
       const submitted = await $.prompt.submit({ text: batchText(batch, currentLang()) }).catch((error: unknown) => ({ drop: String(error) }))
       if (typeof submitted.drop === 'string') {
+        turnItems = turnItems.filter(id => !ids.includes(id))
         dropped = true
         waiting = [...batch, ...waiting.filter(d => !batch.some(b => b.id === d.id))]
         $.ui.log(t(currentLang(), 'log.retry', { error: submitted.drop }), { to: 'debug' })
       } else {
         await $.store.set(storeKey('sent'), remember(sent, batch.map(d => d.id), ID_CAP))
         answering = [...answering, ...batch.filter(d => d.id.startsWith('m')).map(d => d.id)]
-        turnItems = [...turnItems, ...batch.map(d => d.id)]
         $.ui.toast(toastText(batch, currentLang()))
       }
     }
@@ -330,6 +335,7 @@ async function runCommand($: Engine, command: Command): Promise<void> {
       // Requests their sender took back (bridge POST /messages/cancel): what has not gone in
       // never does, and a turn working on these alone stops.
       const ids = Array.isArray(payload.ids) ? payload.ids.map(String) : []
+      for (const id of ids) cancelledIds.add(id)
       waiting = waiting.filter(d => !ids.includes(d.id))
       await saveQueued($)
       const stop = busy && mainTurnId !== '' && turnItems.length > 0 && turnItems.every(id => ids.includes(id))
@@ -521,7 +527,7 @@ export const register: Register = on => {
   ).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
   on('tool.call', { tool: 'mcp__ide-bridge__close_wait' }, async ($, e) => {
     const id = String(e.id ?? '').replace(/^w/, '')
-    return bridgeTool($, `/waits/${id}/close`, {}, () => t(currentLang(), 'tool.waitClosed', { id: `w${id}` }))
+    return bridgeTool($, `/waits/${id}/close`, { sessionId }, () => t(currentLang(), 'tool.waitClosed', { id: `w${id}` }))
   }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
 
   for (const [name, action] of Object.entries(BROWSER_TOOLS)) {
@@ -623,12 +629,15 @@ export const register: Register = on => {
   on('tool.check', async ($, e, next) => {
     const verdict = await next(e)
     if (verdict.decision !== 'ask' || !sessionId || !e.tool_use_id || e.approver !== 'person' || e.ceiling === 'ask') return verdict
+    // What the person could not see in full away from the terminal is asked there only.
+    const shown = approvalSummary(e.tool, e.input)
+    if (!shown.complete) return verdict
     const presence = await call($, 'GET', '/presence').catch(() => undefined)
     if (presence?.json.away !== true) return verdict
     const posted = await call($, 'POST', '/approvals', {
       sessionId,
       tool: e.tool,
-      summary: approvalSummary(e.tool, e.input),
+      summary: shown.summary,
       cwd,
       reason: verdict.reason ?? '',
       requestKey: e.tool_use_id,
@@ -659,6 +668,9 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       busy = true
       mainTurnId = e.turnId
+      if (turnItems.length > 0 && turnItems.every(id => cancelledIds.has(id))) {
+        void $.turn.abort({ turnId: e.turnId }).catch(() => undefined)
+      }
     }
     void reportActivity($).catch(() => undefined)
     return next(e)
