@@ -36,9 +36,9 @@ mac:
       arch: [arm64, x64]
     - target: zip
       arch: [arm64, x64]
-  # Signed ad hoc, without a developer certificate: macOS still warns at the first open (right
-  # click > Open, README), but the signature stays the same from one start to the next, so the
-  # firewall's answer for the phone page holds until the next update. The hardened runtime is
+  # Signed ad hoc, without a developer certificate: macOS still warns at the first open (Open
+  # Anyway in Privacy & Security, README), but the signature stays the same from one start to
+  # the next, so the firewall's answer for the phone page holds until the next update. The hardened runtime is
   # for notarization, which needs a certificate; with an ad hoc signature it would stop the app
   # loading its own native modules.
   identity: '-'

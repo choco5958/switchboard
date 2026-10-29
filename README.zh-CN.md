@@ -155,16 +155,25 @@ flowchart LR
 
 从 [Releases](https://github.com/choco5958/switchboard/releases/latest) 下载适合你系统的文件。应用自带 Node，无需另外安装。
 
-| 系统 | 文件 |
-| --- | --- |
-| macOS | Apple Silicon 用 `Switchboard-<版本>-mac-arm64.dmg`，Intel 用 `-mac-x64.dmg` |
-| Windows | `Switchboard-<版本>-win-x64.exe` (ARM 设备用 `-win-arm64.exe`) |
-| Linux | `.AppImage` (加上执行权限后直接运行) 或 `.deb` |
+#### macOS
 
-应用尚未进行代码签名，第一次打开时会出现警告。
+1. 下载适合芯片的文件：Apple Silicon (M1 及以后) 用 `Switchboard-<版本>-mac-arm64.dmg`，Intel 用 `-mac-x64.dmg`。在苹果菜单 > 关于本机的"芯片"一栏可以看到是哪一种。
+2. 打开 dmg，把 Switchboard 拖到"应用程序"文件夹。如果从其他位置打开，应用会先询问是否移动过去。
+3. 在"应用程序"文件夹中打开 Switchboard。应用还没有 Apple 签名，第一次会提示无法检查是否含有恶意软件。点"完成"。
+4. 打开系统设置 > 隐私与安全性，在下方的 Switchboard 一项中点"仍要打开"。输入密码，在接着出现的窗口中点"打开"。macOS 14 及更早版本也可以右键点击应用并选择"打开"。
 
-- macOS: 把应用移到"应用程序"文件夹，右键点击并选择"打开"，在弹出的窗口中再点一次"打开"。
-- Windows: 在"Windows 已保护你的电脑"窗口中点击"更多信息"，再点"仍要运行"。
+如果习惯用终端，也可以不做第 4 步，运行 `xattr -dr com.apple.quarantine /Applications/Switchboard.app` 后再打开应用。更新后第一次启动时如果询问钥匙串，点"始终允许"。
+
+#### Windows
+
+1. 下载 `Switchboard-<版本>-win.exe`，同时支持 x64 和 ARM。想要更小的文件，x64 下载 `-win-x64.exe`，ARM 下载 `-win-arm64.exe`。
+2. 运行下载的文件。出现"Windows 已保护你的电脑"窗口时，点"更多信息"，再点"仍要运行"。
+3. 在安装程序中选择安装文件夹并点"安装"。从开始菜单打开 Switchboard。
+
+#### Linux
+
+- AppImage：x64 下载 `Switchboard-<版本>-linux-x86_64.AppImage`，ARM 下载 `-linux-arm64.AppImage`。用 `chmod +x Switchboard-*.AppImage` 加上执行权限后运行。在 Ubuntu 22.04 及以后版本出现 FUSE 错误时，安装 `libfuse2` (24.04 为 `libfuse2t64`)。
+- deb：下载 `-linux-amd64.deb` 或 `-linux-arm64.deb`，用 `sudo apt install ./Switchboard-*.deb` 安装。只有 AppImage 能自动更新。
 
 应用每次启动时，都会按当前位置重写 `~/.claude-ide` 中的桥接启动文件和 `switchboard` 命令。`switchboard` 命令在 macOS 和 Linux 上位于 `~/.local/bin`，在 Windows 上位于 `%USERPROFILE%\.claude-ide\bin`，请把该文件夹加入 PATH。
 

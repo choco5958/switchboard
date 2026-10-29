@@ -155,16 +155,25 @@ flowchart LR
 
 [Releases](https://github.com/choco5958/switchboard/releases/latest)에서 운영체제에 맞는 파일을 받습니다. 앱에 Node가 들어 있어서 따로 설치할 것이 없습니다.
 
-| 운영체제 | 파일 |
-| --- | --- |
-| macOS | Apple Silicon은 `Switchboard-<버전>-mac-arm64.dmg`, Intel은 `-mac-x64.dmg` |
-| Windows | `Switchboard-<버전>-win-x64.exe` (ARM 기기는 `-win-arm64.exe`) |
-| Linux | `.AppImage`(실행 권한을 주고 바로 실행) 또는 `.deb` |
+#### macOS
 
-아직 코드 서명을 하지 않아서 처음 열 때 경고가 뜹니다.
+1. 칩에 맞는 파일을 받습니다. Apple Silicon(M1 이후)은 `Switchboard-<버전>-mac-arm64.dmg`, Intel은 `-mac-x64.dmg`입니다. 어느 쪽인지는 애플 메뉴 > 이 Mac에 관하여의 칩 항목에 나옵니다.
+2. dmg를 열고 Switchboard를 응용 프로그램 폴더로 끌어 옮깁니다. 다른 곳에서 열면 앱이 옮길지 먼저 묻습니다.
+3. 응용 프로그램 폴더에서 Switchboard를 엽니다. 아직 Apple 서명을 받지 않아서 처음에는 악성 코드를 확인할 수 없다는 창이 뜹니다. 완료를 누릅니다.
+4. 시스템 설정 > 개인정보 보호 및 보안을 열고 아래쪽의 Switchboard 항목에서 그래도 열기를 누릅니다. 암호를 입력하고 다시 뜨는 창에서 열기를 누릅니다. macOS 14 이전에는 앱을 우클릭 > 열기로도 열립니다.
 
-- macOS: 앱을 응용 프로그램 폴더로 옮긴 뒤 우클릭 > 열기를 누르고, 다시 뜨는 창에서 한 번 더 열기를 누릅니다.
-- Windows: "Windows의 PC 보호" 창에서 추가 정보 > 실행을 누릅니다.
+터미널을 쓴다면 4번 대신 `xattr -dr com.apple.quarantine /Applications/Switchboard.app`을 실행한 뒤 앱을 열어도 됩니다. 업데이트한 뒤 처음 켤 때 키체인 사용을 물으면 항상 허용을 누릅니다.
+
+#### Windows
+
+1. `Switchboard-<버전>-win.exe`를 받습니다. x64와 ARM 겸용입니다. 파일 크기를 줄이려면 x64는 `-win-x64.exe`, ARM은 `-win-arm64.exe`를 받습니다.
+2. 받은 파일을 실행합니다. "Windows의 PC 보호" 창이 뜨면 추가 정보 > 실행을 누릅니다.
+3. 설치 프로그램에서 설치 폴더를 고르고 설치를 누릅니다. 시작 메뉴에서 Switchboard를 엽니다.
+
+#### Linux
+
+- AppImage: x64는 `Switchboard-<버전>-linux-x86_64.AppImage`, ARM은 `-linux-arm64.AppImage`를 받습니다. `chmod +x Switchboard-*.AppImage`로 실행 권한을 주고 실행합니다. Ubuntu 22.04 이후에서 FUSE 오류가 나면 `sudo apt install libfuse2`(24.04는 `libfuse2t64`)를 설치합니다.
+- deb: `-linux-amd64.deb` 또는 `-linux-arm64.deb`를 받아 `sudo apt install ./Switchboard-*.deb`로 설치합니다. 자동 업데이트는 AppImage만 됩니다.
 
 앱은 켤 때마다 `~/.claude-ide`에 브리지 시작 파일과 `switchboard` 명령을 이 앱 위치에 맞춰 다시 씁니다. `switchboard` 명령은 macOS와 Linux에서 `~/.local/bin`에, Windows에서 `%USERPROFILE%\.claude-ide\bin`에 생기므로 그 폴더를 PATH에 넣습니다.
 

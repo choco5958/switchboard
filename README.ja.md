@@ -155,16 +155,25 @@ flowchart LR
 
 [Releases](https://github.com/choco5958/switchboard/releases/latest) から自分の OS に合うファイルを取得します。アプリに Node が入っているので、ほかにインストールするものはありません。
 
-| OS | ファイル |
-| --- | --- |
-| macOS | Apple Silicon は `Switchboard-<バージョン>-mac-arm64.dmg`、Intel は `-mac-x64.dmg` |
-| Windows | `Switchboard-<バージョン>-win-x64.exe` (ARM 機は `-win-arm64.exe`) |
-| Linux | `.AppImage` (実行権限を付けてそのまま実行) または `.deb` |
+#### macOS
 
-まだコード署名をしていないため、初めて開くときに警告が出ます。
+1. チップに合うファイルを取得します。Apple Silicon (M1 以降) は `Switchboard-<バージョン>-mac-arm64.dmg`、Intel は `-mac-x64.dmg` です。どちらかはアップルメニュー > この Mac についてのチップ欄でわかります。
+2. dmg を開き、Switchboard をアプリケーションフォルダーにドラッグします。ほかの場所で開くと、アプリが移動するかを先に尋ねます。
+3. アプリケーションフォルダーから Switchboard を開きます。まだ Apple の署名がないため、最初はマルウェアを確認できないという画面が出ます。完了を押します。
+4. システム設定 > プライバシーとセキュリティを開き、下のほうの Switchboard の項目で「このまま開く」を押します。パスワードを入力し、次の画面で開くを押します。macOS 14 以前では、アプリを右クリック > 開くでも開けます。
 
-- macOS: アプリをアプリケーションフォルダーに移してから右クリック > 開くを選び、表示された画面でもう一度開くを押します。
-- Windows: 「Windows によって PC が保護されました」の画面で詳細情報 > 実行を押します。
+ターミナルを使うなら、4 の代わりに `xattr -dr com.apple.quarantine /Applications/Switchboard.app` を実行してからアプリを開いてもかまいません。アップデート後の初回起動でキーチェーンの使用を尋ねられたら、常に許可を押します。
+
+#### Windows
+
+1. `Switchboard-<バージョン>-win.exe` を取得します。x64 と ARM の両方に対応します。サイズを抑えるなら x64 は `-win-x64.exe`、ARM は `-win-arm64.exe` を取得します。
+2. 取得したファイルを実行します。「Windows によって PC が保護されました」の画面が出たら、詳細情報 > 実行を押します。
+3. インストーラーでインストール先を選び、インストールを押します。スタートメニューから Switchboard を開きます。
+
+#### Linux
+
+- AppImage: x64 は `Switchboard-<バージョン>-linux-x86_64.AppImage`、ARM は `-linux-arm64.AppImage` を取得します。`chmod +x Switchboard-*.AppImage` で実行権限を付けて実行します。Ubuntu 22.04 以降で FUSE のエラーが出たら `sudo apt install libfuse2` (24.04 は `libfuse2t64`) をインストールします。
+- deb: `-linux-amd64.deb` または `-linux-arm64.deb` を取得し、`sudo apt install ./Switchboard-*.deb` でインストールします。自動アップデートは AppImage だけです。
 
 アプリは起動するたびに、ブリッジの起動ファイルと `switchboard` コマンドを `~/.claude-ide` にアプリの場所に合わせて書き直します。`switchboard` コマンドは macOS と Linux では `~/.local/bin`、Windows では `%USERPROFILE%\.claude-ide\bin` にできるので、そのフォルダーを PATH に加えます。
 

@@ -155,16 +155,25 @@ flowchart LR
 
 Download the file for your system from [Releases](https://github.com/choco5958/switchboard/releases/latest). The app carries its own Node, so there is nothing else to install.
 
-| System | File |
-| --- | --- |
-| macOS | `Switchboard-<version>-mac-arm64.dmg` for Apple Silicon, `-mac-x64.dmg` for Intel |
-| Windows | `Switchboard-<version>-win-x64.exe` (`-win-arm64.exe` on ARM devices) |
-| Linux | `.AppImage` (make it executable and run it) or `.deb` |
+#### macOS
 
-The app is not code-signed yet, so the first open shows a warning.
+1. Download the file for your chip: `Switchboard-<version>-mac-arm64.dmg` for Apple Silicon (M1 and later), `-mac-x64.dmg` for Intel. Apple menu > About This Mac shows which chip you have.
+2. Open the dmg and drag Switchboard into Applications. Opened from anywhere else, the app first offers to move itself there.
+3. Open Switchboard from Applications. It is not signed by Apple yet, so the first open says macOS cannot check it for malware. Click Done.
+4. Open System Settings > Privacy & Security, scroll down to the Switchboard entry and click Open Anyway. Enter your password, then click Open in the next dialog. On macOS 14 and earlier, right-click the app and choose Open instead.
 
-- macOS: move the app to Applications, right-click it and choose Open, then Open again in the dialog.
-- Windows: in the "Windows protected your PC" dialog, click More info, then Run anyway.
+From a terminal, `xattr -dr com.apple.quarantine /Applications/Switchboard.app` does the same as step 4. If the first start after an update asks for the keychain, click Always Allow.
+
+#### Windows
+
+1. Download `Switchboard-<version>-win.exe`, which covers both x64 and ARM. For a smaller download, take `-win-x64.exe` or `-win-arm64.exe`.
+2. Run it. In the "Windows protected your PC" dialog, click More info, then Run anyway.
+3. Pick the install folder and click Install. Open Switchboard from the Start menu.
+
+#### Linux
+
+- AppImage: download `Switchboard-<version>-linux-x86_64.AppImage` (x64) or `-linux-arm64.AppImage` (ARM). Make it executable with `chmod +x Switchboard-*.AppImage` and run it. If Ubuntu 22.04 or later reports a FUSE error, install `libfuse2` (`libfuse2t64` on 24.04).
+- deb: download `-linux-amd64.deb` or `-linux-arm64.deb` and install it with `sudo apt install ./Switchboard-*.deb`. Only the AppImage updates itself.
 
 At each start the app rewrites the bridge start files and the `switchboard` command in `~/.claude-ide` to match where it is. The `switchboard` command lands in `~/.local/bin` on macOS and Linux and in `%USERPROFILE%\.claude-ide\bin` on Windows; add that folder to your PATH.
 
