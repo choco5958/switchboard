@@ -41,7 +41,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 <tr>
 <td width="50%" valign="top">
 <h3>📱 While you are away</h3>
-<p>Decisions and Claude Code's permission asks reach your Telegram. Scheduled prompts run at the times you set.</p>
+<p>Answer decisions and Claude Code's permission asks from Telegram or your phone's browser. Scheduled prompts run at the times you set.</p>
 </td>
 <td width="50%" valign="top">
 <h3>🔍 Fix what you see</h3>
@@ -88,6 +88,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 
 - **Answer on Telegram**: when the app is closed, the screen is locked, or there has been no input for more than 5 minutes, decision questions go to your own Telegram bot. Answer with a button or a reply.
 - **Permission relay**: in the same situations, Claude Code's permission asks also come to the app and to Telegram. Allowing from Telegram takes a second tap. At your desk, the terminal asks as usual.
+- **Phone browser**: from a phone on the same Wi-Fi (or Tailscale), answer decisions, allow or deny permission asks, see tasks and write to sessions. There is nothing to install; add it to the home screen to open it like an app.
 - **Scheduled prompts**: daily, weekdays, every N minutes, or once, a prompt goes to a project's session. If no session is connected, the app opens a `+ Claude` terminal. Runs with nothing to report send no notification.
 
 ### Fixing what you see (live debugging)
@@ -217,6 +218,14 @@ Sessions started after the install connect to the bridge. If the bridge is not r
 
 The bridge asks Telegram's servers for new messages itself, so there is no port to open.
 
+### Phone access
+
+1. In Settings > Phone access, turn on `Turn on phone access`. If macOS asks whether to accept incoming connections, choose Allow.
+2. Pick the address the phone opens, type a name for the phone and press `Show a QR code`.
+3. Scan the QR code with the phone's camera and open it. Add it to the home screen from the browser's share menu to open it like an app.
+
+Each phone connects on its own, and `Disconnect` in Settings ends one at any time. To use it away from home or the office, install [Tailscale](https://tailscale.com) on the computer and the phone, and show the QR code for the Tailscale address (100.x.x.x). The phone page sends no notifications, so connect Telegram as well if you want to hear about new questions at once.
+
 ### Scheduled prompts
 
 In Settings > Scheduled prompts, set a name, project, prompt and schedule. Intervals are 5 minutes or longer. A run is skipped while the previous one is still going. For runs missed while the app or bridge was off, you choose whether to run them once on startup.
@@ -267,6 +276,7 @@ pnpm test; switchboard fire w3 "tests finished: exit code $?"
 - A dev server command a session named through `open_in_ide` runs only after the app shows the command and its folder and you confirm, the first time and whenever it changes.
 - Remote approvals show the command first. Asks that cannot be shown whole (cut, hidden characters, edits in several places) are asked in the terminal only, and asks with masked values cannot be allowed from Telegram.
 - On Windows the bridge opens a port on 127.0.0.1 only and answers only requests carrying the token it makes at each start. Requests from web pages are refused.
+- Phone access stays closed until you turn it on. Then it answers only this computer, the private network and Tailscale addresses. Every request and answer is encrypted with the key each phone got from its QR code (ChaCha20-Poly1305), and each request carries its time and a value used once, so it cannot be sent again. Someone else on the Wi-Fi can neither read it nor answer in your place. A phone can only answer decisions and permission asks, write to sessions and read the view.
 - The work log is deleted after 7 days. Your account email is shown masked and is never sent anywhere.
 
 ## Development

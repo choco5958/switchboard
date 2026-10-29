@@ -4,6 +4,7 @@
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { connect } from 'node:net'
+import { Readable } from 'node:stream'
 import { DatabaseSync } from 'node:sqlite'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
@@ -36,7 +37,8 @@ import {
 } from './peer.ts'
 import { nextRun, parseSchedule, type Schedule } from './schedule.ts'
 import { TELEGRAM_API, createTelegram } from './telegram.ts'
-import { eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
+import { MOBILE_PORT, createMobile } from './mobile.ts'
+import { DICTS, eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, taskStatusLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
 
 export type Option = { key: string; label: string }
 
@@ -335,12 +337,14 @@ export function systemLocale(): string {
 export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch; token?: string; appKey?: string }
 
 // What only the person may do, through the app: answer a permission ask, say they are away,
-// set up Telegram, schedule prompts, change settings, control sessions and read their
+// set up Telegram or phones, schedule prompts, change settings, control sessions and read their
 // transcripts. Any program of the same user reaches the bridge, a session with a shell too;
 // without the app's key these refuse. Answers to decision questions, messages and waits stay
 // open to the switchboard command.
 export function appOnly(method: string, path: string): boolean {
   if (path === '/telegram' || path.startsWith('/telegram/') || path === '/app/check') return true
+  // Phones: turning them on, pairing and the view they read (bridge/mobile.ts).
+  if (path === '/mobile' || path.startsWith('/mobile/')) return true
   if (method === 'GET') return /^\/commands\/\d+$/.test(path)
   return (
     /^\/approvals\/\d+\/answer$/.test(path) ||
@@ -422,8 +426,11 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   }
 
   const now = () => Date.now()
+  // Phones hear that something changed (createMobile below).
+  let phonesChanged = () => {}
   const changed = (type: string) => {
     for (const res of watchers) sseSend(res, 'change', { type })
+    phonesChanged()
   }
 
   const projectOf = (sessionId: string): string => {
@@ -932,6 +939,97 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       .all(),
   })
 
+  // Feature area: phones (bridge/mobile.ts). A phone's decrypted request runs through handle()
+  // like any other, marked as the phone's so it may answer what only the person may.
+  const phoneRequests = new WeakSet<IncomingMessage>()
+  const mobileSetting = (): { enabled: boolean; port: number } => {
+    const row = db.prepare("select value from settings where key = 'mobile'").get() as { value: string } | undefined
+    const saved = (row ? JSON.parse(row.value) : {}) as { enabled?: unknown; port?: unknown }
+    return { enabled: saved.enabled === true, port: Number.isInteger(saved.port) ? (saved.port as number) : MOBILE_PORT }
+  }
+  const viaPhone = (method: string, path: string, body: unknown): Promise<{ status: number; json: unknown }> =>
+    new Promise(resolve => {
+      const req = Readable.from([Buffer.from(JSON.stringify(body ?? {}))]) as unknown as IncomingMessage
+      Object.assign(req, { method, url: path, headers: {} })
+      phoneRequests.add(req)
+      let status = 200
+      const res = {
+        headersSent: false,
+        writeHead(code: number) {
+          status = code
+          this.headersSent = true
+          return this
+        },
+        end(text?: string) {
+          let json: unknown = {}
+          try {
+            json = text ? JSON.parse(text) : {}
+          } catch {
+            json = { error: String(text) }
+          }
+          resolve({ status, json })
+        },
+      }
+      handle(req, res as unknown as ServerResponse).catch((error: unknown) => {
+        const message = error instanceof BridgeError ? say(error.key) : say('bridge.failed', { error: error instanceof Error ? error.message : String(error) })
+        resolve({ status: 400, json: { error: message } })
+      })
+    })
+  // What a phone shows: what waits for the person, the tasks and the sessions, with labels in the app's language.
+  const phoneView = () => {
+    const lang = langNow()
+    const live = liveSessions()
+    const sessions = (db.prepare('select * from sessions order by last_seen desc limit 60').all() as { id: string; project: string; cwd: string; last_seen: number }[])
+      .map(s => ({ id: s.id, label: sessionLabel(s.id), project: s.project, cwd: s.cwd, live: live.includes(s.id), lastSeen: s.last_seen }))
+      .sort((a, b) => Number(b.live) - Number(a.live))
+    const questions = (db.prepare("select * from questions where status in ('pending', 'held') order by id").all() as QuestionRow[]).map(q => ({
+      id: q.id,
+      sessionId: q.session_id,
+      project: q.project,
+      task: q.task_title,
+      question: q.question,
+      body: q.body,
+      options: JSON.parse(q.options) as Option[],
+      recommend: q.recommend,
+      reason: q.reason,
+      held: q.status === 'held',
+      createdAt: q.created_at,
+    }))
+    const approvals = (db.prepare("select * from approvals where status = 'pending' order by id").all() as ApprovalRow[]).map(a => ({
+      id: a.id,
+      sessionId: a.session_id,
+      project: a.project,
+      tool: a.tool,
+      summary: a.summary,
+      reason: a.reason,
+      cwd: a.cwd,
+      createdAt: a.created_at,
+    }))
+    const tasks = (db.prepare("select * from tasks where status != '보관' order by updated_at desc limit 60").all() as { id: number; session_id: string; project: string; title: string; stage: string; status: string; now: string; updated_at: number }[]).map(t => ({
+      id: t.id,
+      sessionId: t.session_id,
+      project: t.project,
+      title: t.title,
+      stage: stageLabel(t.stage, lang),
+      status: taskStatusLabel(t.status, lang),
+      running: t.status === '하는 중',
+      now: t.now,
+      live: live.includes(t.session_id),
+      updatedAt: t.updated_at,
+    }))
+    return { lang, now: now(), questions, approvals, tasks, sessions }
+  }
+  const mobile = createMobile({
+    db,
+    inner: viaPhone,
+    strings: () => {
+      const lang = langNow()
+      return { lang, ...Object.fromEntries(Object.entries(DICTS[lang]).filter(([key]) => key.startsWith('mobile.page.'))) }
+    },
+  })
+  phonesChanged = mobile.changed
+  if (mobileSetting().enabled) void mobile.start(mobileSetting().port)
+
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // A path is taken as written: no dot segments, which URL would resolve into another route
     // (a tool argument such as close_wait's id ends up in the path).
@@ -943,7 +1041,9 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     // Shared helpers (dev targets) word their errors through the module language.
     setLang(langNow())
     // Over TCP only the token opens the bridge, and a web page (it sends Origin) never does.
-    if (options.token !== undefined) {
+    // A phone's request (bridge/mobile.ts): it proved itself with its own key and runs in-process.
+    const fromPhone = phoneRequests.has(req)
+    if (options.token !== undefined && !fromPhone) {
       if (req.headers.origin !== undefined) return send(res, 403, { error: 'forbidden' })
       // Only this machine's loopback by name: a page that rebound a name to 127.0.0.1 sends its own.
       if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host ?? '')) return send(res, 403, { error: 'forbidden' })
@@ -953,7 +1053,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     // The installed app's start script names its version: an app updated since replaces this bridge.
     // `app`: whether the app started it with its key; one started by a mod has none.
     if (method === 'GET' && path === '/health') return send(res, 200, { ok: true, version: process.env.SWITCHBOARD_VERSION ?? '', pid: process.pid, app: options.appKey !== undefined })
-    if (appOnly(method, path) && !(options.appKey !== undefined && sameSecret(String(req.headers[APP_HEADER] ?? ''), options.appKey))) {
+    if (appOnly(method, path) && !fromPhone && !(options.appKey !== undefined && sameSecret(String(req.headers[APP_HEADER] ?? ''), options.appKey))) {
       return send(res, 403, { error: say('bridge.appOnly') })
     }
     if (method === 'GET' && path === '/app/check') return send(res, 200, { ok: true })
@@ -1005,7 +1105,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         const body = await readJson(req)
         const decision = str(body.decision)
         if (!['allow', 'deny', 'terminal'].includes(decision)) return send(res, 400, { error: say('bridge.needAnswer') })
-        if (!answerApproval(row, decision as 'allow' | 'deny' | 'terminal', 'app')) return send(res, 409, { error: say('bridge.alreadyAnswered', { id: row.id }) })
+        if (!answerApproval(row, decision as 'allow' | 'deny' | 'terminal', fromPhone ? 'mobile' : 'app')) return send(res, 409, { error: say('bridge.alreadyAnswered', { id: row.id }) })
         return send(res, 200, { id: row.id, status: decision })
       }
     }
@@ -1019,6 +1119,33 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     }
 
     // Telegram (bridge/telegram.ts), from the app's settings. The token never leaves the bridge.
+    // Phones (bridge/mobile.ts): on or off, pairing one, forgetting one, and what a phone reads.
+    if (method === 'GET' && path === '/mobile') return send(res, 200, { ...mobile.status(), enabled: mobileSetting().enabled })
+    if (method === 'POST' && path === '/mobile') {
+      const body = await readJson(req)
+      const enabled = body.enabled === true
+      // `port`: another than MOBILE_PORT, kept for later starts (0 picks a free one, for tests).
+      const port = Number.isInteger(body.port) && (body.port as number) >= 0 && (body.port as number) < 65536 ? (body.port as number) : mobileSetting().port
+      db.prepare("insert into settings (key, value) values ('mobile', ?) on conflict (key) do update set value = excluded.value").run(JSON.stringify({ enabled, port }))
+      if (enabled) await mobile.start(mobileSetting().port)
+      else await mobile.stop()
+      changed('mobile')
+      return send(res, 200, { ...mobile.status(), enabled })
+    }
+    if (method === 'POST' && path === '/mobile/pair') {
+      const body = await readJson(req)
+      const paired = mobile.pair(str(body.name).trim())
+      changed('mobile')
+      return send(res, 200, paired)
+    }
+    const phoneOne = path.match(/^\/mobile\/devices\/(\d+)\/revoke$/)
+    if (method === 'POST' && phoneOne) {
+      if (!mobile.revoke(Number(phoneOne[1]))) return send(res, 404, { error: say('bridge.notFound') })
+      changed('mobile')
+      return send(res, 200, { ok: true })
+    }
+    if (method === 'GET' && path === '/mobile/view') return send(res, 200, phoneView())
+
     if (method === 'GET' && path === '/telegram') return send(res, 200, telegram.status())
     if (method === 'POST' && path === '/telegram/token') {
       const body = await readJson(req)
@@ -1891,7 +2018,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     })
   })
 
-  return { server, db, prune, tickRoutines, checkNoReplies, close: () => { shuttingDown = true; telegram.stop(); clearInterval(pruning); clearInterval(releasing); clearInterval(routineTimer); server.close(); db.close() } }
+  return { server, db, prune, tickRoutines, checkNoReplies, close: () => { shuttingDown = true; telegram.stop(); void mobile.stop(); clearInterval(pruning); clearInterval(releasing); clearInterval(routineTimer); server.close(); db.close() } }
 }
 
 function sameSecret(given: string, expected: string): boolean {

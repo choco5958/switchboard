@@ -667,6 +667,15 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .telegram-steps { margin: 4px 0 8px 18px; }
 .telegram-token { display: flex; gap: 8px; }
 .telegram-token input { flex: 1; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+.mobile-pair { margin: 6px 0 8px; }
+.mobile-pair select { margin-left: 4px; padding: 2px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+.mobile-add { display: flex; gap: 8px; margin: 8px 0; }
+.mobile-add input { flex: 1; max-width: 260px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+.mobile-shown { display: flex; gap: 14px; align-items: flex-start; margin: 10px 0; }
+.mobile-qr { width: 196px; height: 196px; flex: none; border-radius: 8px; }
+.mobile-devices { list-style: none; margin: 4px 0 0; padding: 0; }
+.mobile-devices li { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.mobile-devices li > span:first-child { min-width: 120px; }
 
 .approval-item { border: 1px solid var(--warn); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
 .approval-summary { margin: 6px 0; padding: 6px; max-height: 6.5em; overflow: hidden; white-space: pre-wrap; word-break: break-all; font-family: var(--mono); font-size: 12px; background: var(--bg); border-radius: 4px; }

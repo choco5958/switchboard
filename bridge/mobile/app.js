@@ -1,0 +1,383 @@
+// The phone page (bridge/mobile.ts serves it). The QR code the app shows opens this page
+// with "#pair=<id>.<key>"; the page keeps that pair in this browser and drops it from the
+// address. Every request and answer is sealed with the key (aead.js), so the network sees
+// neither. "/events" only says that something changed; the page then reads the view again.
+
+import { fromB64, fromUtf8, open, seal, toB64, utf8 } from './aead.js'
+
+const STORE = 'switchboard-phone'
+const app = document.getElementById('app')
+
+let words = {}
+let pairing = null
+let offset = 0
+let view = null
+let tab = 'decisions'
+let state = 'loading' // loading | unpaired | revoked | offline | ready
+let notice = null
+let noticeTimer = 0
+let armed = null
+let armTimer = 0
+let target = ''
+let renderLater = false
+const picks = new Map()
+const memos = new Map()
+const drafts = new Map()
+
+const say = (key, vars = {}) => String(words[`mobile.page.${key}`] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ''))
+
+// el('div', { className, onclick, ... }, ...children): strings become text, never markup.
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag)
+  for (const [name, value] of Object.entries(props)) {
+    if (value === undefined || value === null || value === false) continue
+    if (name.startsWith('on')) node.addEventListener(name.slice(2), value)
+    else if (name in node) node[name] = value
+    else node.setAttribute(name, String(value))
+  }
+  for (const child of children.flat()) if (child !== null && child !== undefined && child !== false) node.append(child instanceof Node ? child : String(child))
+  return node
+}
+
+function readPairing() {
+  const fragment = new URLSearchParams(location.hash.slice(1)).get('pair')
+  if (fragment) {
+    const [id, key] = fragment.split('.')
+    try {
+      localStorage.setItem(STORE, JSON.stringify({ id: Number(id), key }))
+    } catch {
+      // A browser without storage keeps the pair for this visit only.
+      pairing = { id: Number(id), key }
+    }
+    history.replaceState(null, '', location.pathname)
+  }
+  try {
+    return JSON.parse(localStorage.getItem(STORE) ?? 'null') ?? pairing
+  } catch {
+    return pairing
+  }
+}
+
+function forget() {
+  try {
+    localStorage.removeItem(STORE)
+  } catch {
+    // Nothing kept.
+  }
+  pairing = null
+}
+
+async function api(method, path, body, retried = false) {
+  const key = fromB64(pairing.key)
+  const nonce = crypto.getRandomValues(new Uint8Array(12))
+  const n = toB64(nonce)
+  const plain = utf8(JSON.stringify({ t: Date.now() + offset, method, path, body }))
+  const c = toB64(seal(key, nonce, plain, utf8(`sb1:req:${pairing.id}`)))
+  const res = await fetch('api', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ d: pairing.id, n, c }) })
+  if (res.status === 401) {
+    const error = new Error('revoked')
+    error.revoked = true
+    throw error
+  }
+  if (res.status === 409 && !retried) {
+    // The phone's clock is off: take the computer's and try once more.
+    offset = (await res.json()).now - Date.now()
+    return api(method, path, body, true)
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const sealed = await res.json()
+  const opened = open(key, fromB64(sealed.n), fromB64(sealed.c), utf8(`sb1:res:${pairing.id}:${n}`))
+  if (!opened) throw new Error('bad reply')
+  return JSON.parse(fromUtf8(opened))
+}
+
+function flash(text, bad = false) {
+  notice = { text, bad }
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => {
+    notice = null
+    render(true)
+  }, 2600)
+  render()
+}
+
+async function act(method, path, body, done) {
+  try {
+    const result = await api(method, path, body)
+    if (result.status >= 400) return flash(say('failed', { error: result.json?.error ?? result.status }), true)
+    if (done) flash(done)
+  } catch (error) {
+    if (error.revoked) return lost()
+    flash(say('failed', { error: error.message }), true)
+  }
+  await refresh()
+}
+
+function lost() {
+  forget()
+  state = 'revoked'
+  render()
+}
+
+let refreshing = null
+async function refresh() {
+  if (!pairing) return
+  if (refreshing) return refreshing
+  refreshing = (async () => {
+    try {
+      const result = await api('GET', '/mobile/view')
+      if (result.status < 400) {
+        view = result.json
+        state = 'ready'
+      }
+    } catch (error) {
+      if (error.revoked) return lost()
+      state = 'offline'
+    } finally {
+      refreshing = null
+    }
+    render(true)
+  })()
+  return refreshing
+}
+
+// --- drawing ---
+
+const typing = () => ['TEXTAREA', 'INPUT'].includes(document.activeElement?.tagName ?? '')
+
+// `soft`: a redraw nobody asked for (new data, a notice going away). It would take the text box
+// from under the person's fingers, so it waits until they leave it. A tap redraws at once.
+function render(soft = false) {
+  if (soft && typing() && state === 'ready') {
+    renderLater = true
+    return
+  }
+  renderLater = false
+  app.replaceChildren(...draw())
+}
+
+function draw() {
+  if (state === 'unpaired' || state === 'revoked') {
+    return [el('div', { className: 'welcome' }, el('img', { src: 'icon.png', alt: '' }), el('h1', {}, 'Switchboard'), el('p', {}, say(state === 'revoked' ? 'revoked' : 'notPaired')))]
+  }
+  const counts = { decisions: view?.questions.length ?? 0, approvals: view?.approvals.length ?? 0, tasks: view?.tasks.filter(t => t.running).length ?? 0, sessions: view?.sessions.filter(s => s.live).length ?? 0 }
+  const top = el(
+    'header',
+    { className: 'top' },
+    el('div', { className: 'brand' }, el('img', { src: 'icon.png', alt: '' }), el('h1', {}, 'Switchboard'), el('span', { className: `dot ${state === 'ready' ? 'on' : state === 'offline' ? 'off' : ''}` })),
+    el(
+      'nav',
+      { className: 'tabs' },
+      ['decisions', 'approvals', 'tasks', 'sessions'].map(name =>
+        el(
+          'button',
+          { className: tab === name ? 'on' : '', onclick: () => ((tab = name), render()) },
+          say(name),
+          el('span', { className: `count ${counts[name] ? '' : 'zero'}` }, String(counts[name])),
+        ),
+      ),
+    ),
+  )
+  const parts = [top]
+  if (state === 'offline') parts.push(el('div', { className: 'banner' }, say('offline')))
+  const main = el('main')
+  if (view) {
+    const body = { decisions: drawDecisions, approvals: drawApprovals, tasks: drawTasks, sessions: drawSessions }[tab]()
+    main.append(...body)
+    main.append(el('footer', {}, say('refreshed', { time: new Date(view.now).toLocaleTimeString(view.lang, { hour: '2-digit', minute: '2-digit' }) }), el('br'), say('homeHint')))
+  }
+  parts.push(main)
+  if (notice) parts.push(el('div', { className: `notice ${notice.bad ? 'bad' : ''}` }, notice.text))
+  return parts
+}
+
+const empty = key => [el('div', { className: 'empty' }, say(key))]
+
+function where(item) {
+  return el('div', { className: 'meta' }, el('span', { className: 'chip accent' }, item.project), item.task ? el('span', {}, item.task) : null)
+}
+
+function drawDecisions() {
+  if (view.questions.length === 0) return empty('noDecisions')
+  return view.questions.map(q => {
+    const picked = picks.get(q.id) ?? ''
+    const memo = memos.get(q.id) ?? ''
+    return el(
+      'section',
+      { className: 'card' },
+      where(q),
+      el('p', { className: 'title' }, q.question),
+      q.body ? el('p', { className: 'body' }, q.body) : null,
+      q.recommend ? el('p', { className: 'small' }, say('recommend', { key: q.recommend })) : null,
+      q.reason ? el('p', { className: 'small' }, say('reason', { reason: q.reason })) : null,
+      q.options.length > 0
+        ? el(
+            'div',
+            { className: 'options' },
+            q.options.map(o =>
+              el(
+                'button',
+                {
+                  className: `option ${o.key === q.recommend ? 'rec' : ''} ${o.key === picked ? 'picked' : ''}`,
+                  onclick: () => (picks.set(q.id, o.key === picked ? '' : o.key), render()),
+                },
+                el('span', { className: 'key' }, o.key),
+                el('span', {}, o.label),
+              ),
+            ),
+          )
+        : null,
+      el('textarea', { placeholder: say('memo'), value: memo, oninput: e => memos.set(q.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
+      el(
+        'div',
+        { className: 'actions' },
+        el(
+          'button',
+          {
+            className: 'btn primary',
+            onclick: () => {
+              const choice = picks.get(q.id) ?? ''
+              const text = (memos.get(q.id) ?? '').trim()
+              if (!choice && !text) return
+              picks.delete(q.id)
+              memos.delete(q.id)
+              void act('POST', `/questions/${q.id}/answer`, { choice, memo: text }, say('answered'))
+            },
+          },
+          say('send'),
+        ),
+        q.held ? el('span', { className: 'chip warn' }, say('held')) : el('button', { className: 'btn', onclick: () => void act('POST', `/questions/${q.id}/hold`, {}) }, say('hold')),
+      ),
+    )
+  })
+}
+
+function drawApprovals() {
+  if (view.approvals.length === 0) return empty('noApprovals')
+  return view.approvals.map(a =>
+    el(
+      'section',
+      { className: 'card' },
+      el('div', { className: 'meta' }, el('span', { className: 'chip accent' }, a.project), el('span', { className: 'chip' }, a.tool)),
+      el('pre', {}, a.summary),
+      a.reason ? el('p', { className: 'small' }, say('reason', { reason: a.reason })) : null,
+      a.cwd ? el('p', { className: 'small' }, a.cwd) : null,
+      el(
+        'div',
+        { className: 'actions' },
+        el(
+          'button',
+          {
+            className: `btn ${armed === a.id ? 'armed' : 'allow'}`,
+            // Allowing runs the command: the first tap only arms the button for five seconds.
+            onclick: () => {
+              if (armed !== a.id) {
+                armed = a.id
+                clearTimeout(armTimer)
+                armTimer = setTimeout(() => ((armed = null), render(true)), 5000)
+                return render()
+              }
+              armed = null
+              void act('POST', `/approvals/${a.id}/answer`, { decision: 'allow' })
+            },
+          },
+          armed === a.id ? say('allowAgain') : say('allow'),
+        ),
+        el('button', { className: 'btn deny', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }) }, say('deny')),
+      ),
+      el('div', { className: 'actions' }, el('button', { className: 'btn', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'terminal' }) }, say('terminal'))),
+    ),
+  )
+}
+
+function drawTasks() {
+  if (view.tasks.length === 0) return empty('noTasks')
+  return view.tasks.map(t =>
+    el(
+      'section',
+      { className: 'card' },
+      el(
+        'div',
+        { className: 'meta' },
+        el('span', { className: 'chip accent' }, t.project),
+        el('span', { className: `chip ${t.running ? 'good' : ''}` }, t.status),
+        el('span', { className: 'chip' }, t.stage),
+        el('span', { className: `dot ${t.live ? 'on' : ''}` }),
+      ),
+      el('p', { className: 'title' }, t.title),
+      t.now ? el('p', { className: 'small' }, t.now) : null,
+    ),
+  )
+}
+
+function drawSessions() {
+  if (view.sessions.length === 0) return empty('noSessions')
+  const rows = view.sessions.map(s => {
+    const row = el(
+      'button',
+      { className: 'row', onclick: () => ((target = target === s.id ? '' : s.id), render()) },
+      el('span', { className: `dot ${s.live ? 'on' : ''}` }),
+      el('span', { className: 'grow' }, el('div', { className: 'name' }, s.label), el('div', { className: 'small' }, s.cwd)),
+      el('span', { className: 'chip' }, s.live ? say('live') : say('notLive')),
+    )
+    if (target !== s.id) return [row]
+    const composer = el(
+      'div',
+      { className: 'composer' },
+      el('textarea', { placeholder: say('message'), value: drafts.get(s.id) ?? '', oninput: e => drafts.set(s.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
+      el(
+        'div',
+        { className: 'actions' },
+        el(
+          'button',
+          {
+            className: 'btn primary',
+            onclick: () => {
+              const text = (drafts.get(s.id) ?? '').trim()
+              if (!text) return
+              drafts.delete(s.id)
+              void act('POST', '/outbox', { sessionId: s.id, text }, say('messageSent'))
+            },
+          },
+          say('send'),
+        ),
+      ),
+    )
+    return [row, composer]
+  })
+  return [el('section', { className: 'card list' }, rows.flat())]
+}
+
+// --- start ---
+
+// A new QR code opened over this page only changes the fragment: start again with its pair.
+addEventListener('hashchange', () => location.hash.includes('pair=') && location.reload())
+
+async function start() {
+  try {
+    words = await (await fetch('strings')).json()
+    document.documentElement.lang = words.lang ?? 'en'
+  } catch {
+    // The words come with the first view that loads.
+  }
+  pairing = readPairing()
+  if (!pairing) {
+    state = 'unpaired'
+    return render()
+  }
+  render()
+  await refresh()
+  const events = new EventSource(`events?d=${encodeURIComponent(pairing.id)}`)
+  let soon = 0
+  events.addEventListener('changed', () => {
+    clearTimeout(soon)
+    soon = setTimeout(() => void refresh(), 250)
+  })
+  events.addEventListener('error', () => {
+    if (state === 'ready') void refresh()
+  })
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && void refresh())
+  setInterval(() => document.visibilityState === 'visible' && void refresh(), 20_000)
+}
+
+void start()

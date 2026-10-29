@@ -39,6 +39,7 @@ describe('bridgePathAllowed', () => {
     expect(bridgePathAllowed('/tasks/3/restore')).toBe(true)
     expect(bridgePathAllowed('/tasks/archive-done')).toBe(true)
     expect(bridgePathAllowed('/commands/12')).toBe(true)
+    expect(bridgePathAllowed('/mobile/devices/2/revoke')).toBe(true)
   })
   it('rejects routes outside the list', () => {
     expect(bridgePathAllowed('/outbox')).toBe(false)

@@ -17,6 +17,7 @@ extraResources:
     to: node
     filter:
       - bridge/*.ts
+      - bridge/mobile/**
       - mcp/server.ts
       - scripts/switchboard.ts
       - mod/.claude-plugin/plugin.json
