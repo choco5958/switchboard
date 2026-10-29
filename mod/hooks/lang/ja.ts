@@ -108,6 +108,7 @@ export const ja: Dict = {
   'tool.askFailed': '質問を登録できませんでした: {error}。代わりに AskUserQuestion で尋ねてください。',
   'tool.askFailedPlain': '質問を登録できませんでした。代わりに AskUserQuestion で尋ねてください。',
   'tool.asked': 'Q{id} として登録しました。回答を待たずに別の作業を続けてください。',
+  'tool.askedAgain': '同じ質問がすでに Q{id} として登録されています。もう一度登録せず、別の作業を続けてください。',
   'tool.taskFailed': 'タスクを更新できませんでした: {error}',
   'tool.taskFailedPlain': 'タスクを更新できませんでした。',
   'tool.taskDone': 'タスク「{title}」を更新しました。',

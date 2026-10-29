@@ -222,6 +222,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
   ])
   addColumns('sessions', [['usage', "text not null default '{}'"]])
   addColumns('questions', [['turn_id', "text not null default ''"]])
+  addColumns('questions', [['request_key', "text not null default ''"]])
   // Which agent CLI a session runs in (sessions before this were all Claude Code)
   // and the app terminal it runs in, when it does.
   addColumns('sessions', [['agent', "text not null default 'claude'"], ['terminal', "text not null default ''"]])
@@ -533,14 +534,27 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
         .map(o => ({ key: str(o.key).trim(), label: str(o.label).trim() }))
         .filter(o => o.key && o.label)
       const taskTitle = str(body.taskTitle)
+      // One question, asked once. The same call seen again (its tool_use_id) gets its
+      // question back, answered or not; the same question asked again while the first
+      // still waits (a model retrying, or asking after a compaction) gets the first.
+      const requestKey = str(body.requestKey)
+      const same = db
+        .prepare(
+          `select id from questions where session_id = ? and (
+             (? != '' and request_key = ?)
+             or (status in ('pending', 'held') and question = ? and options = ?))
+           order by id limit 1`,
+        )
+        .get(sessionId, requestKey, requestKey, question, JSON.stringify(clean)) as { id: number } | undefined
+      if (same) return send(res, 200, { id: same.id, duplicate: true })
       const result = db
         .prepare(
-          `insert into questions (session_id, project, task_title, question, body, options, recommend, reason, created_at, turn_id)
-           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `insert into questions (session_id, project, task_title, question, body, options, recommend, reason, created_at, turn_id, request_key)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           sessionId, projectOf(sessionId), taskTitle, question, str(body.body),
-          JSON.stringify(clean), str(body.recommend), str(body.reason), now(), str(body.turnId),
+          JSON.stringify(clean), str(body.recommend), str(body.reason), now(), str(body.turnId), requestKey,
         )
       const owner = taskTitle ? taskByTitle(sessionId, taskTitle) : undefined
       if (owner) revive(owner.id)

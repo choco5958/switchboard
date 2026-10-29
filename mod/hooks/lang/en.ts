@@ -111,6 +111,7 @@ export const en: Dict = {
   'tool.askFailed': 'Could not post the question: {error}. Ask with AskUserQuestion instead.',
   'tool.askFailedPlain': 'Could not post the question. Ask with AskUserQuestion instead.',
   'tool.asked': 'Posted as Q{id}. Do not wait for the answer; carry on with other work.',
+  'tool.askedAgain': 'The same question is already up as Q{id}. Do not ask it again; carry on with other work.',
   'tool.taskFailed': 'Could not update the task: {error}',
   'tool.taskFailedPlain': 'Could not update the task.',
   'tool.taskDone': 'Updated task "{title}".',

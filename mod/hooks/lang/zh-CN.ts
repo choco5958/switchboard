@@ -108,6 +108,7 @@ export const zhCN: Dict = {
   'tool.askFailed': '无法提交问题：{error}。请改用 AskUserQuestion 询问。',
   'tool.askFailedPlain': '无法提交问题。请改用 AskUserQuestion 询问。',
   'tool.asked': '已提交为 Q{id}。不要等待回答，继续其他工作。',
+  'tool.askedAgain': '同一问题已作为 Q{id} 提交。不要再次提交，继续其他工作。',
   'tool.taskFailed': '无法更新任务：{error}',
   'tool.taskFailedPlain': '无法更新任务。',
   'tool.taskDone': '已更新任务“{title}”。',

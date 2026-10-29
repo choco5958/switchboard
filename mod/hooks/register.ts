@@ -413,9 +413,10 @@ export const register: Register = on => {
       recommend: e.recommend,
       reason: e.reason,
       turnId: mainTurnId,
+      requestKey: e.tool_use_id,
     }).catch((error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }))
     if (!reply.ok) return { result: t(currentLang(), 'tool.askFailed', { error: String(reply.json.error) }) }
-    return { result: t(currentLang(), 'tool.asked', { id: String(reply.json.id) }) }
+    return { result: t(currentLang(), reply.json.duplicate ? 'tool.askedAgain' : 'tool.asked', { id: String(reply.json.id) }) }
   }).catch(() => ({ result: t(currentLang(), 'tool.askFailedPlain') }))
 
   on('tool.call', { tool: 'mcp__ide-bridge__set_task' }, async ($, e) => {

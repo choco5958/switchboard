@@ -116,6 +116,7 @@ export const ko = {
   'tool.askFailed': '질문을 올리지 못했습니다: {error}. AskUserQuestion으로 대신 물어보세요.',
   'tool.askFailedPlain': '질문을 올리지 못했습니다. AskUserQuestion으로 대신 물어보세요.',
   'tool.asked': 'Q{id}로 올렸습니다. 답을 기다리지 말고 다른 작업을 계속하세요.',
+  'tool.askedAgain': '같은 질문이 이미 Q{id}로 올라가 있습니다. 다시 올리지 말고 다른 작업을 계속하세요.',
   'tool.taskFailed': '작업을 갱신하지 못했습니다: {error}',
   'tool.taskFailedPlain': '작업을 갱신하지 못했습니다.',
   'tool.taskDone': '작업 "{title}"을 갱신했습니다.',

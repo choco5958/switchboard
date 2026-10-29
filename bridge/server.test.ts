@@ -84,6 +84,21 @@ test('a session is live while its delivery stream is open', async () => {
   assert.ok(!(await call('GET', '/state')).json.live.includes('live-1'))
 })
 
+test('the same question is posted once: by its call id, or while the first still waits', async () => {
+  await call('POST', '/sessions', { id: 'dup-1', cwd: '/work/dup' })
+  const ask = (extra: object) =>
+    call('POST', '/questions', { sessionId: 'dup-1', question: '캐시를 지울까', options: [{ key: 'a', label: '예' }], ...extra })
+  const first = (await ask({ requestKey: 'toolu_1' })).json
+  assert.equal(first.duplicate, undefined)
+  assert.deepEqual((await ask({ requestKey: 'toolu_1' })).json, { id: first.id, duplicate: true })
+  assert.deepEqual((await ask({ requestKey: 'toolu_2' })).json, { id: first.id, duplicate: true })
+  const other = (await ask({ options: [{ key: 'b', label: '아니오' }] })).json
+  assert.notEqual(other.id, first.id)
+  await call('POST', `/questions/${first.id}/answer`, { choice: 'a' })
+  assert.deepEqual((await ask({ requestKey: 'toolu_1' })).json, { id: first.id, duplicate: true })
+  assert.notEqual((await ask({ requestKey: 'toolu_3' })).json.id, first.id)
+})
+
 test('a task upserts by title and keeps its stage when none is given', async () => {
   await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', stage: '설계' })
   const { json } = await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', now: '시안 비교' })

@@ -226,7 +226,7 @@ export function createSession(options: Options, deps: Deps) {
         reason: a.reason,
       })
       if (!reply.ok) return { text: say('mcp.askFailed', { error: errorText(reply) }), isError: true }
-      return { text: `${say('tool.asked', { id: String(reply.json.id) })} ${say(options.terminal ? 'mcp.askInside' : 'mcp.askOutside')}` }
+      return { text: `${say(reply.json.duplicate ? 'tool.askedAgain' : 'tool.asked', { id: String(reply.json.id) })} ${say(options.terminal ? 'mcp.askInside' : 'mcp.askOutside')}` }
     }
     if (name === 'set_task') {
       const fields = ['title', 'stage', 'status', 'now', 'why', 'what', 'result', 'artifact', 'tests', 'branch']
