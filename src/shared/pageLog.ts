@@ -32,8 +32,10 @@ function clip(text: string): string {
 
 export function consoleEntry(at: number, level: unknown, message: string, source = '', line = 0): PageLogEntry | null {
   const kind = consoleLevel(level)
-  if (!kind || !message.trim()) return null
-  const where = source ? ` (${source.split('/').pop()}${line ? `:${line}` : ''})` : ''
+  // Electron's own advice about the app, not the page's.
+  if (!kind || !message.trim() || message.startsWith('Electron Security Warning')) return null
+  const file = source.split('/').pop() ?? ''
+  const where = file ? ` (${file}${line ? `:${line}` : ''})` : ''
   return { at, kind: 'console', level: kind, text: clip(`${message}${where}`) }
 }
 

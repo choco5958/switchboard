@@ -122,6 +122,30 @@ test('a session at its usage limit gets nothing until the reset', async () => {
   assert.equal((await call('POST', '/deliveries/take', { sessionId: 'lim-1' })).json.items[0].id, `q${q.id}`)
 })
 
+test('a browser action waits for the app to carry it out', async () => {
+  assert.equal((await call('POST', '/browser/act', { sessionId: 's1', action: 'snapshot' })).status, 503)
+  // The app: it hears browserAct on /stream and posts what it saw.
+  const app = request({ socketPath, path: '/stream' }, res => {
+    let buffer = ''
+    res.on('data', chunk => {
+      buffer += chunk
+      const match = buffer.match(/"type":"browserAct","act":(\{.*?"args":\{.*?\}\})/)
+      if (!match) return
+      buffer = ''
+      const act = JSON.parse(match[1]!)
+      void call('POST', '/browser/result', act.action === 'snapshot' ? { id: act.id, text: `URL: ${act.args.note}` } : { id: act.id, error: 'nope' })
+    })
+  })
+  app.on('error', () => undefined)
+  app.end()
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.deepEqual((await call('POST', '/browser/act', { sessionId: 's1', action: 'snapshot', args: { note: 'x' } })).json, { text: 'URL: x', path: '' })
+  const refused = await call('POST', '/browser/act', { sessionId: 's1', action: 'click', args: {} })
+  assert.deepEqual([refused.status, refused.json.error], [400, 'nope'])
+  assert.equal((await call('POST', '/browser/result', { id: 'gone' })).status, 404)
+  app.destroy()
+})
+
 test('a task upserts by title and keeps its stage when none is given', async () => {
   await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', stage: '설계' })
   const { json } = await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', now: '시안 비교' })

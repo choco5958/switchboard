@@ -34,6 +34,9 @@ create table if not exists comments (
 create index if not exists comments_url on comments (url, id);
 `
 
+const BROWSER_WAIT_MS = 30_000
+const pendingActs = new Map<string, (result: { status: number; body: Json }) => void>()
+
 export type DebugContext = {
   db: DatabaseSync
   watchers: Set<ServerResponse> // the IDE's /stream
@@ -191,6 +194,36 @@ export async function debugRoutes(ctx: DebugContext, req: IncomingMessage, res: 
 
   if (method === 'GET' && path === '/dev/open') {
     return reply(200, { open: lastOpen.get(db) ?? null })
+  }
+
+  // browser_* tools: a session drives the app's in-app browser. The bridge hands the action
+  // to the app (the 'browserAct' event) and holds the request until the app posts what it
+  // saw (/browser/result), or BROWSER_WAIT_MS passes.
+  if (method === 'POST' && path === '/browser/act') {
+    const body = await readJson(req)
+    if (ctx.watchers.size === 0) return reply(503, { error: 'Switchboard is not running, so its browser cannot be used' })
+    const id = `b${now.toString(36)}-${++seq}`
+    const answer = new Promise<{ status: number; body: Json }>(resolve => {
+      const timer = setTimeout(() => {
+        pendingActs.delete(id)
+        resolve({ status: 504, body: { error: 'the app did not answer in time' } })
+      }, BROWSER_WAIT_MS)
+      pendingActs.set(id, result => {
+        clearTimeout(timer)
+        pendingActs.delete(id)
+        resolve(result)
+      })
+    })
+    emit(ctx, { type: 'browserAct', act: { id, sessionId: str(body.sessionId), action: str(body.action), args: (body.args ?? {}) as Json } })
+    const result = await answer
+    return reply(result.status, result.body)
+  }
+  if (method === 'POST' && path === '/browser/result') {
+    const body = await readJson(req)
+    const done = pendingActs.get(str(body.id))
+    if (!done) return reply(404, { error: 'no such request' })
+    done(typeof body.error === 'string' ? { status: 400, body: { error: body.error } } : { status: 200, body: { text: str(body.text), path: str(body.path) } })
+    return reply(200, { ok: true })
   }
 
   // Sessions whose mod holds its delivery stream open right now.

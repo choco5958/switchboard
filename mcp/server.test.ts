@@ -89,7 +89,7 @@ describe('the MCP server against a test bridge', () => {
 
     const list = await c.request('tools/list')
     const names = list.result.tools.map((t: { name: string }) => t.name)
-    assert.deepEqual(names, ['ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'list_sessions', 'send_to_session', 'routine_no_update', 'routine_report_failure', 'await_event', 'close_wait', 'update_node', 'open_in_ide', 'check_answers'])
+    assert.deepEqual(names, ['ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'list_sessions', 'send_to_session', 'routine_no_update', 'routine_report_failure', 'await_event', 'close_wait', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_navigate', 'browser_console', 'browser_screenshot', 'update_node', 'open_in_ide', 'check_answers'])
     assert.deepEqual(list.result.tools[0].inputSchema, toolDefs('ko')[0]!.inputSchema)
     assert.deepEqual(list.result.tools[1].inputSchema, toolDefs('ko')[1]!.inputSchema)
     assert.equal(list.result.tools[1].description, toolDefs('ko')[1]!.description)

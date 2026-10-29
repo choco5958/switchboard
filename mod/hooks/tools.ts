@@ -79,6 +79,18 @@ const KO = {
   awaitNote: '무엇을 기다리고, 일어나면 무엇을 할지 한두 줄',
   closeWait: '더 기다릴 필요가 없어진 대기를 닫는다.',
   closeWaitId: '닫을 대기 id (예: w3)',
+  browserSnapshot:
+    'Switchboard 내장 브라우저에 지금 보이는 로컬 페이지를 읽는다: 주소, 제목, 누르거나 입력할 수 있는 요소 목록([ref] 역할 "이름"), 보이는 글. ' +
+    '화면을 확인하거나 고친 결과를 검증할 때 쓴다. ref는 이번 읽기에서만 유효하다. 브라우저 탭이 앞으로 나와 사람이 볼 수 있다. 로컬 개발 서버만 다룬다.',
+  browserClick: 'browser_snapshot의 ref로 요소를 실제 마우스 입력으로 누른다. 다른 요소가 덮고 있으면 거절된다. 누른 뒤의 새 읽기를 돌려준다.',
+  browserRef: 'browser_snapshot이 준 ref (예: 3:12)',
+  browserType: 'ref의 입력칸에 글을 넣는다(있던 내용은 바뀐다). submit이 true면 Enter를 누른다. 넣은 뒤의 새 읽기를 돌려준다.',
+  browserText: '넣을 글',
+  browserSubmit: '넣은 뒤 Enter를 누를지',
+  browserNavigate: '내장 브라우저로 로컬 주소(localhost, 127.0.0.1, 사설망)를 연다. 열린 뒤의 읽기를 돌려준다.',
+  browserUrl: '열 주소',
+  browserConsole: '지금 페이지의 콘솔 경고와 오류, 실패한 요청(400 이상, 응답 없음)을 최근 것부터 보여 준다.',
+  browserScreenshot: '내장 브라우저 화면을 PNG로 저장하고 경로를 돌려준다. 그 파일을 읽어 화면을 볼 수 있다.',
 }
 
 const EN: typeof KO = {
@@ -159,6 +171,18 @@ const EN: typeof KO = {
   awaitNote: 'What you wait for and what to do when it happens, in a line or two',
   closeWait: 'Closes a wait that is no longer needed.',
   closeWaitId: 'Id of the wait to close (e.g. w3)',
+  browserSnapshot:
+    'Reads the local page shown in the Switchboard in-app browser: address, title, the elements that can be pressed or typed into ([ref] role "name"), and the visible text. ' +
+    'Use it to check a screen or verify a fix. A ref holds only for this reading. The browser tab comes to the front, so the person can watch. Local dev servers only.',
+  browserClick: 'Presses an element by its browser_snapshot ref, with real mouse input. Refused when another element covers it. Returns a fresh reading.',
+  browserRef: 'A ref from browser_snapshot (e.g. 3:12)',
+  browserType: 'Puts text into the field of a ref (what was there is replaced). With submit true it presses Enter. Returns a fresh reading.',
+  browserText: 'The text to put in',
+  browserSubmit: 'Whether to press Enter afterwards',
+  browserNavigate: 'Opens a local address (localhost, 127.0.0.1, the private network) in the in-app browser. Returns the reading once it loaded.',
+  browserUrl: 'The address to open',
+  browserConsole: 'Shows the page\'s console warnings and errors and its failed requests (status 400 or more, or no answer), newest last.',
+  browserScreenshot: 'Saves the in-app browser\'s screen as a PNG and returns the path. Read that file to see the screen.',
 }
 
 const STAGES = ['요구', '설계', '작업', '완료']
@@ -296,6 +320,32 @@ export function toolDefs(lang: Lang): ToolDef[] {
       description: d.closeWait,
       inputSchema: { type: 'object', properties: { id: { type: 'string', description: d.closeWaitId } }, required: ['id'] },
     },
+    { name: 'browser_snapshot', description: d.browserSnapshot, inputSchema: { type: 'object', properties: {} } },
+    {
+      name: 'browser_click',
+      description: d.browserClick,
+      inputSchema: { type: 'object', properties: { ref: { type: 'string', description: d.browserRef } }, required: ['ref'] },
+    },
+    {
+      name: 'browser_type',
+      description: d.browserType,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ref: { type: 'string', description: d.browserRef },
+          text: { type: 'string', description: d.browserText },
+          submit: { type: 'boolean', description: d.browserSubmit },
+        },
+        required: ['ref', 'text'],
+      },
+    },
+    {
+      name: 'browser_navigate',
+      description: d.browserNavigate,
+      inputSchema: { type: 'object', properties: { url: { type: 'string', description: d.browserUrl } }, required: ['url'] },
+    },
+    { name: 'browser_console', description: d.browserConsole, inputSchema: { type: 'object', properties: {} } },
+    { name: 'browser_screenshot', description: d.browserScreenshot, inputSchema: { type: 'object', properties: {} } },
     {
       name: 'update_node',
       description: d.node,
@@ -382,4 +432,14 @@ export function sentText(json: Record<string, unknown>, expectsReply: boolean, l
   const ids = Array.isArray(json.ids) ? json.ids.join(', ') : ''
   if (json.duplicate) return t(lang, 'tool.sentAgain', { ids })
   return t(lang, expectsReply ? 'tool.sentRequest' : 'tool.sentInfo', { ids })
+}
+
+// The browser_* tools and the bridge action each asks for (bridge POST /browser/act).
+export const BROWSER_TOOLS: Record<string, string> = {
+  browser_snapshot: 'snapshot',
+  browser_click: 'click',
+  browser_type: 'type',
+  browser_navigate: 'navigate',
+  browser_console: 'console',
+  browser_screenshot: 'screenshot',
 }

@@ -124,6 +124,7 @@ export const ja: Dict = {
   'tool.sentAgain': '同じメッセージがすでに {ids} として送られています。もう一度送らないでください。',
   'tool.sentAnswer': '{id} の回答として入れました。',
   'tool.sendFailed': 'メッセージを送れませんでした: {error}',
+  'tool.browserFailed': 'ブラウザを操作できませんでした: {error}',
   'tool.quietOk': '知らせることのない実行として記録します。短く終えてください。',
   'tool.failureOk': '失敗した実行として記録します。',
   'tool.waitOpened': '待機 {id} を開きました。それが起きたら「switchboard fire {id}」を実行するようユーザーに伝えて、ターンを終えてください。',

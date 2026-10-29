@@ -51,7 +51,7 @@ test('the tool descriptions: Korean for ko, one English text for the rest, same 
   assert.equal(enums(toolDefs('en')), enums(korean))
   assert.deepEqual(
     korean.map(d => d.name),
-    ['ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'list_sessions', 'send_to_session', 'routine_no_update', 'routine_report_failure', 'await_event', 'close_wait', 'update_node'],
+    ['ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'list_sessions', 'send_to_session', 'routine_no_update', 'routine_report_failure', 'await_event', 'close_wait', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_navigate', 'browser_console', 'browser_screenshot', 'update_node'],
   )
   for (const text of Object.values(toolText('en'))) assert.doesNotMatch(text, /[\u2014\u2013\u00b7]/)
 })

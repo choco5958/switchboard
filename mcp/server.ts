@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { takenText } from '../mod/hooks/batch.ts'
 import { langFromLocale, langOfState, osLocale, t, type Key, type Lang, type Vars } from '../mod/hooks/i18n.ts'
-import { openBody, openResultText, openToolDef, peersText, sentText, toolDefs, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
+import { BROWSER_TOOLS, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
 
 export { takenText }
 
@@ -227,6 +227,11 @@ export function createSession(options: Options, deps: Deps) {
       })
       if (!reply.ok) return { text: say('mcp.askFailed', { error: errorText(reply) }), isError: true }
       return { text: `${say(reply.json.duplicate ? 'tool.askedAgain' : 'tool.asked', { id: String(reply.json.id) })} ${say(options.terminal ? 'mcp.askInside' : 'mcp.askOutside')}` }
+    }
+    if (BROWSER_TOOLS[name]) {
+      const reply = await call('POST', '/browser/act', { sessionId, action: BROWSER_TOOLS[name], args: a })
+      if (!reply.ok) return { text: say('tool.browserFailed', { error: errorText(reply) }), isError: true }
+      return { text: String(reply.json.text ?? '') }
     }
     if (name === 'list_sessions') {
       const reply = await call('GET', `/sessions/peers?session=${encodeURIComponent(sessionId)}`)

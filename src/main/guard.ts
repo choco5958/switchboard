@@ -33,7 +33,7 @@ export function isExternalUrl(url: string): boolean {
 // Plain bridge calls from screens that only read or write rows (archive, settings, command results, scheduled prompts).
 const BRIDGE_ROUTES = /^\/(tasks|settings|commands|routines|telegram)(\/|$)/
 
-const DEBUG_ROUTES = /^\/(comments|dev\/open|sessions\/live)(\/|$)/
+const DEBUG_ROUTES = /^\/(comments|dev\/open|sessions\/live|browser\/result)(\/|$)/
 
 export function bridgePathAllowed(path: unknown, routes: RegExp = BRIDGE_ROUTES): path is string {
   if (typeof path !== 'string' || !path.startsWith('/')) return false

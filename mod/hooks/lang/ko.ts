@@ -132,6 +132,7 @@ export const ko = {
   'tool.sentAgain': '같은 메시지가 이미 {ids}로 나갔습니다. 다시 보내지 마세요.',
   'tool.sentAnswer': '{id}의 답으로 넣었습니다.',
   'tool.sendFailed': '메시지를 보내지 못했습니다: {error}',
+  'tool.browserFailed': '브라우저를 다루지 못했습니다: {error}',
   'tool.quietOk': '알릴 것 없는 실행으로 기록합니다. 짧게 끝내세요.',
   'tool.failureOk': '실패한 실행으로 기록합니다.',
   'tool.waitOpened': '대기 {id}를 열었습니다. 사용자에게 "그 일이 끝나면 switchboard fire {id}"를 알려 주고 턴을 끝내세요.',

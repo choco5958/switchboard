@@ -8,6 +8,8 @@ test('only warnings and errors from the console are kept, with where they came f
     at: 1, kind: 'console', level: 'error', text: 'TypeError: x is undefined (App.tsx:42)',
   })
   expect(consoleEntry(1, 'warning', 'slow')?.level).toBe('warning')
+  expect(consoleEntry(1, 2, 'Electron Security Warning (Insecure Content-Security-Policy) ...')).toBe(null)
+  expect(consoleEntry(1, 3, 'boom', 'http://localhost:8977/', 6)?.text).toBe('boom')
 })
 
 test('a request counts when it failed, not when it was only cancelled', () => {

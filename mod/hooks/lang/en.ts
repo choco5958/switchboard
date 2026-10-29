@@ -127,6 +127,7 @@ export const en: Dict = {
   'tool.sentAgain': 'The same message already went out as {ids}. Do not send it again.',
   'tool.sentAnswer': 'Put in as the answer to {id}.',
   'tool.sendFailed': 'Could not send the message: {error}',
+  'tool.browserFailed': 'Could not use the browser: {error}',
   'tool.quietOk': 'Recorded as a run with nothing to report. End briefly.',
   'tool.failureOk': 'Recorded as a failed run.',
   'tool.waitOpened': 'Opened wait {id}. Tell the user to run "switchboard fire {id}" when it happens, and end your turn.',

@@ -3,7 +3,7 @@ import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, 
 import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
-import { peersText, sentText, toolDefs, type Peer } from './tools.ts'
+import { BROWSER_TOOLS, peersText, sentText, toolDefs, type Peer } from './tools.ts'
 
 // The mod connects this Claude Code session to the Switchboard bridge:
 // questions and task state go out over the bridge's Unix socket, and answers
@@ -495,6 +495,19 @@ export const register: Register = on => {
     const id = String(e.id ?? '').replace(/^w/, '')
     return bridgeTool($, `/waits/${id}/close`, {}, () => t(currentLang(), 'tool.waitClosed', { id: `w${id}` }))
   }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+
+  for (const [name, action] of Object.entries(BROWSER_TOOLS)) {
+    on('tool.call', { tool: `mcp__ide-bridge__${name}` }, async ($, e) => {
+      const { tool, tool_use_id, agentId, ...args } = e as unknown as Record<string, unknown>
+      void tool
+      void tool_use_id
+      void agentId
+      const reply = await call($, 'POST', '/browser/act', { sessionId, action, args }).catch(
+        (error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }),
+      )
+      return { result: reply.ok ? String(reply.json.text ?? '') : t(currentLang(), 'tool.browserFailed', { error: String(reply.json.error) }) }
+    }).catch(() => ({ result: t(currentLang(), 'tool.browserFailed', { error: '' }) }))
+  }
 
   on('tool.call', { tool: 'mcp__ide-bridge__set_task' }, async ($, e) => {
     const reply = await call($, 'POST', '/tasks', {

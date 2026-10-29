@@ -124,6 +124,7 @@ export const zhCN: Dict = {
   'tool.sentAgain': '同一消息已作为 {ids} 发出。不要再次发送。',
   'tool.sentAnswer': '已作为 {id} 的回答送入。',
   'tool.sendFailed': '无法发送消息: {error}',
+  'tool.browserFailed': '无法操作浏览器: {error}',
   'tool.quietOk': '已记录为没有可报告内容的运行。请简短结束。',
   'tool.failureOk': '已记录为失败的运行。',
   'tool.waitOpened': '已打开等待 {id}。告诉用户事情发生后运行「switchboard fire {id}」，然后结束本回合。',
