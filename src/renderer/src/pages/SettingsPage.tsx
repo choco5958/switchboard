@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DEFAULT_THEME, THEMES, applyTheme, themeLabel, themeOf } from '../theme'
-import { LANGS, isLang, resolveLang, t, type Lang } from '../../../shared/i18n'
+import { LANGS, isLang, resolveLang, t, type Key, type Lang } from '../../../shared/i18n'
 import { useToast } from '../parts'
 import { AgentSettings } from './AgentSettings'
 import { RoutinesSection } from './RoutinesSection'
@@ -8,6 +8,16 @@ import { TelegramSection } from './TelegramSection'
 import { MobileSection } from './MobileSection'
 import type { Routine, RoutineRun } from '../../../shared/types'
 import type { ProjectInfo } from '../../../shared/projects'
+
+const SECTIONS: [string, Key][] = [
+  ['settings-lang', 'settings.language'],
+  ['settings-theme', 'settings.theme'],
+  ['settings-agents', 'agents.title'],
+  ['settings-routines', 'routines.title'],
+  ['settings-telegram', 'telegram.title'],
+  ['settings-mobile', 'mobile.title'],
+  ['settings-dev', 'settings.dev'],
+]
 
 // Tokens shown in each theme's swatch strip. The strip carries data-theme, so it shows that theme's own colors.
 const SWATCH = ['--bg', '--panel', '--line', '--text', '--accent', '--good', '--warn', '--bad']
@@ -68,7 +78,15 @@ export function SettingsPage({
   return (
     <div className="card wide settings">
       <h1>{t('rail.settings')}</h1>
-      <section className="settings-row settings-lang">
+      {/* The page is long: one click to each part. */}
+      <nav className="settings-toc" aria-label={t('settings.toc')}>
+        {SECTIONS.map(([id, key]) => (
+          <button key={id} className="link small" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            {t(key)}
+          </button>
+        ))}
+      </nav>
+      <section id="settings-lang" className="settings-row settings-lang">
         <h2>{t('settings.language')}</h2>
         <div className="lang-list" role="radiogroup" aria-label={t('settings.language')}>
           {LANGS.map(one => (
@@ -94,7 +112,7 @@ export function SettingsPage({
           )}
         </p>
       </section>
-      <section className="settings-row">
+      <section id="settings-theme" className="settings-row">
         <h2>{t('settings.theme')}</h2>
         <div className="theme-list">
           {THEMES.map(theme => (
@@ -137,7 +155,7 @@ export function SettingsPage({
       <RoutinesSection routines={routines} runs={runs} projects={projects} />
       <TelegramSection />
       <MobileSection />
-      <section className="settings-row settings-dev">
+      <section id="settings-dev" className="settings-row settings-dev">
         <h2>{t('settings.dev')}</h2>
         <label className="check-row">
           <input type="checkbox" checked={devMenu} onChange={() => void toggleDevMenu()} />

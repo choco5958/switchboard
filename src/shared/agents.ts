@@ -302,3 +302,14 @@ export function projectAgents(sessions: readonly { id: string; project: string }
   }
   return [...seen.values()].sort((a, b) => Number(b.kind === 'claude') - Number(a.kind === 'claude') || a.label.localeCompare(b.label))
 }
+
+// The Claude Code the mod needs (README: requirements).
+export const CLAUDE_MIN = '2.1.309'
+
+// Whether version a (x.y.z) comes before b.
+export function olderThan(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0)
+  return false
+}

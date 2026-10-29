@@ -93,7 +93,7 @@ export function MobileSection() {
   if (!status) {
     if (!loadError) return null
     return (
-      <section className="settings-row mobile">
+      <section id="settings-mobile" className="settings-row mobile">
         <h2>{t('mobile.title')}</h2>
         <p className="error small">{t('mobile.loadFailed', { error: loadError })}</p>
       </section>
@@ -101,7 +101,7 @@ export function MobileSection() {
   }
   const chosen = status.addresses.find(a => a.address === address) ?? status.addresses[0]
   return (
-    <section className="settings-row mobile">
+    <section id="settings-mobile" className="settings-row mobile">
       <h2>{t('mobile.title')}</h2>
       <p className="quiet small">{t('mobile.hint')}</p>
       <label className="check-row">

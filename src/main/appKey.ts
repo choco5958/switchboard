@@ -5,21 +5,32 @@
 
 import { safeStorage } from 'electron'
 import { randomBytes } from 'node:crypto'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
-export function loadAppKey(file: string): string {
-  if (!safeStorage.isEncryptionAvailable()) return randomBytes(32).toString('hex')
-  try {
-    const key = safeStorage.decryptString(readFileSync(file))
-    if (/^[0-9a-f]{64}$/.test(key)) return key
-  } catch {
-    // None yet, or made by another install: a new one.
+// `refused`: the keychain would not give its secret (the person said no to its question). The
+// saved file stays for a later start that is allowed, and this run uses a key of its own, which
+// means the app starts its bridge again (every session's stream drops once).
+export function loadAppKey(file: string): { key: string; refused: boolean } {
+  if (!safeStorage.isEncryptionAvailable()) return { key: randomBytes(32).toString('hex'), refused: false }
+  if (existsSync(file)) {
+    try {
+      const key = safeStorage.decryptString(readFileSync(file))
+      if (/^[0-9a-f]{64}$/.test(key)) return { key, refused: false }
+    } catch {
+      // Made by another install, or the keychain said no: writing a new key tells which.
+    }
   }
   const key = randomBytes(32).toString('hex')
+  let sealed: Buffer
   try {
-    writeFileSync(file, safeStorage.encryptString(key), { mode: 0o600 })
+    sealed = safeStorage.encryptString(key)
+  } catch {
+    return { key, refused: true }
+  }
+  try {
+    writeFileSync(file, sealed, { mode: 0o600 })
   } catch {
     // Kept for this run only.
   }
-  return key
+  return { key, refused: false }
 }

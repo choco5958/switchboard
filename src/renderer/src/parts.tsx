@@ -239,6 +239,7 @@ export function ApprovalItem({ a, onAnswer }: { a: Approval; onAnswer: (decision
       <pre className="approval-summary" title={a.summary}>
         {a.summary}
       </pre>
+      {a.reason && <div className="small">{t('approval.reason', { reason: a.reason })}</div>}
       {a.cwd && <div className="quiet small">{t('approval.cwd', { cwd: a.cwd })}</div>}
       <div className="approval-actions">
         <button className="primary" onClick={() => onAnswer('allow')}>

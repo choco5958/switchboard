@@ -225,7 +225,7 @@ test('a node that starts again after ending counts a new round', async () => {
 
 test('a second bridge on a live socket refuses instead of taking it over', async () => {
   const other = createBridge(join(dir, 'other.db'), 'ko-KR')
-  await assert.rejects(listen(other.server, socketPath), /이미/)
+  await assert.rejects(listen(other.server, socketPath), /이미|already|すでに|已在/)
   other.db.close()
   assert.equal((await call('GET', '/health')).status, 200)
 })

@@ -30,11 +30,21 @@ export function artifactFromNotes(nodes: GraphNode[]): string {
   return seen.join(', ')
 }
 
-// The newest note that reads like a test run: "통과 304, 실패 0".
+// The newest note that reads like a test run, in the languages sessions write in:
+// "통과 304, 실패 0", "304 passed, 0 failed", "pass 304 / fail 0", "成功 304、失敗 0", "通过 304，失败 0".
+const TEST_RUNS = [
+  /통과\s*\d+[\s,]*실패\s*\d+/,
+  /\d+\s*(?:tests?\s*)?pass(?:ed|ing)?[\s,;/]*\d+\s*fail(?:ed|ing|ures?)?/i,
+  /pass(?:ed)?:?\s*\d+[\s,;/]*fail(?:ed|ures?)?:?\s*\d+/i,
+  /(?:成功|合格|通過)\s*\d+[\s,、，]*失敗\s*\d+/,
+  /通过\s*\d+[\s,、，]*失败\s*\d+/,
+]
 export function testsFromNotes(nodes: GraphNode[]): string {
   for (const node of newestFirst(nodes)) {
-    const match = /통과\s*\d+[\s,]*실패\s*\d+/.exec(node.note)
-    if (match) return match[0]
+    for (const pattern of TEST_RUNS) {
+      const match = pattern.exec(node.note)
+      if (match) return match[0]
+    }
   }
   return ''
 }

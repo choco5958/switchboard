@@ -7,6 +7,9 @@ import { DEFAULT_THEME, themeOf } from './theme'
 import { isClaude } from '../../shared/agents'
 import { t } from '../../shared/i18n'
 
+// The search key as this system writes it (App.tsx takes both).
+const SEARCH_KEY = /Mac/.test(navigator.userAgent) ? '⌘K' : 'Ctrl+K'
+
 // Usage meters are Claude Code's own; other agent CLIs report none.
 export function usageOf(state: BridgeState): SessionUsage {
   for (const session of state.sessions.filter(s => isClaude(s.agent))) {
@@ -239,7 +242,7 @@ export function TopBar({
       </button>
       <span className="spacer" />
       <button className="searchbox" onClick={onSearch}>
-        <Icon name="search" size={14} /> {t('top.search')} <kbd>⌘K</kbd>
+        <Icon name="search" size={14} /> {t('top.search')} <kbd>{SEARCH_KEY}</kbd>
       </button>
       <span className="spacer" />
       <span className={`chip ${(scopedRunning ?? running) > 0 ? 'chip-on' : ''}`}>{countLabel(t('top.agents'), running, scopedRunning)}</span>

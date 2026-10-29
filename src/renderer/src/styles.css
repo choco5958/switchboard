@@ -489,7 +489,8 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 /* First run: three steps instead of four zeros. */
 .first-run { max-width: 720px; }
 /* Centered so the lone card does not leave the lower half of the page looking unfinished. */
-.home.home-empty { display: flex; align-items: center; justify-content: center; min-height: 100%; }
+.home.home-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; }
+.home-empty .home-approvals { width: 100%; max-width: 720px; }
 .home-empty .first-run { width: 100%; }
 .first-run-steps { margin: 0; padding-left: 20px; }
 .first-run-steps li { margin-bottom: 14px; }
@@ -678,7 +679,11 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .mobile-devices li > span:first-child { min-width: 120px; }
 
 .approval-item { border: 1px solid var(--warn); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.home-approvals { margin-bottom: 16px; }
 .approval-summary { margin: 6px 0; padding: 6px; max-height: 6.5em; overflow: hidden; white-space: pre-wrap; word-break: break-all; font-family: var(--mono); font-size: 12px; background: var(--bg); border-radius: 4px; }
 .approval-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .approval-actions button:not(.link) { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--text); cursor: pointer; }
 .approval-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+.dock-tab.add.add-warn { color: var(--warn); }
+.settings-toc { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 16px; }

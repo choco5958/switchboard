@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentDetect, BridgeState, Task, TermInfo } from '../../shared/types'
 import { projectOfCwd, type ProjectInfo } from '../../shared/projects'
-import { PRESETS, type AgentTag, type CustomAgent } from '../../shared/agents'
+import { CLAUDE_MIN, olderThan, PRESETS, type AgentTag, type CustomAgent } from '../../shared/agents'
 import { Icon } from './Icons'
 import { TerminalView } from './TerminalView'
 import { LogLines } from './parts'
@@ -24,11 +24,15 @@ export const AGENTS_FOUND = 'switchboard:agents-found'
 
 // What the dock can open: Claude, a plain shell, and every other agent CLI that is
 // installed or the person added. kind is 'claude', 'shell' or the agent's id.
-type Launcher = { kind: string; text: string; title: string; menuTitle: string }
+// warn: why this one may not work (Claude Code missing or too old), shown on the button.
+type Launcher = { kind: string; text: string; title: string; menuTitle: string; warn?: string; blocked?: boolean }
 
 export function launchers(found: AgentDetect | null, customs: readonly CustomAgent[], showOthers = true): Launcher[] {
+  const missing = found !== null && !found.found.claude
+  const old = !missing && found?.claudeVersion && olderThan(found.claudeVersion, CLAUDE_MIN) ? found.claudeVersion : null
+  const warn = missing ? t('dock.claudeMissing') : old ? t('dock.claudeOld', { version: old, need: CLAUDE_MIN }) : undefined
   const base: Launcher[] = [
-    { kind: 'claude', text: '+ Claude', title: t('dock.newClaudeTitle'), menuTitle: t('dock.menuClaude') },
+    { kind: 'claude', text: '+ Claude', title: warn ?? t('dock.newClaudeTitle'), menuTitle: t('dock.menuClaude'), warn, blocked: missing },
     { kind: 'shell', text: t('dock.newShell'), title: t('dock.newShellTitle'), menuTitle: t('dock.menuShell') },
   ]
   if (!showOthers) return base
@@ -231,10 +235,12 @@ export function Dock({
           {all.map(l => (
             <button
               key={l.kind}
-              className={`dock-tab add ${l.kind === 'claude' || l.kind === 'shell' ? '' : 'add-agent'}`}
+              className={`dock-tab add ${l.kind === 'claude' || l.kind === 'shell' ? '' : 'add-agent'} ${l.warn ? 'add-warn' : ''}`}
               title={l.title}
               onClick={() => {
                 setPickSlot(undefined)
+                if (l.warn) setError(l.warn)
+                if (l.blocked) return
                 if (scoped?.cwd) void openIn(scoped.cwd, l.kind)
                 else setMenu(m => (m === l.kind ? null : l.kind))
               }}

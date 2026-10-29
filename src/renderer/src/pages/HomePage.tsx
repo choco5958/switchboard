@@ -3,7 +3,7 @@ import { taskStateLabel, isRunning, taskState } from '../../../shared/projects'
 import { stageLabel, t } from '../../../shared/i18n'
 import { tx } from '../tx'
 import { STAGES, ago } from '../model'
-import { AgentBadge, NumberBadge } from '../parts'
+import { AgentBadge, ApprovalItem, NumberBadge } from '../parts'
 import type { AgentTag } from '../../../shared/agents'
 
 // What a first start looks like: no tasks yet, so instead of four zeros, how to get going.
@@ -45,19 +45,35 @@ export function HomePage({
   onOpenTask,
   onOpenQuestion,
   onPickFolder,
+  onAnswerApproval,
 }: {
   state: BridgeState
   badges?: Record<string, AgentTag> // session id to its agent badge
   onOpenTask: (id: number) => void
   onOpenQuestion: (id: number) => void
   onPickFolder: () => void
+  onAnswerApproval: (id: number, decision: 'allow' | 'deny' | 'terminal') => void
 }) {
   const running = state.tasks.filter(isRunning)
   const pending = state.questions.filter(q => q.status === 'pending')
   const agents = state.agents.filter(a => a.status === 'running')
+  // Permission asks wait here too: one is not "nothing to do yet".
+  const approvals = (state.approvals ?? []).filter(a => a.status === 'pending')
+  const asks =
+    approvals.length > 0 ? (
+      <section className="approvals home-approvals">
+        <h3>
+          {t('approval.title')} <span className="count warn">{approvals.length}</span>
+        </h3>
+        {approvals.map(a => (
+          <ApprovalItem key={a.id} a={a} onAnswer={decision => onAnswerApproval(a.id, decision)} />
+        ))}
+      </section>
+    ) : null
   if (state.tasks.length === 0 && pending.length === 0) {
     return (
       <div className="home home-empty">
+        {asks}
         <FirstRun sessions={state.sessions.length} onPickFolder={onPickFolder} />
       </div>
     )
@@ -70,6 +86,7 @@ export function HomePage({
         <div className="stat"><b>{agents.length}</b><span>{t('home.statAgents')}</span></div>
         <div className="stat"><b>{state.answeredCount}</b><span>{t('home.statAnswered')}</span></div>
       </div>
+      {asks}
       <div className="home-grid">
         {state.tasks.map(task => {
           const nodes = state.nodes.filter(n => n.task_id === task.id)

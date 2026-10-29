@@ -46,7 +46,9 @@ export function snapshotScript(rev: number): string {
   };
   const roleOf = el => el.getAttribute('role') || ({ A: 'link', BUTTON: 'button', SELECT: 'combobox', TEXTAREA: 'textbox', SUMMARY: 'button' })[el.tagName]
     || (el.tagName === 'INPUT' ? ({ checkbox: 'checkbox', radio: 'radio', submit: 'button', button: 'button', range: 'slider' })[el.type] || 'textbox' : el.isContentEditable ? 'textbox' : 'clickable');
-  const nameOf = el => (el.getAttribute('aria-label') || el.labels?.[0]?.innerText || el.innerText || el.value || el.placeholder || el.title || el.alt || el.name || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+  // Attributes last: the script runs in a world of its own, where properties a page's own
+  // elements define (a web component's value) are not seen, but their attributes are.
+  const nameOf = el => (el.getAttribute('aria-label') || el.labels?.[0]?.innerText || el.innerText || el.value || el.placeholder || el.title || el.alt || el.name || el.getAttribute('label') || el.getAttribute('value') || el.getAttribute('placeholder') || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
   const query = 'a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=link], [role=checkbox], [role=tab], [role=menuitem], [contenteditable=""], [contenteditable=true], [onclick], [tabindex]:not([tabindex="-1"])';
   const elements = [];
   for (const el of document.querySelectorAll(query)) {

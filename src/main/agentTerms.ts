@@ -23,15 +23,20 @@ let cached: AgentDetect | null = null
 
 function detect(force = false): Promise<AgentDetect> {
   if (cached && !force) return Promise.resolve(cached)
-  const bins = ['node', ...new Set(PRESETS.map(p => p.bin))]
+  const bins = ['node', 'claude', ...new Set(PRESETS.map(p => p.bin))]
   const shell = loginShell()
   // Interactive on macOS and Linux, so what .zshrc adds to PATH counts.
   const args = process.platform === 'win32' ? shell.command(detectScript(bins)) : ['-l', '-i', '-c', detectScript(bins)]
   return new Promise(resolve => {
     execFile(shell.file, args, { env: terminalEnv(process.env), timeout: 15_000 }, (_error, stdout) => {
       const found = parseDetect(String(stdout ?? ''))
-      cached = { found, node: found.node ?? null, at: Date.now() }
-      resolve(cached)
+      const done = (claudeVersion: string | null) => {
+        cached = { found, node: found.node ?? null, at: Date.now(), claudeVersion }
+        resolve(cached)
+      }
+      // The mod needs a recent Claude Code: the dock says so when it is older (Dock.tsx).
+      if (!found.claude) return done(null)
+      execFile(found.claude, ['--version'], { env: terminalEnv(process.env), timeout: 10_000 }, (_e, out) => done(String(out ?? '').match(/(\d+\.\d+\.\d+)/)?.[1] ?? null))
     })
   })
 }

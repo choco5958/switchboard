@@ -2125,7 +2125,7 @@ export async function listenTcp(server: Server, token: string, home = homedir())
     } catch {
       const holder = Number(readFileSync(lock, 'utf8').trim() || 0)
       if (holder && holder !== process.pid && alive(holder)) throw new Error(`다른 브리지(pid ${holder})가 이미 돌고 있습니다`)
-      if (attempt >= 20) throw new Error('bridge.lock을 만들 수 없습니다')
+      if (attempt >= 20) throw new Error(tIn(resolveLang(undefined, systemLocale()), 'bridge.noLock', { file: lock }))
       if (holder) rmSync(lock, { force: true })
       await new Promise(resolve => setTimeout(resolve, 25))
     }
@@ -2186,7 +2186,7 @@ function isAnswering(socketPath: string): Promise<boolean> {
 export async function listen(server: Server, socketPath: string): Promise<void> {
   privateDir(dirname(socketPath))
   if (existsSync(socketPath)) {
-    if (await isAnswering(socketPath)) throw new Error(`다른 브리지가 이미 ${socketPath}에서 돌고 있습니다`)
+    if (await isAnswering(socketPath)) throw new Error(tIn(resolveLang(undefined, systemLocale()), 'bridge.alreadyRunning', { where: socketPath }))
     unlinkSync(socketPath)
   }
   // Created private: no moment where the socket is open to others before the chmod.

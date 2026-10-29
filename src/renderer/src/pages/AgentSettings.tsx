@@ -51,7 +51,7 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
   }
 
   return (
-    <section className="settings-row agent-settings">
+    <section id="settings-agents" className="settings-row agent-settings">
       <h2>{t('agents.title')}</h2>
       <p className="quiet small">{t('agents.intro')}</p>
       <label className="check-row">

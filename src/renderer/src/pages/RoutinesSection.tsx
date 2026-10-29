@@ -89,7 +89,7 @@ export function RoutinesSection({ routines, runs, projects }: { routines: Routin
   }
 
   return (
-    <section className="settings-row routines">
+    <section id="settings-routines" className="settings-row routines">
       <h2>{t('routines.title')}</h2>
       <p className="quiet small">{t('routines.hint')}</p>
       {routines.length === 0 && !draft && <p className="quiet">{t('routines.empty')}</p>}

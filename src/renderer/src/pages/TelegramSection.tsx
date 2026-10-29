@@ -38,7 +38,7 @@ export function TelegramSection() {
 
   if (!status) return null
   return (
-    <section className="settings-row telegram">
+    <section id="settings-telegram" className="settings-row telegram">
       <h2>{t('telegram.title')}</h2>
       <p className="quiet small">{t('telegram.hint')}</p>
       {!status.configured && (

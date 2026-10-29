@@ -34,6 +34,14 @@ describe('auto-filled header fields', () => {
   ]
   test('PRs newest first, each once', () => expect(artifactFromNotes(nodes)).toBe('PR #366, PR #364'))
   test('the newest test line', () => expect(testsFromNotes(nodes)).toBe('통과 304, 실패 0'))
+  test('test lines in the other languages sessions write in', () => {
+    const one = (note: string) => testsFromNotes([{ ...nodes[0]!, note }])
+    expect(one('All good: 304 passed, 0 failed.')).toBe('304 passed, 0 failed')
+    expect(one('Tests: pass 12 / fail 1')).toBe('pass 12 / fail 1')
+    expect(one('テスト成功 20、失敗 0')).toBe('成功 20、失敗 0')
+    expect(one('测试通过 8，失败 0')).toBe('通过 8，失败 0')
+    expect(one('no tests ran')).toBe('')
+  })
   test('nothing found', () => expect(artifactFromNotes([node({ note: '지적 4건' })])).toBe(''))
 })
 

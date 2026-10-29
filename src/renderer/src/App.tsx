@@ -98,6 +98,16 @@ export function App() {
   const [loaded, setLoaded] = useState(false)
   // null until the first check, so the app never flashes the disconnected notice on start.
   const [connected, setConnected] = useState<boolean | null>(null)
+  // The bridge stays down: after a while, why (the log's last line), with a way to open the log.
+  const [problem, setProblem] = useState<{ log: string; last: string } | null>(null)
+  useEffect(() => {
+    if (connected !== false) {
+      setProblem(null)
+      return
+    }
+    const timer = setInterval(() => void window.ide.bridgeProblem().then(setProblem), 15_000)
+    return () => clearInterval(timer)
+  }, [connected])
   const [tabs, setTabs] = useState<Tabs>(loadTabs)
   const [section, setSection] = useState<Section>('home')
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -119,11 +129,27 @@ export function App() {
   }, [lang])
   const NO_SESSION = t('app.noSession')
 
+  // Busy sessions send many changes a second: one read at a time, and one more after it for
+  // whatever came in meanwhile, instead of a full read and redraw for each.
+  const reading = useRef(false)
+  const readAgain = useRef(false)
   const refresh = useCallback(async () => {
-    const next = await window.ide.state()
-    if (next) {
-      setState(next)
-      setLoaded(true)
+    if (reading.current) {
+      readAgain.current = true
+      return
+    }
+    reading.current = true
+    try {
+      do {
+        readAgain.current = false
+        const next = await window.ide.state()
+        if (next) {
+          setState(next)
+          setLoaded(true)
+        }
+      } while (readAgain.current)
+    } finally {
+      reading.current = false
     }
   }, [])
 
@@ -372,7 +398,20 @@ export function App() {
   const logTasks = useMemo(() => [...state.tasks, ...state.archived], [state.tasks, state.archived])
 
   const renderPage = (tab: Tab) => {
-    if (tab.kind === 'home') return <HomePage state={view} badges={tags} onOpenTask={openTask} onOpenQuestion={openQuestion} onPickFolder={() => void pickProject()} />
+    if (tab.kind === 'home')
+      return (
+        <HomePage
+          state={view}
+          badges={tags}
+          onOpenTask={openTask}
+          onOpenQuestion={openQuestion}
+          onPickFolder={() => void pickProject()}
+          onAnswerApproval={async (id, decision) => {
+            const reply = await window.ide.approve(id, decision)
+            if (!reply.ok) toast(t('approval.answerFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
+          }}
+        />
+      )
     if (tab.kind === 'task') {
       const task = state.tasks.find(t => t.id === tab.id)
       if (!task) return null
@@ -542,7 +581,7 @@ export function App() {
                     a={a}
                     onAnswer={async decision => {
                       const reply = await window.ide.approve(a.id, decision)
-                      if (!reply.ok) toast(String(reply.json.error ?? reply.status), 'bad')
+                      if (!reply.ok) toast(t('approval.answerFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
                     }}
                   />
                 ))}
@@ -606,12 +645,26 @@ export function App() {
             const task = tab.kind === 'task' ? state.tasks.find(t => t.id === tab.id) : undefined
             const icon = TAB_ICON[tab.kind]
             return (
-              <div key={key} className={`tab ${key === tabKey(active) ? 'on' : ''}`} onClick={() => setTabs(current => ({ ...current, active: key }))}>
+              <div
+                key={key}
+                role="tab"
+                tabIndex={0}
+                aria-selected={key === tabKey(active)}
+                className={`tab ${key === tabKey(active) ? 'on' : ''}`}
+                onClick={() => setTabs(current => ({ ...current, active: key }))}
+                onKeyDown={event => {
+                  if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+                  event.preventDefault()
+                  setTabs(current => ({ ...current, active: key }))
+                }}
+              >
                 {task ? <NumberBadge task={task} /> : icon && <Icon name={icon} size={13} />}
                 <span className="tab-title">{tabTitle(tab)}</span>
                 {tab.kind !== 'home' && (
                   <button
                     className="tab-close"
+                    aria-label={t('tabbar.close', { title: tabTitle(tab) })}
+                    title={t('tabbar.close', { title: tabTitle(tab) })}
                     onClick={event => {
                       event.stopPropagation()
                       setTabs(current => closeTab(current, key))
@@ -632,6 +685,14 @@ export function App() {
               <span className="small">
                 {loaded ? t('app.disconnectedStale') : t('app.disconnectedEmpty')}
               </span>
+              {problem && (
+                <span className="small">
+                  {t('app.bridgeLast', { line: problem.last || '-' })}{' '}
+                  <button className="link small" onClick={() => void window.ide.openBridgeLog()}>
+                    {t('app.openBridgeLog')}
+                  </button>
+                </span>
+              )}
             </div>
           )}
           {/* The browser stays mounted so its page and comments survive tab switches. */}

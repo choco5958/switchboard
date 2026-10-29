@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain as rawIpcMain, nativeImage, Notific
 import { execFile, spawn } from 'node:child_process'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
-import { existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { BridgeState, Reply, WorktreeCheck } from '../shared/types'
@@ -55,6 +55,12 @@ async function launchBridge(): Promise<boolean> {
     stdio: ['pipe', log, log],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_VERSION: app.isPackaged ? app.getVersion() : '', SWITCHBOARD_APP_KEY_STDIN: '1' },
   })
+  // A spawn that fails (the app moved, no permission) says so in the log instead of throwing in main.
+  child.on('error', error => {
+    bridgeProblem = error.message
+    console.error('could not start the bridge:', error.message)
+  })
+  child.stdin?.on('error', () => undefined)
   child.stdin?.end(`${appKey}\n`)
   child.unref()
   for (let i = 0; i < 50; i++) {
@@ -71,6 +77,26 @@ async function stopBridge(pid: number): Promise<void> {
     return
   }
   for (let i = 0; i < 30 && (await call('GET', '/health')).ok; i++) await new Promise(resolve => setTimeout(resolve, 100))
+}
+
+// Why the last start did not give the app a bridge of its own, for the screen (bridge:problem).
+let bridgeProblem = ''
+
+// A bridge that runs but does not take the app's key (a mod or another start beat the app's
+// own): person-only answers fail and the person always looks away. Checked on every connection
+// and now and then; replaced when it happens.
+let replacing = false
+async function ensureOwnBridge(): Promise<void> {
+  if (replacing) return
+  const check = await call('GET', '/app/check')
+  if (check.ok || check.status !== 403) return
+  replacing = true
+  try {
+    if (!(await startBridge())) bridgeProblem ||= t('app.bridgeNotOwn')
+    else bridgeProblem = ''
+  } finally {
+    replacing = false
+  }
 }
 
 async function startBridge(): Promise<boolean> {
@@ -306,6 +332,7 @@ function watch(): void {
   setInterval(() => {
     scheduleScan()
     reportPresence()
+    void ensureOwnBridge()
   }, 30_000).unref()
   powerMonitor.on('lock-screen', reportPresence)
   powerMonitor.on('unlock-screen', reportPresence)
@@ -319,6 +346,7 @@ function watch(): void {
       if (up) {
         scheduleScan()
         reportPresence()
+        void ensureOwnBridge()
       }
       else app.dock?.setBadge('')
     },
@@ -402,6 +430,19 @@ ipcMain.handle('linear:list', async (_e, filter: string) => {
 })
 
 ipcMain.handle('bridge:connected', () => connected)
+// The bridge does not come up: the log's path and its last line, for the screen to show.
+ipcMain.handle('bridge:problem', () => {
+  const log = join(DIR, 'bridge.log')
+  let last = ''
+  try {
+    const text = readFileSync(log, 'utf8').slice(-4000)
+    last = text.trim().split('\n').filter(Boolean).pop() ?? ''
+  } catch {
+    // No log yet.
+  }
+  return { log, last: (bridgeProblem || last).slice(0, 300) }
+})
+ipcMain.handle('bridge:openLog', () => shell.openPath(join(DIR, 'bridge.log')))
 ipcMain.handle('bridge:command', (_e, sessionId: string, kind: string, payload: Record<string, unknown>) =>
   call('POST', '/commands', { sessionId, kind, payload }),
 )
@@ -535,7 +576,9 @@ app.whenReady().then(async () => {
   if (process.env.CLAUDE_IDE_CAPTURE) app.dock?.hide()
   else app.dock?.setIcon(nativeImage.createFromPath(ICON))
   await offerApplicationsFolder()
-  appKey = loadAppKey(join(app.getPath('userData'), 'app-key.bin'))
+  const loaded = loadAppKey(join(app.getPath('userData'), 'app-key.bin'))
+  appKey = loaded.key
+  if (loaded.refused && Notification.isSupported()) new Notification({ title: 'Switchboard', body: t('app.keyRefused') }).show()
   await prepareRuntime()
   await startBridge()
   createWindow()

@@ -8,6 +8,8 @@ import { t } from '../../shared/i18n'
 import { tx } from './tx'
 import { composing } from './ime'
 
+const HOLD_AGAIN_MS = 2000
+
 export function QuestionCard({
   q,
   agent,
@@ -29,6 +31,9 @@ export function QuestionCard({
   const [choice, setChoice] = useState<string>('')
   const [memo, setMemo] = useState('')
   const [error, setError] = useState('')
+  // The h key holds only when pressed twice: one stray h (typed where the person thought a
+  // terminal had focus) only says what the next one would do.
+  const [holdArmed, setHoldArmed] = useState(0)
   const [busy, setBusy] = useState(false)
   const memoBox = useRef<HTMLTextAreaElement>(null)
   const isOpen = q.status !== 'answered'
@@ -55,6 +60,13 @@ export function QuestionCard({
     setForwardTo('')
   }
 
+  // The hint goes once its two seconds are over.
+  useEffect(() => {
+    if (!holdArmed) return
+    const timer = setTimeout(() => setHoldArmed(0), HOLD_AGAIN_MS)
+    return () => clearTimeout(timer)
+  }, [holdArmed])
+
   const hold = async () => {
     const reply = await window.ide.hold(q.id)
     if (!reply.ok) return setError(String(reply.json.error ?? t('question.holdFailed')))
@@ -73,7 +85,12 @@ export function QuestionCard({
     event.preventDefault()
     if (action.type === 'choose') setChoice(action.key)
     if (action.type === 'send') void submit(choice, memo)
-    if (action.type === 'hold') void hold()
+    if (action.type === 'hold') {
+      if (Date.now() - holdArmed < HOLD_AGAIN_MS) {
+        setHoldArmed(0)
+        void hold()
+      } else setHoldArmed(Date.now())
+    }
     if (action.type === 'memo') memoBox.current?.focus()
   }
   useEffect(() => {
@@ -169,6 +186,7 @@ export function QuestionCard({
             onKeyDown={onMemoKey}
           />
           {error && <p className="error">{error}</p>}
+          {holdArmed > 0 && Date.now() - holdArmed < HOLD_AGAIN_MS && <p className="quiet small">{t('question.holdAgain')}</p>}
           {forwardedTo && <p className="quiet small">{t('question.forwarded', { session: forwardedTo })}</p>}
           <div className="actions">
             <button className="primary" disabled={busy || !choice} onClick={() => void submit(choice, memo)}>

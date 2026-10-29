@@ -190,6 +190,9 @@ export type IdeApi = {
   forward: (id: number, to: string) => Promise<Reply> // hand a question to another session to answer
   approve: (id: number, decision: 'allow' | 'deny' | 'terminal') => Promise<Reply>
   connected: () => Promise<boolean>
+  // Why the bridge is not up: the log's path and its last line (src/main/index.ts).
+  bridgeProblem: () => Promise<{ log: string; last: string }>
+  openBridgeLog: () => Promise<string>
   send: (sessionId: string, text: string, kind: string, taskTitle: string) => Promise<Reply>
   saveShot: (dataUrl: string) => Promise<string | null>
   command: (sessionId: string, kind: CommandKind, payload: Record<string, unknown>) => Promise<Reply>
@@ -245,7 +248,8 @@ export type CcrSlot = {
 
 // Feature area: agent CLIs other than Claude Code. found maps a command to its path
 // on the login-shell PATH; a command missing from it is not installed.
-export type AgentDetect = { found: Record<string, string>; node: string | null; at: number }
+// claudeVersion: what `claude --version` says, when claude is found (Dock.tsx warns below CLAUDE_MIN).
+export type AgentDetect = { found: Record<string, string>; node: string | null; at: number; claudeVersion?: string | null }
 
 // A scheduled prompt (bridge/schedule.ts) and one of its runs, as GET /state returns them.
 export type RoutineSchedule =
