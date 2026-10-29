@@ -104,3 +104,5 @@ textarea:focus { border-color: var(--accent); }
 .welcome h1 { margin: 16px 0 8px; font-size: 22px; }
 .welcome p { color: var(--quiet); }
 footer { padding: 4px 0 0; text-align: center; color: var(--quiet); font-size: 12px; }
+.notify { margin: 0 0 12px; }
+.notify .btn { width: 100%; }

@@ -7,14 +7,17 @@ import { useToast } from '../parts'
 // with a QR code that carries its own key; the bridge never hands the key out again, so the
 // code is shown once.
 
-type Address = { address: string; kind: 'lan' | 'tailscale' }
+type Address = { address: string; kind: 'name' | 'lan' | 'tailscale' | 'https'; url: string }
 type Device = { id: number; name: string; created_at: number; last_seen: number | null }
-type Status = { enabled: boolean; listening: boolean; port: number; error: string; addresses: Address[]; devices: Device[] }
+type Tailscale = { installed: boolean; domain: string; served: boolean; busy: boolean }
+type Status = { enabled: boolean; listening: boolean; port: number; error: string; lan: boolean; addresses: Address[]; devices: Device[]; tailscale: Tailscale }
 
 // The link the QR code holds: the key is in the fragment, which the browser never sends.
-export function pairLink(address: string, port: number, id: number, key: string): string {
-  return `http://${address}:${port}/#pair=${id}.${key}`
+export function pairLink(base: string, id: number, key: string): string {
+  return `${base}/#pair=${id}.${key}`
 }
+
+const KIND_LABEL = { name: 'mobile.name', https: 'mobile.https', tailscale: 'mobile.tailscale' } as const
 
 function QrCode({ text }: { text: string }) {
   const code = qrcode(0, 'M')
@@ -89,16 +92,17 @@ export function MobileSection() {
       {status.enabled && status.listening && (
         <div className="mobile-pair">
           {status.addresses.length === 0 ? (
-            <p className="quiet small">{t('mobile.noAddress')}</p>
+            // This computer only and no Tailscale HTTPS yet: the button below makes the address.
+            status.lan && <p className="quiet small">{t('mobile.noAddress')}</p>
           ) : (
             <>
               <label className="small">
                 {t('mobile.address')}{' '}
                 <select value={chosen?.address ?? ''} onChange={e => setAddress(e.target.value)}>
                   {status.addresses.map(a => (
-                    <option key={a.address} value={a.address}>
+                    <option key={a.url} value={a.address}>
                       {a.address}
-                      {a.kind === 'tailscale' ? ` (${t('mobile.tailscale')})` : ''}
+                      {a.kind !== 'lan' ? ` (${t(KIND_LABEL[a.kind])})` : ''}
                     </option>
                   ))}
                 </select>
@@ -123,7 +127,7 @@ export function MobileSection() {
               )}
               {shown && chosen && (
                 <div className="mobile-shown">
-                  <QrCode text={pairLink(chosen.address, status.port, shown.id, shown.key)} />
+                  <QrCode text={pairLink(chosen.url, shown.id, shown.key)} />
                   <div>
                     <p className="small">{t('mobile.scan')}</p>
                     <div className="actions">
@@ -134,8 +138,39 @@ export function MobileSection() {
               )}
             </>
           )}
-          <p className="quiet small">{t('mobile.firewall')}</p>
-          <p className="quiet small">{t('mobile.outside')}</p>
+          {status.lan && <p className="quiet small">{t('mobile.firewall')}</p>}
+          {status.tailscale.installed && status.tailscale.domain ? (
+            <div className="mobile-tailscale">
+              <p className="quiet small">{t('mobile.tailscaleHint')}</p>
+              <div className="actions">
+                <button
+                  disabled={busy || (!status.tailscale.served && status.tailscale.busy)}
+                  onClick={async () => {
+                    const reply = await post('/mobile/tailscale', { on: !status.tailscale.served })
+                    if (reply.ok) setStatus(reply.json as unknown as Status)
+                  }}
+                >
+                  {status.tailscale.served ? t('mobile.tailscaleOff') : t('mobile.tailscaleOn')}
+                </button>
+              </div>
+              {!status.tailscale.served && status.tailscale.busy && <p className="quiet small">{t('mobile.tailscaleBusy')}</p>}
+            </div>
+          ) : (
+            <p className="quiet small">{t('mobile.outside')}</p>
+          )}
+          <label className="check-row" title={t('mobile.lanHint')}>
+            <input
+              type="checkbox"
+              checked={status.lan}
+              disabled={busy}
+              onChange={async e => {
+                const reply = await post('/mobile', { lan: e.target.checked })
+                if (reply.ok) setStatus(reply.json as unknown as Status)
+              }}
+            />
+            {t('mobile.lan')}
+          </label>
+          <p className="quiet small">{t('mobile.lanHint')}</p>
         </div>
       )}
       <h3 className="small">{t('mobile.devices')}</h3>

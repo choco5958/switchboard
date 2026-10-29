@@ -20,6 +20,10 @@ let armed = null
 let armTimer = 0
 let target = ''
 let renderLater = false
+// Notifications (sw.js, bridge/push.ts): only over HTTPS, the Tailscale address.
+let worker = null
+let pushOn = false
+let waitingCount = null
 const picks = new Map()
 const memos = new Map()
 const drafts = new Map()
@@ -129,6 +133,11 @@ async function refresh() {
       if (result.status < 400) {
         view = result.json
         state = 'ready'
+        // Something new while the page is open: a buzz (where phones allow it) and the count in the title.
+        const count = view.questions.length + view.approvals.length
+        if (waitingCount !== null && count > waitingCount) navigator.vibrate?.(200)
+        waitingCount = count
+        document.title = count > 0 ? `(${count}) Switchboard` : 'Switchboard'
       }
     } catch (error) {
       if (error.revoked) return lost()
@@ -184,7 +193,16 @@ function draw() {
   if (view) {
     const body = { decisions: drawDecisions, approvals: drawApprovals, tasks: drawTasks, sessions: drawSessions }[tab]()
     main.append(...body)
-    main.append(el('footer', {}, say('refreshed', { time: new Date(view.now).toLocaleTimeString(view.lang, { hour: '2-digit', minute: '2-digit' }) }), el('br'), say('homeHint')))
+    main.append(
+      el(
+        'footer',
+        {},
+        drawNotify(),
+        say('refreshed', { time: new Date(view.now).toLocaleTimeString(view.lang, { hour: '2-digit', minute: '2-digit' }) }),
+        el('br'),
+        say('homeHint'),
+      ),
+    )
   }
   parts.push(main)
   if (notice) parts.push(el('div', { className: `notice ${notice.bad ? 'bad' : ''}` }, notice.text))
@@ -192,6 +210,45 @@ function draw() {
 }
 
 const empty = key => [el('div', { className: 'empty' }, say(key))]
+
+const standalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches
+const apple = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
+
+function drawNotify() {
+  if (worker && 'PushManager' in window) {
+    return el('div', { className: 'notify' }, el('button', { className: 'btn', onclick: () => void (pushOn ? notifyOff() : notifyOn()) }, say(pushOn ? 'notifyOff' : 'notifyOn')))
+  }
+  if (isSecureContext && apple() && !standalone()) return el('p', { className: 'notify' }, say('notifyIos'))
+  if (!isSecureContext) return el('p', { className: 'notify' }, say('notifyHttps'))
+  return null
+}
+
+async function notifyOn() {
+  try {
+    if ((await Notification.requestPermission()) !== 'granted') return flash(say('notifyDenied'), true)
+    const key = (await api('GET', '/push-key')).json.key
+    const subscription = await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64(key) })
+    const result = await api('POST', '/push', { subscription: subscription.toJSON() })
+    if (result.status >= 400) return flash(say('failed', { error: result.json?.error ?? result.status }), true)
+    pushOn = true
+    flash(say('notifyOnDone'))
+  } catch (error) {
+    if (error.revoked) return lost()
+    flash(say('failed', { error: error.message }), true)
+  }
+}
+
+async function notifyOff() {
+  try {
+    await (await worker.pushManager.getSubscription())?.unsubscribe()
+    await api('POST', '/push', { subscription: null })
+    pushOn = false
+    flash(say('notifyOffDone'))
+  } catch (error) {
+    if (error.revoked) return lost()
+    flash(say('failed', { error: error.message }), true)
+  }
+}
 
 function where(item) {
   return el('div', { className: 'meta' }, el('span', { className: 'chip accent' }, item.project), item.task ? el('span', {}, item.task) : null)
@@ -351,7 +408,18 @@ function drawSessions() {
 // --- start ---
 
 // A new QR code opened over this page only changes the fragment: start again with its pair.
-addEventListener('hashchange', () => location.hash.includes('pair=') && location.reload())
+addEventListener('hashchange', () => {
+  if (location.hash.includes('pair=')) return location.reload()
+  openTab(new URLSearchParams(location.hash.slice(1)).get('tab'))
+})
+
+// A tapped notification names the tab to show.
+function openTab(name) {
+  if (!['decisions', 'approvals', 'tasks', 'sessions'].includes(name)) return
+  tab = name
+  history.replaceState(null, '', location.pathname)
+  render()
+}
 
 async function start() {
   try {
@@ -364,6 +432,16 @@ async function start() {
   if (!pairing) {
     state = 'unpaired'
     return render()
+  }
+  openTab(new URLSearchParams(location.hash.slice(1)).get('tab'))
+  if (isSecureContext && 'serviceWorker' in navigator) {
+    try {
+      worker = await navigator.serviceWorker.register('sw.js')
+      pushOn = Boolean(await worker.pushManager?.getSubscription())
+      navigator.serviceWorker.addEventListener('message', event => openTab(event.data?.tab))
+    } catch {
+      worker = null
+    }
   }
   render()
   await refresh()

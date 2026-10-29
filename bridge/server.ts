@@ -38,6 +38,7 @@ import {
 import { nextRun, parseSchedule, type Schedule } from './schedule.ts'
 import { TELEGRAM_API, createTelegram } from './telegram.ts'
 import { MOBILE_PORT, createMobile } from './mobile.ts'
+import { makeVapidKeys, type PushMessage, type VapidKeys } from './push.ts'
 import { DICTS, eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, taskStatusLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
 
 export type Option = { key: string; label: string }
@@ -334,7 +335,8 @@ export function systemLocale(): string {
 
 // `token`: the bridge listens on TCP (bridge/endpoint.ts) and answers only requests that carry it.
 // `appKey`: what the app proves itself with (appOnly); the app hands it over at the start.
-export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch; token?: string; appKey?: string }
+// `tailscale`: the tailscale command for phones (bridge/mobile.ts), null for none (tests).
+export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch; token?: string; appKey?: string; tailscale?: string | null }
 
 // What only the person may do, through the app: answer a permission ask, say they are away,
 // set up Telegram or phones, schedule prompts, change settings, control sessions and read their
@@ -942,10 +944,10 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   // Feature area: phones (bridge/mobile.ts). A phone's decrypted request runs through handle()
   // like any other, marked as the phone's so it may answer what only the person may.
   const phoneRequests = new WeakSet<IncomingMessage>()
-  const mobileSetting = (): { enabled: boolean; port: number } => {
+  const mobileSetting = (): { enabled: boolean; port: number; lan: boolean } => {
     const row = db.prepare("select value from settings where key = 'mobile'").get() as { value: string } | undefined
-    const saved = (row ? JSON.parse(row.value) : {}) as { enabled?: unknown; port?: unknown }
-    return { enabled: saved.enabled === true, port: Number.isInteger(saved.port) ? (saved.port as number) : MOBILE_PORT }
+    const saved = (row ? JSON.parse(row.value) : {}) as { enabled?: unknown; port?: unknown; lan?: unknown }
+    return { enabled: saved.enabled === true, port: Number.isInteger(saved.port) ? (saved.port as number) : MOBILE_PORT, lan: saved.lan !== false }
   }
   const viaPhone = (method: string, path: string, body: unknown): Promise<{ status: number; json: unknown }> =>
     new Promise(resolve => {
@@ -1019,16 +1021,35 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     }))
     return { lang, now: now(), questions, approvals, tasks, sessions }
   }
+  // The bridge's VAPID key pair for Web Push (push.ts), made once and kept with the other secrets.
+  const vapid = (): VapidKeys => {
+    const saved = secret('vapid')
+    if (saved) return JSON.parse(saved) as VapidKeys
+    const made = makeVapidKeys()
+    setSecret('vapid', JSON.stringify(made))
+    return made
+  }
   const mobile = createMobile({
     db,
     inner: viaPhone,
+    vapid,
+    fetch: options.fetch,
+    tailscale: options.tailscale,
     strings: () => {
       const lang = langNow()
       return { lang, ...Object.fromEntries(Object.entries(DICTS[lang]).filter(([key]) => key.startsWith('mobile.page.'))) }
     },
   })
   phonesChanged = mobile.changed
-  if (mobileSetting().enabled) void mobile.start(mobileSetting().port)
+  const notifyPhones = (message: PushMessage) => mobile.notify(message).catch(() => 0)
+  // The person just left the desk: one notification for what already waits, as Telegram sends it.
+  const phonesAway = async () => {
+    const questions = (db.prepare("select count(*) n from questions where status = 'pending'").get() as { n: number }).n
+    const approvals = (db.prepare("select count(*) n from approvals where status = 'pending'").get() as { n: number }).n
+    if (questions + approvals === 0) return
+    await notifyPhones({ title: say('mobile.push.waiting', { questions, approvals }), body: '', tag: 'waiting', tab: questions > 0 ? 'decisions' : 'approvals' })
+  }
+  if (mobileSetting().enabled) void mobile.start(mobileSetting().port, mobileSetting().lan)
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // A path is taken as written: no dot segments, which URL would resolve into another route
@@ -1065,7 +1086,10 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       req.on('close', () => {
         watchers.delete(res)
         // The app closed: the person is away from it, and what waits goes to Telegram.
-        if (watchers.size === 0) telegram.away()
+        if (watchers.size === 0) {
+          telegram.away()
+          void phonesAway()
+        }
       })
       return
     }
@@ -1094,6 +1118,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       logEvent(sessionId, '권한', `A${id} ${tool}: ${maskSecrets(summary.split('\n')[0]?.slice(0, 160) ?? '')}`)
       changed('approvals')
       telegram.approvalPosted(db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow)
+      if (away()) void notifyPhones({ title: say('mobile.push.approval', { tool, project: projectOf(sessionId) }), body: maskSecrets(summary.split('\n')[0] ?? '').slice(0, 160), tag: `a${id}`, tab: 'approvals' })
       return send(res, 200, { id })
     }
     const approvalOne = path.match(/^\/approvals\/(\d+)(\/answer)?$/)
@@ -1114,23 +1139,41 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const body = await readJson(req)
       const wasAway = away()
       presence = { away: body.away === true, at: now() }
-      if (!wasAway && away()) telegram.away()
+      if (!wasAway && away()) {
+        telegram.away()
+        void phonesAway()
+      }
       return send(res, 200, { away: away() })
     }
 
     // Telegram (bridge/telegram.ts), from the app's settings. The token never leaves the bridge.
     // Phones (bridge/mobile.ts): on or off, pairing one, forgetting one, and what a phone reads.
-    if (method === 'GET' && path === '/mobile') return send(res, 200, { ...mobile.status(), enabled: mobileSetting().enabled })
+    if (method === 'GET' && path === '/mobile') return send(res, 200, { ...(await mobile.status()), enabled: mobileSetting().enabled })
     if (method === 'POST' && path === '/mobile') {
       const body = await readJson(req)
-      const enabled = body.enabled === true
+      const saved = mobileSetting()
+      const enabled = typeof body.enabled === 'boolean' ? body.enabled : saved.enabled
       // `port`: another than MOBILE_PORT, kept for later starts (0 picks a free one, for tests).
-      const port = Number.isInteger(body.port) && (body.port as number) >= 0 && (body.port as number) < 65536 ? (body.port as number) : mobileSetting().port
-      db.prepare("insert into settings (key, value) values ('mobile', ?) on conflict (key) do update set value = excluded.value").run(JSON.stringify({ enabled, port }))
-      if (enabled) await mobile.start(mobileSetting().port)
+      const port = Number.isInteger(body.port) && (body.port as number) >= 0 && (body.port as number) < 65536 ? (body.port as number) : saved.port
+      // `lan` false: this computer only, for Tailscale HTTPS (no firewall question either).
+      const lan = typeof body.lan === 'boolean' ? body.lan : saved.lan
+      db.prepare("insert into settings (key, value) values ('mobile', ?) on conflict (key) do update set value = excluded.value").run(JSON.stringify({ enabled, port, lan }))
+      if (enabled) await mobile.start(port, lan)
       else await mobile.stop()
       changed('mobile')
-      return send(res, 200, { ...mobile.status(), enabled })
+      return send(res, 200, { ...(await mobile.status()), enabled })
+    }
+    // Tailscale HTTPS for the phone page: tailscale serve, on the person's say in the app.
+    if (method === 'POST' && path === '/mobile/tailscale') {
+      const body = await readJson(req)
+      const on = body.on === true
+      const status = await mobile.status()
+      if (on && !status.listening) return send(res, 409, { error: say('mobile.off') })
+      if (on && status.tailscale.busy) return send(res, 409, { error: say('mobile.tailscaleBusy') })
+      const result = await mobile.tailscale(on)
+      if (!result.ok) return send(res, 400, { error: say('mobile.tailscaleFailed', { error: result.error }) })
+      changed('mobile')
+      return send(res, 200, { ...(await mobile.status()), enabled: mobileSetting().enabled })
     }
     if (method === 'POST' && path === '/mobile/pair') {
       const body = await readJson(req)
@@ -1298,7 +1341,9 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const id = Number(result.lastInsertRowid)
       logEvent(sessionId, '결정 대기', `Q${id} ${question}`, taskTitle)
       changed('questions')
-      telegram.posted(db.prepare('select * from questions where id = ?').get(id) as QuestionRow)
+      const posted = db.prepare('select * from questions where id = ?').get(id) as QuestionRow
+      telegram.posted(posted)
+      if (away()) void notifyPhones({ title: say('mobile.push.question', { project: posted.project }), body: maskSecrets(posted.question).slice(0, 160), tag: `q${id}`, tab: 'decisions' })
       return send(res, 200, { id })
     }
 

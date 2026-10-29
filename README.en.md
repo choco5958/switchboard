@@ -88,7 +88,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 
 - **Answer on Telegram**: when the app is closed, the screen is locked, or there has been no input for more than 5 minutes, decision questions go to your own Telegram bot. Answer with a button or a reply.
 - **Permission relay**: in the same situations, Claude Code's permission asks also come to the app and to Telegram. Allowing from Telegram takes a second tap. At your desk, the terminal asks as usual.
-- **Phone browser**: from a phone on the same Wi-Fi (or Tailscale), answer decisions, allow or deny permission asks, see tasks and write to sessions. There is nothing to install; add it to the home screen to open it like an app.
+- **Phone browser**: from a phone on the same Wi-Fi (or Tailscale), answer decisions, allow or deny permission asks, see tasks and write to sessions. There is nothing to install; add it to the home screen to open it like an app. Opened over Tailscale HTTPS, it also notifies you of new questions.
 - **Scheduled prompts**: daily, weekdays, every N minutes, or once, a prompt goes to a project's session. If no session is connected, the app opens a `+ Claude` terminal. Runs with nothing to report send no notification.
 
 ### Fixing what you see (live debugging)
@@ -221,10 +221,14 @@ The bridge asks Telegram's servers for new messages itself, so there is no port 
 ### Phone access
 
 1. In Settings > Phone access, turn on `Turn on phone access`. If macOS asks whether to accept incoming connections, choose Allow.
-2. Pick the address the phone opens, type a name for the phone and press `Show a QR code`.
+2. Pick the address the phone opens, type a name for the phone and press `Show a QR code`. On macOS the default is `This computer's name` (`name.local`), which stays when the router hands the computer another address, so the phone does not need pairing again.
 3. Scan the QR code with the phone's camera and open it. Add it to the home screen from the browser's share menu to open it like an app.
 
-Each phone connects on its own, and `Disconnect` in Settings ends one at any time. To use it away from home or the office, install [Tailscale](https://tailscale.com) on the computer and the phone, and show the QR code for the Tailscale address (100.x.x.x). The phone page sends no notifications, so connect Telegram as well if you want to hear about new questions at once.
+Each phone connects on its own, and `Disconnect` in Settings ends one at any time.
+
+**Notifications, and away from home**: with [Tailscale](https://tailscale.com) installed and signed in on the computer and the phone, Settings offers `Turn on Tailscale HTTPS`. It has Tailscale make an HTTPS address under this computer's name, open on your tailnet only. Pair through that address to use the page anywhere, and press `Get notifications on this phone` at the bottom to hear about new decisions and permission asks while you are away. On iPhone, add the page to the home screen and open it from there before turning notifications on. A page opened over plain HTTP announces new items only while it is open, with a buzz and a count in its title.
+
+Turn off `Accept phones on the same Wi-Fi` to listen on this computer only, for Tailscale HTTPS alone. macOS then does not ask about the firewall either.
 
 ### Scheduled prompts
 
@@ -277,6 +281,7 @@ pnpm test; switchboard fire w3 "tests finished: exit code $?"
 - Remote approvals show the command first. Asks that cannot be shown whole (cut, hidden characters, edits in several places) are asked in the terminal only, and asks with masked values cannot be allowed from Telegram.
 - On Windows the bridge opens a port on 127.0.0.1 only and answers only requests carrying the token it makes at each start. Requests from web pages are refused.
 - Phone access stays closed until you turn it on. Then it answers only this computer, the private network and Tailscale addresses. Every request and answer is encrypted with the key each phone got from its QR code (ChaCha20-Poly1305), and each request carries its time and a value used once, so it cannot be sent again. Someone else on the Wi-Fi can neither read it nor answer in your place. A phone can only answer decisions and permission asks, write to sessions and read the view.
+- Phone notifications pass through the phone browser's push service (Apple, Google and others). They are encrypted with that browser's key (RFC 8291), so the service cannot read them, and they carry only the project name and the question's first line, or for a permission ask the tool name and the masked first line of the command.
 - The work log is deleted after 7 days. Your account email is shown masked and is never sent anywhere.
 
 ## Development
