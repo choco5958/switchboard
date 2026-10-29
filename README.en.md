@@ -1,0 +1,195 @@
+# Switchboard
+
+[한국어](README.md) | **English** | [日本語](README.ja.md) | [简体中文](README.zh-CN.md)
+
+A macOS desktop app for directing several coding-agent sessions (Claude Code, Codex, Gemini and others) from one screen.
+
+When a session needs a decision from you, it posts the question to a decision queue and keeps working instead of stopping. You answer with a key press, and the answer goes back to that session as a prompt. Sessions can also hand work to each other, and while you are away, decisions and permission asks reach you on Telegram.
+
+![Home: tasks by project, decision queue, work log](docs/screenshot-home.png)
+
+## Features
+
+### Decisions and tasks
+
+- **Decision queue**: a session posts options, a recommendation and the reason for it with `ask_decision`. Pick with keys such as `a` or `b` and send with `Enter`. You can also hold a question or answer with a note. The same question is never queued twice.
+- **Tasks and progress graph**: task stages (request, design, work, done) and nodes (check, build, test, review) are drawn on screen, with the subagent working on each node and whether it is running or finished.
+- **Waiting for you**: tasks with an open decision, a turn stalled for more than 5 minutes, a usage limit, or a dropped session gather at the top of the sidebar. Stalled sessions and sessions whose limit has reset also raise a macOS notification.
+- **Per-project view**: pick a folder on the left and the whole screen shows only that project's sessions and tasks.
+
+### Sessions working together
+
+- **Ask and answer**: a session finds others with `list_sessions` and sends a request with `send_to_session`. If the receiving session ends its turn without replying, its last answer goes back as the result.
+- **Forward a decision**: you can forward a decision question to another session and let it answer.
+- **Usage limits**: answers and messages for a session that has hit its usage limit are held until the limit resets, then delivered.
+
+### While you are away
+
+- **Answer on Telegram**: when the app is closed, the screen is locked, or there has been no input for more than 5 minutes, decision questions go to your own Telegram bot. Answer with a button or a reply.
+- **Permission relay**: in the same situations, Claude Code's permission asks also come to the app and to Telegram. Allowing from Telegram takes a second tap. At your desk, the terminal asks as usual.
+- **Scheduled prompts**: daily, weekdays, every N minutes, or once, a prompt goes to a project's session. If no session is connected, the app opens a `+ Claude` terminal. Runs with nothing to report send no notification.
+
+### Fixing what you see (live debugging)
+
+- Register a dev server, start it, and open it in the in-app browser.
+- Click an element on the page to leave a comment. The session receives it with the position, CSS, a screenshot, and the page's console errors and failed requests at that moment.
+- Sessions read, click and type on local pages with the `browser_*` tools to check their own fixes. Only addresses on this computer or the private network are allowed.
+- Local addresses that a CLI opens from an app terminal open in the in-app browser.
+
+### Terminals and the shell
+
+- **Built-in terminals**: `+ Claude` in the dock at the bottom opens Claude Code with the mod connected; `+ Shell` opens a plain shell.
+- **Other coding CLIs**: Codex, Gemini CLI, Qwen Code, GitHub Copilot CLI, OpenCode, Goose and Amp also connect to the decision queue and task reports. The app attaches its MCP server through launch options, so each CLI's config files stay untouched. Cursor CLI, Grok, Kimi and Crush open as plain terminals, and any other CLI can be registered in Settings. Only installed CLIs appear in the dock.
+- **`switchboard` command**: hand a session work from a shell or script and get the result back, with the outcome also reported as an exit code.
+- **Session-side pane**: type `/switchboard` in Claude Code to see this session's task flow and open decisions in a side pane.
+
+### Display
+
+- The top bar shows Claude's 5-hour and weekly usage and context usage.
+- Korean, English, Japanese and Simplified Chinese. It follows the OS language at first; change it in Settings.
+- 13 themes: Classic navy, Adventure journal, Phosphor terminal, Pixel dots, Subway map, Circuit board, Modern terminal, Blue DOS window, Dracula, Nord, Solarized Dark and Light, GitHub Light.
+- With Orca installed, each node can get its own worktree, and a Linear issue can start a task.
+
+![Decision queue: Blue DOS window theme](docs/screenshot-decision.png)
+
+![Task view: stages and progress graph](docs/screenshot-task.png)
+
+## Architecture
+
+```
+Claude Code session ──(mod: ide-bridge)─────┐
+Claude Code session ──(mod: ide-bridge)─────┼── Bridge (Unix socket + SQLite) ── Switchboard app (Electron)
+Codex, Gemini, ... ──(MCP: mcp/server.ts)───┤
+switchboard command ────────────────────────┤
+Telegram bot ──(long polling)───────────────┘
+```
+
+| Folder | Role |
+| --- | --- |
+| `bridge/` | Local relay server using the `~/.claude-ide/bridge.sock` socket and the `~/.claude-ide/ide.db` SQLite database. It opens no network port. Scheduled runs and the Telegram connection also run here. |
+| `mod/` | The Claude Code mod `ide-bridge`. It registers the tools, puts answers from the app into the session, and draws the `/switchboard` pane. |
+| `mcp/` | MCP server (stdio) for other coding CLIs: the same tools as the mod, plus `check_answers`. |
+| `scripts/` | The setup script and the `switchboard` command. |
+| `src/` | The Electron app (React). |
+
+## Requirements
+
+- macOS (tested on Apple Silicon; Linux is untested and Windows is not supported)
+- Node.js 24 or later (the bridge uses `node:sqlite` and runs `.ts` files directly)
+- pnpm
+- Claude Code 2.1.309 or later (for mod support)
+- Optional: other coding CLIs such as Codex or Gemini CLI, Orca (worktrees, Linear), a Telegram account
+
+## Install
+
+```sh
+git clone https://github.com/choco5958/switchboard.git
+cd switchboard
+pnpm install
+pnpm run setup  # writes ~/.claude-ide/start-bridge.sh and ~/.local/bin/switchboard
+pnpm dev        # run the app
+```
+
+Run `pnpm run setup` again if you move the repo folder. `~/.local/bin` must be on your PATH for the `switchboard` command.
+
+The app's `+ Claude` terminal loads the mod by itself. To connect Claude Code sessions started in other terminals too, install the mod from the Claude Code prompt:
+
+```
+/plugin install ide-bridge --marketplace choco5958/switchboard
+```
+
+Answer `y` to `Add marketplace?` and choose the first scope, user. From a shell: `claude plugin install ide-bridge --marketplace choco5958/switchboard`.
+
+Sessions started after the install connect to the bridge. If the bridge is not running, the mod or the app starts it. The mod starts the bridge with the `start-bridge.sh` that `pnpm run setup` writes, so installing only the mod without the repo does not work.
+
+## Usage
+
+1. Start the app and click `+ Claude` in the dock. The first time, choose a project folder with `+ Folder` at the top left.
+2. Give Claude Code work as usual. The tool descriptions say when to use them, so the session posts its task on its own and asks when it needs a decision.
+3. A number on the question-mark icon on the left means a decision is waiting. Open it and answer with a key.
+
+### Keys
+
+| Key | Action |
+| --- | --- |
+| `a`, `b`, `1`, `2` | Pick an option |
+| `Enter` | Send |
+| `H` | Hold |
+| `M` | Write a note (`Cmd+Enter` to send, `Esc` to leave) |
+| `Cmd+K` | Find (open a task, ask for a progress report, and so on) |
+
+### Connecting Telegram
+
+1. In Telegram, send `/newbot` to `@BotFather` and choose a name and username for the bot.
+2. In Switchboard, open Settings > Answer on Telegram, paste the token BotFather gave you (it looks like `123456:ABC...`), and click Connect bot.
+3. Click Get a link code and, within 10 minutes, open the link on your phone and tap Start. Only that chat is connected; answers from anyone else are refused.
+
+The bridge asks Telegram's servers for new messages itself, so there is no port to open.
+
+### Scheduled prompts
+
+In Settings > Scheduled prompts, set a name, project, prompt and schedule. Intervals are 5 minutes or longer. A run is skipped while the previous one is still going. For runs missed while the app or bridge was off, you choose whether to run them once on startup.
+
+### Shell command
+
+| Command | What it does |
+| --- | --- |
+| `switchboard sessions` | List sessions (● connected) |
+| `switchboard send <session or project> <work or -> [--wait] [--timeout 30m] [--info] [--json]` | Hand a session work and print an id such as `m7`. With `--wait` it waits for the result and prints it; `--info` sends a notice that expects no reply. `-` reads from standard input. |
+| `switchboard status m7` | Status and result of work you handed over |
+| `switchboard decisions`, `switchboard answer Q12 a [note]` | List open decisions and answer one |
+| `switchboard waits`, `switchboard fire w3 [payload]` | List waits a session has opened and wake one |
+
+Exit codes: 0 done, 1 failed, 2 usage error, 3 the session is waiting on a decision, 4 timed out (the session keeps working), 5 the bridge is down or there is no such session.
+
+```sh
+# Wake the session waiting on the test run when it finishes
+pnpm test; switchboard fire w3 "tests finished: exit code $?"
+```
+
+## Tools sessions use
+
+| Tool | What it does |
+| --- | --- |
+| `ask_decision` | Posts a question to the decision queue and returns right away without waiting. |
+| `set_task` | Creates a task or updates its stage, current step and test results. |
+| `plan_nodes`, `update_node` | Splits a task into nodes on the progress graph and changes their state (waiting, now, done, failed). |
+| `node_worktree` | Creates an Orca worktree for a node. Requires Orca. |
+| `open_in_ide` | Opens a page or dev server in the Live debugging tab. |
+| `list_sessions`, `send_to_session` | Sees other sessions and sends them a request or information. The reply arrives on a later turn. |
+| `await_event`, `close_wait` | Opens and closes a wait for outside work such as a build or a deploy. |
+| `routine_no_update`, `routine_report_failure` | Records that a scheduled run had nothing to report, or that it failed. |
+| `browser_snapshot`, `browser_click`, `browser_type`, `browser_navigate`, `browser_console`, `browser_screenshot` | Read and drive local pages in the in-app browser. A click with a stale ref is refused. |
+| `check_answers` | For other coding CLIs: a session running outside the app collects answers it has not received yet. |
+
+## Data and security
+
+- All data stays under `~/.claude-ide/` on this computer. The folder is readable only by you (0700), and so are the socket and database (0600).
+- With Telegram connected, decision questions and permission asks pass through Telegram's servers. Values that look like credentials are masked before sending. The bot token is kept only in the database, never in the screen state.
+- Console and request logs attached to screen comments are masked the same way as they are collected.
+- The sessions' browser tools only open addresses on this computer or the private network.
+- The work log is deleted after 7 days. Your account email is shown masked and is never sent anywhere.
+
+## Development
+
+```sh
+pnpm test        # bridge, mod and scripts (node:test), and UI logic (vitest)
+pnpm typecheck
+pnpm build && pnpm start
+claude plugin test mod
+```
+
+Tests run with your account environment variables removed and a temporary home folder (`scripts/test-env.ts`).
+
+Check the UI against a bridge kept apart from your real data. macOS limits socket paths to about 104 bytes, so keep them short.
+
+```sh
+CLAUDE_IDE_SOCKET=/tmp/sb/b.sock CLAUDE_IDE_DB=/tmp/sb/ide.db node bridge/server.ts &
+CLAUDE_IDE_SOCKET=/tmp/sb/b.sock CLAUDE_IDE_CAPTURE=/tmp/sb/shot.png pnpm exec electron .
+```
+
+With `CLAUDE_IDE_CAPTURE` set, the app saves the screen as a PNG without showing a window and exits. [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) explains how to add a theme. Redraw the app icon with `node scripts/icon.mjs`.
+
+## License
+
+[MIT](LICENSE)
