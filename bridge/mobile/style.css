@@ -105,4 +105,10 @@ textarea:focus { border-color: var(--accent); }
 .welcome p { color: var(--quiet); }
 footer { padding: 4px 0 0; text-align: center; color: var(--quiet); font-size: 12px; }
 .notify { margin: 0 0 12px; }
+.code { margin-top: 24px; display: grid; gap: 10px; }
+.code-input {
+  width: 100%; padding: 12px; border-radius: 11px; border: 1px solid var(--line); background: var(--panel);
+  font: 600 20px/1.2 var(--mono); letter-spacing: 3px; text-align: center; text-transform: uppercase; outline: none;
+}
+.code-input:focus { border-color: var(--accent); }
 .notify .btn { width: 100%; }

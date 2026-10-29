@@ -18,6 +18,25 @@ export function pairLink(base: string, id: number, key: string): string {
 }
 
 const KIND_LABEL = { name: 'mobile.name', https: 'mobile.https', tailscale: 'mobile.tailscale' } as const
+const TAILSCALE_DNS = 'https://login.tailscale.com/admin/dns'
+
+// Text with its https links made clickable (they open in the person's browser).
+function LinkedText({ text, className }: { text: string; className?: string }) {
+  const parts = text.split(/(https:\/\/[^\s)]+)/)
+  return (
+    <p className={className}>
+      {parts.map((part, i) =>
+        /^https:\/\//.test(part) ? (
+          <a key={i} href={part} target="_blank" rel="noreferrer">
+            {part}
+          </a>
+        ) : (
+          part
+        ),
+      )}
+    </p>
+  )
+}
 
 function QrCode({ text }: { text: string }) {
   const code = qrcode(0, 'M')
@@ -39,12 +58,18 @@ export function MobileSection() {
   const [status, setStatus] = useState<Status | null>(null)
   const [address, setAddress] = useState('')
   const [name, setName] = useState('')
-  const [shown, setShown] = useState<{ id: number; key: string } | null>(null)
+  const [shown, setShown] = useState<{ id: number; key: string; code: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  // A Tailscale failure, kept on screen: its text often names a page to open.
+  const [tailscaleError, setTailscaleError] = useState('')
 
   const load = useCallback(async () => {
     const reply = await window.ide.bridge('GET', '/mobile')
-    if (reply.ok) setStatus(reply.json as unknown as Status)
+    if (reply.ok) {
+      setStatus(reply.json as unknown as Status)
+      setLoadError('')
+    } else setLoadError(String(reply.json.error ?? reply.status))
   }, [])
   useEffect(() => {
     void load()
@@ -65,7 +90,15 @@ export function MobileSection() {
     return reply
   }
 
-  if (!status) return null
+  if (!status) {
+    if (!loadError) return null
+    return (
+      <section className="settings-row mobile">
+        <h2>{t('mobile.title')}</h2>
+        <p className="error small">{t('mobile.loadFailed', { error: loadError })}</p>
+      </section>
+    )
+  }
   const chosen = status.addresses.find(a => a.address === address) ?? status.addresses[0]
   return (
     <section className="settings-row mobile">
@@ -107,6 +140,7 @@ export function MobileSection() {
                   ))}
                 </select>
               </label>
+              {chosen?.kind === 'name' && <p className="quiet small">{t('mobile.nameHint')}</p>}
               {!shown && (
                 <div className="mobile-add actions">
                   <input placeholder={t('mobile.namePlaceholder')} aria-label={t('mobile.deviceName')} value={name} maxLength={60} onChange={e => setName(e.target.value)} />
@@ -116,7 +150,7 @@ export function MobileSection() {
                     onClick={async () => {
                       const reply = await post('/mobile/pair', { name: name.trim() })
                       if (reply.ok) {
-                        setShown(reply.json as unknown as { id: number; key: string })
+                        setShown(reply.json as unknown as { id: number; key: string; code: string })
                         setName('')
                       }
                     }}
@@ -130,6 +164,7 @@ export function MobileSection() {
                   <QrCode text={pairLink(chosen.url, shown.id, shown.key)} />
                   <div>
                     <p className="small">{t('mobile.scan')}</p>
+                    {shown.code && <p className="small">{t('mobile.code', { code: `${shown.code.slice(0, 4)}-${shown.code.slice(4)}` })}</p>}
                     <div className="actions">
                       <button onClick={() => setShown(null)}>{t('mobile.done')}</button>
                     </div>
@@ -139,6 +174,7 @@ export function MobileSection() {
             </>
           )}
           {status.lan && <p className="quiet small">{t('mobile.firewall')}</p>}
+          {status.lan && <p className="quiet small">{t('mobile.strongNote')}</p>}
           {status.tailscale.installed && status.tailscale.domain ? (
             <div className="mobile-tailscale">
               <p className="quiet small">{t('mobile.tailscaleHint')}</p>
@@ -146,15 +182,28 @@ export function MobileSection() {
                 <button
                   disabled={busy || (!status.tailscale.served && status.tailscale.busy)}
                   onClick={async () => {
-                    const reply = await post('/mobile/tailscale', { on: !status.tailscale.served })
-                    if (reply.ok) setStatus(reply.json as unknown as Status)
+                    setBusy(true)
+                    const reply = await window.ide.bridge('POST', '/mobile/tailscale', { on: !status.tailscale.served })
+                    setBusy(false)
+                    if (reply.ok) {
+                      setStatus(reply.json as unknown as Status)
+                      setTailscaleError('')
+                    } else setTailscaleError(String(reply.json.error ?? reply.status))
                   }}
                 >
                   {status.tailscale.served ? t('mobile.tailscaleOff') : t('mobile.tailscaleOn')}
                 </button>
               </div>
               {!status.tailscale.served && status.tailscale.busy && <p className="quiet small">{t('mobile.tailscaleBusy')}</p>}
+              {tailscaleError && <LinkedText className="error small" text={tailscaleError} />}
             </div>
+          ) : status.tailscale.installed ? (
+            <p className="quiet small">
+              {t('mobile.tailscaleLogin')}{' '}
+              <a href={TAILSCALE_DNS} target="_blank" rel="noreferrer">
+                {t('mobile.tailscaleAdmin')}
+              </a>
+            </p>
           ) : (
             <p className="quiet small">{t('mobile.outside')}</p>
           )}

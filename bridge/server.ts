@@ -981,7 +981,12 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   const phoneView = () => {
     const lang = langNow()
     const live = liveSessions()
-    const sessions = (db.prepare('select * from sessions order by last_seen desc limit 60').all() as { id: string; project: string; cwd: string; last_seen: number }[])
+    // Live sessions and running tasks first, so a cap of 60 never leaves one of them out.
+    const sessions = (
+      db
+        .prepare('select * from sessions order by (id in (select value from json_each(?))) desc, last_seen desc limit 60')
+        .all(JSON.stringify(live)) as { id: string; project: string; cwd: string; last_seen: number }[]
+    )
       .map(s => ({ id: s.id, label: sessionLabel(s.id), project: s.project, cwd: s.cwd, live: live.includes(s.id), lastSeen: s.last_seen }))
       .sort((a, b) => Number(b.live) - Number(a.live))
     const questions = (db.prepare("select * from questions where status in ('pending', 'held') order by id").all() as QuestionRow[]).map(q => ({
@@ -1007,7 +1012,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       cwd: a.cwd,
       createdAt: a.created_at,
     }))
-    const tasks = (db.prepare("select * from tasks where status != '보관' order by updated_at desc limit 60").all() as { id: number; session_id: string; project: string; title: string; stage: string; status: string; now: string; updated_at: number }[]).map(t => ({
+    const tasks = (db.prepare("select * from tasks where status != '보관' order by (status = '하는 중') desc, updated_at desc limit 60").all() as { id: number; session_id: string; project: string; title: string; stage: string; status: string; now: string; updated_at: number }[]).map(t => ({
       id: t.id,
       sessionId: t.session_id,
       project: t.project,
@@ -1041,13 +1046,19 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     },
   })
   phonesChanged = mobile.changed
-  const notifyPhones = (message: PushMessage) => mobile.notify(message).catch(() => 0)
+  const notifyPhones = (message: PushMessage) => (shuttingDown ? Promise.resolve(0) : mobile.notify(message).catch(() => 0))
   // The person just left the desk: one notification for what already waits, as Telegram sends it.
+  // Sent once for the same things waiting: locking the screen and then quitting the app tell nothing new.
+  let lastAway = ''
   const phonesAway = async () => {
-    const questions = (db.prepare("select count(*) n from questions where status = 'pending'").get() as { n: number }).n
-    const approvals = (db.prepare("select count(*) n from approvals where status = 'pending'").get() as { n: number }).n
-    if (questions + approvals === 0) return
-    await notifyPhones({ title: say('mobile.push.waiting', { questions, approvals }), body: '', tag: 'waiting', tab: questions > 0 ? 'decisions' : 'approvals' })
+    if (shuttingDown) return
+    const waiting = (sql: string) => (db.prepare(sql).all() as { id: number }[]).map(r => r.id)
+    const questions = waiting("select id from questions where status = 'pending' order by id")
+    const approvals = waiting("select id from approvals where status = 'pending' order by id")
+    const what = `${questions.join(',')}|${approvals.join(',')}`
+    if (questions.length + approvals.length === 0 || what === lastAway) return
+    lastAway = what
+    await notifyPhones({ title: say('mobile.push.waiting', { questions: questions.length, approvals: approvals.length }), body: '', tag: 'waiting', tab: questions.length > 0 ? 'decisions' : 'approvals' })
   }
   if (mobileSetting().enabled) void mobile.start(mobileSetting().port, mobileSetting().lan)
 
@@ -1088,7 +1099,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         // The app closed: the person is away from it, and what waits goes to Telegram.
         if (watchers.size === 0) {
           telegram.away()
-          void phonesAway()
+          void phonesAway().catch(() => undefined)
         }
       })
       return
@@ -1118,7 +1129,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       logEvent(sessionId, '권한', `A${id} ${tool}: ${maskSecrets(summary.split('\n')[0]?.slice(0, 160) ?? '')}`)
       changed('approvals')
       telegram.approvalPosted(db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow)
-      if (away()) void notifyPhones({ title: say('mobile.push.approval', { tool, project: projectOf(sessionId) }), body: maskSecrets(summary.split('\n')[0] ?? '').slice(0, 160), tag: `a${id}`, tab: 'approvals' })
+      // The tool and the project only: what would run stays off the lock screen.
+      if (away()) void notifyPhones({ title: say('mobile.push.approval', { tool, project: projectOf(sessionId) }), body: '', tag: `a${id}`, tab: 'approvals' })
       return send(res, 200, { id })
     }
     const approvalOne = path.match(/^\/approvals\/(\d+)(\/answer)?$/)
@@ -1141,7 +1153,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       presence = { away: body.away === true, at: now() }
       if (!wasAway && away()) {
         telegram.away()
-        void phonesAway()
+        void phonesAway().catch(() => undefined)
       }
       return send(res, 200, { away: away() })
     }
@@ -2009,6 +2021,13 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     // Everything waiting for a session, taken at once and marked delivered: answers ("q<id>")
     // and IDE messages ("m<id>") as text, oldest first, and the commands still open. Commands
     // that can become a prompt come back to be typed; the rest are closed as unsupported.
+    // The app took these with `hold` but could not type them (the terminal closed): they are not in.
+    if (method === 'POST' && path === '/deliveries/unhold') {
+      const body = await readJson(req)
+      for (const id of Array.isArray(body.ids) ? body.ids : []) holding.delete(Number(str(id).replace(/^m/, '')))
+      return send(res, 200, { ok: true })
+    }
+
     if (method === 'POST' && path === '/deliveries/take') {
       const body = await readJson(req)
       const sessionId = str(body.sessionId)

@@ -6,7 +6,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, listen } from './server.ts'
-import { mobileAddresses, mobileRouteAllowed, privateAddress, setTailscaleServe, tailscaleState, type Run } from './mobile.ts'
+import { createMobile, mobileAddresses, mobileRouteAllowed, needsStrong, newPairCode, privateAddress, setTailscaleServe, strongTransport, tailscaleState, type Run } from './mobile.ts'
+import { DatabaseSync } from 'node:sqlite'
 import { encryptPush, pushAllowed, sendPush, validSubscription, vapidAuth, makeVapidKeys } from './push.ts'
 import { fromB64, fromUtf8, open, seal, toB64, utf8 } from './mobile/aead.js'
 
@@ -63,8 +64,8 @@ test('a phone may come from this computer, the private network or Tailscale only
   } as never
   assert.deepEqual(mobileAddresses(47390, { interfaces, name: 'mac.local', https: 'mac.tail1.ts.net' }), [
     { address: 'mac.tail1.ts.net', kind: 'https', url: 'https://mac.tail1.ts.net' },
-    { address: 'mac.local', kind: 'name', url: 'http://mac.local:47390' },
     { address: '192.168.0.5', kind: 'lan', url: 'http://192.168.0.5:47390' },
+    { address: 'mac.local', kind: 'name', url: 'http://mac.local:47390' },
     { address: '100.90.1.2', kind: 'tailscale', url: 'http://100.90.1.2:47390' },
   ])
   // This computer only: Tailscale HTTPS is the one way in.
@@ -143,6 +144,47 @@ describe('Web Push', () => {
   })
 })
 
+test('allowing and writing to a session take a connection nobody on the Wi-Fi can swap', () => {
+  for (const ok of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '100.100.3.48', 'fd7a:115c:a1e0::d536:331']) assert.ok(strongTransport(ok), ok)
+  for (const no of ['192.168.0.5', '10.0.0.2', '172.16.0.1', 'fe80::1', '100.128.0.1']) assert.ok(!strongTransport(no), no)
+  assert.ok(needsStrong('POST', '/outbox', {}))
+  assert.ok(needsStrong('POST', '/approvals/3/answer', { decision: 'allow' }))
+  for (const decision of ['deny', 'terminal']) assert.ok(!needsStrong('POST', '/approvals/3/answer', { decision }))
+  assert.ok(!needsStrong('POST', '/questions/3/answer', { choice: 'a' }))
+  assert.ok(!needsStrong('GET', '/mobile/view', {}))
+  assert.notEqual(newPairCode(), newPairCode())
+})
+
+test('a pairing nobody used goes after ten minutes, with its code', async () => {
+  let clock = 1_000_000
+  const db = new DatabaseSync(':memory:')
+  const mobile = createMobile({ db, inner: async () => ({ status: 200, json: {} }), strings: () => ({}), vapid: makeVapidKeys, now: () => clock, tailscale: null })
+  mobile.pair('안 찍음')
+  assert.equal((await mobile.status()).devices.length, 1)
+  clock += 11 * 60_000
+  assert.equal((await mobile.status()).devices.length, 0)
+})
+
+test('an address that keeps failing waits out the minute, before anything is decrypted', async () => {
+  const db = new DatabaseSync(':memory:')
+  const mobile = createMobile({ db, inner: async () => ({ status: 200, json: {} }), strings: () => ({}), vapid: makeVapidKeys, tailscale: null })
+  await mobile.start(0, false)
+  const { port } = await mobile.status()
+  const post = (body: string) =>
+    new Promise<number>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port, method: 'POST', path: '/api', headers: { 'content-type': 'application/json' } }, res => {
+        res.resume()
+        res.on('end', () => resolve(res.statusCode ?? 0))
+      })
+      req.on('error', reject)
+      req.end(body)
+    })
+  const junk = JSON.stringify({ d: 1, n: toB64(randomBytes(12)), c: toB64(randomBytes(40)) })
+  for (let i = 0; i < 30; i++) assert.equal(await post(junk), 401)
+  assert.equal(await post(junk), 429)
+  await mobile.stop()
+})
+
 test('a phone reaches only what it is for', () => {
   assert.ok(mobileRouteAllowed('GET', '/mobile/view'))
   assert.ok(mobileRouteAllowed('POST', '/questions/3/answer'))
@@ -181,9 +223,11 @@ describe('a paired phone', () => {
       req.end()
     })
 
-  const http = (method: string, path: string, body?: string): Promise<{ status: number; text: string; headers: Record<string, unknown> }> =>
+  const http = (method: string, path: string, body?: string, host?: string): Promise<{ status: number; text: string; headers: Record<string, unknown> }> =>
     new Promise((resolve, reject) => {
-      const req = request({ host: '127.0.0.1', port, method, path, headers: { 'content-type': 'application/json' } }, res => {
+      const headers: Record<string, string> = { 'content-type': 'application/json' }
+      if (host) headers.host = host
+      const req = request({ host: '127.0.0.1', port, method, path, headers }, res => {
         let text = ''
         res.on('data', chunk => (text += chunk))
         res.on('end', () => resolve({ status: res.statusCode ?? 0, text, headers: res.headers }))
@@ -192,6 +236,12 @@ describe('a paired phone', () => {
       if (body !== undefined) req.write(body)
       req.end()
     })
+
+  // The live stream's link the page makes (mobile/app.js eventsLink): a sealed time, used once.
+  const eventsPath = (who = phone, at = Date.now()) => {
+    const nonce = randomBytes(12)
+    return `/events?d=${who.id}&n=${toB64(nonce)}&c=${toB64(seal(fromB64(who.key), nonce, utf8(JSON.stringify({ t: at })), utf8(`sb1:ev:${who.id}`)))}`
+  }
 
   // What the page (mobile/app.js) sends: one sealed request; the answer comes back sealed too.
   const sealed = (inner: unknown, who = phone) => {
@@ -277,13 +327,13 @@ describe('a paired phone', () => {
     assert.equal((await call('POST', `/mobile/devices/${other.id}/revoke`)).status, 200)
     const { body } = sealed({ t: Date.now(), method: 'GET', path: '/mobile/view' }, other)
     assert.equal((await http('POST', '/api', body)).status, 401)
-    assert.equal((await http('GET', `/events?d=${other.id}`)).status, 401)
+    assert.equal((await http('GET', eventsPath(other))).status, 401)
   })
 
   test("disconnecting a phone whose live stream is open ends the stream, and the bridge goes on", async () => {
     const third = (await call('POST', '/mobile/pair', { name: '세 번째' })).json
     const ended = new Promise<string>((resolve, reject) => {
-      const req = request({ host: '127.0.0.1', port, path: `/events?d=${third.id}` }, res => {
+      const req = request({ host: '127.0.0.1', port, path: eventsPath(third) }, res => {
         let text = ''
         res.on('data', chunk => (text += chunk))
         res.on('end', () => resolve(text))
@@ -340,6 +390,50 @@ describe('a paired phone', () => {
     assert.equal((await http('GET', '/')).status, 200)
     assert.deepEqual(local.addresses, [], 'no Tailscale here, so no address a phone could use')
     port = (await call('POST', '/mobile', { enabled: true, port: 0, lan: true })).json.port
+  })
+
+  test('another spelling of a used nonce, a request without its time, or one too large is refused', async () => {
+    const { n, body } = sealed({ t: Date.now(), method: 'GET', path: '/mobile/view' })
+    assert.equal((await http('POST', '/api', body)).status, 200)
+    for (const spelling of [`${n}AAAA`, `${n.slice(0, 4)} ${n.slice(4)}`, `${n}=`]) assert.equal((await http('POST', '/api', body.replace(n, spelling))).status, 401, spelling)
+    assert.equal((await ask('GET', '/mobile/view', undefined, NaN)).outer, 409, 'no time')
+    const huge = JSON.stringify({ d: phone.id, n: toB64(randomBytes(12)), c: 'A'.repeat(70_000) })
+    assert.notEqual((await http('POST', '/api', huge).catch(() => ({ status: 0 }))).status, 200)
+  })
+
+  test('the live stream needs the key, and a name this server does not go by is refused', async () => {
+    assert.equal((await http('GET', `/events?d=${phone.id}`)).status, 401, 'the id alone opens nothing')
+    assert.equal((await http('GET', eventsPath(phone, Date.now() - 10 * 60_000))).status, 401, 'an old link')
+    // DNS rebinding: a page's own name pointed at this computer.
+    assert.equal((await http('GET', '/', undefined, 'evil.example:47390')).status, 403)
+    assert.equal((await http('GET', '/', undefined, `localhost:${port}`)).status, 200)
+  })
+
+  test('a pairing code, typed on the phone instead of the QR link, works once', async () => {
+    const paired = (await call('POST', '/mobile/pair', { name: '홈 화면' })).json
+    assert.match(paired.code, /^[A-Z2-9]{8}$/)
+    const claim = (code: string) => http('POST', '/claim', JSON.stringify({ code }))
+    const got = await claim(`${paired.code.slice(0, 4)}-${paired.code.slice(4).toLowerCase()}`)
+    assert.equal(got.status, 200)
+    assert.deepEqual(JSON.parse(got.text), { id: paired.id, key: paired.key })
+    assert.equal((await claim(paired.code)).status, 404, 'once only')
+    // Guessing: after ten wrong codes every open code goes.
+    const next = (await call('POST', '/mobile/pair', { name: '또 하나' })).json
+    for (let i = 0; i < 10; i++) await claim(`WRONG${i}XX`)
+    assert.equal((await claim(next.code)).status, 404)
+  })
+
+  test('with phones turned off, no notification goes out', async () => {
+    const ua = createECDH('prime256v1')
+    ua.generateKeys()
+    const subscription = { endpoint: 'https://fcm.googleapis.com/fcm/send/phone-off', keys: { p256dh: ua.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') } }
+    assert.equal((await ask('POST', '/push', { subscription })).status, 200)
+    await call('POST', '/mobile', { enabled: false })
+    const before = pushes.length
+    await call('POST', '/questions', { sessionId: 'ph3', question: '꺼진 뒤의 질문' })
+    await new Promise(resolve => setTimeout(resolve, 100))
+    assert.equal(pushes.length, before)
+    port = (await call('POST', '/mobile', { enabled: true, port: 0 })).json.port
   })
 
   test('turned off, it stops listening', async () => {

@@ -1,7 +1,9 @@
 // The phone page (bridge/mobile.ts serves it). The QR code the app shows opens this page
 // with "#pair=<id>.<key>"; the page keeps that pair in this browser and drops it from the
-// address. Every request and answer is sealed with the key (aead.js), so the network sees
-// neither. "/events" only says that something changed; the page then reads the view again.
+// address. A phone whose home screen app keeps its own storage (iPhone) types the code the
+// app shows instead. Every request and answer is sealed with the key (aead.js), so the
+// network sees neither. "/events" only says that something changed; the page then reads
+// the view again.
 
 import { fromB64, fromUtf8, open, seal, toB64, utf8 } from './aead.js'
 
@@ -28,7 +30,17 @@ const picks = new Map()
 const memos = new Map()
 const drafts = new Map()
 
-const say = (key, vars = {}) => String(words[`mobile.page.${key}`] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ''))
+// Until the words arrive (the computer may be out of reach), the few the first screens need.
+const FALLBACK = {
+  notPaired: 'Scan the QR code in Switchboard on your computer (Settings > Phone access).',
+  revoked: 'This phone was disconnected. Show a new QR code in the app to connect again.',
+  offline: 'Cannot reach the computer. Check that it is on and on the same network.',
+}
+const say = (key, vars = {}) => String(words[`mobile.page.${key}`] ?? FALLBACK[key] ?? '').replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ''))
+
+// Over Tailscale (HTTPS, or a 100.64.0.0/10 address) the page cannot have been swapped on the
+// way, and only then may it allow a permission ask or write to a session (bridge/mobile.ts).
+const strong = () => isSecureContext || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(location.hostname) || location.hostname === 'localhost'
 
 // el('div', { className, onclick, ... }, ...children): strings become text, never markup.
 function el(tag, props = {}, ...children) {
@@ -43,28 +55,35 @@ function el(tag, props = {}, ...children) {
   return node
 }
 
+// The pair in the address is tried before it replaces the one kept: a link someone else made
+// cannot unpair this phone.
 function readPairing() {
-  const fragment = new URLSearchParams(location.hash.slice(1)).get('pair')
-  if (fragment) {
-    const [id, key] = fragment.split('.')
-    try {
-      localStorage.setItem(STORE, JSON.stringify({ id: Number(id), key }))
-    } catch {
-      // A browser without storage keeps the pair for this visit only.
-      pairing = { id: Number(id), key }
-    }
-    history.replaceState(null, '', location.pathname)
-  }
+  let kept = null
   try {
-    return JSON.parse(localStorage.getItem(STORE) ?? 'null') ?? pairing
+    kept = JSON.parse(localStorage.getItem(STORE) ?? 'null')
   } catch {
-    return pairing
+    kept = null
+  }
+  const fragment = new URLSearchParams(location.hash.slice(1)).get('pair')
+  if (fragment) history.replaceState(null, '', location.pathname)
+  const [id, key] = (fragment ?? '').split('.')
+  return { kept, candidate: fragment && key ? { id: Number(id), key } : null }
+}
+
+function keep(pair) {
+  pairing = pair
+  try {
+    localStorage.setItem(STORE, JSON.stringify(pair))
+  } catch {
+    // A browser without storage keeps the pair for this visit only.
   }
 }
 
+// Forgets the pair kept in this browser only when it is the one the computer refused.
 function forget() {
   try {
-    localStorage.removeItem(STORE)
+    const kept = JSON.parse(localStorage.getItem(STORE) ?? 'null')
+    if (kept && pairing && kept.id === pairing.id && kept.key === pairing.key) localStorage.removeItem(STORE)
   } catch {
     // Nothing kept.
   }
@@ -88,6 +107,7 @@ async function api(method, path, body, retried = false) {
     offset = (await res.json()).now - Date.now()
     return api(method, path, body, true)
   }
+  if (res.status === 429) throw Object.assign(new Error('busy'), { busy: true })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const sealed = await res.json()
   const opened = open(key, fromB64(sealed.n), fromB64(sealed.c), utf8(`sb1:res:${pairing.id}:${n}`))
@@ -105,14 +125,23 @@ function flash(text, bad = false) {
   render()
 }
 
+// What went wrong, in words a person can act on.
+function trouble(error) {
+  if (error.revoked) return lost()
+  if (error.busy) return flash(say('tooMany'), true)
+  // fetch rejects with a TypeError when the computer cannot be reached.
+  if (error instanceof TypeError) return flash(say('offline'), true)
+  flash(say('failed', { error: error.message }), true)
+}
+
 async function act(method, path, body, done) {
   try {
     const result = await api(method, path, body)
+    if (result.json?.strong) return flash(say('needStrong'), true)
     if (result.status >= 400) return flash(say('failed', { error: result.json?.error ?? result.status }), true)
     if (done) flash(done)
   } catch (error) {
-    if (error.revoked) return lost()
-    flash(say('failed', { error: error.message }), true)
+    return trouble(error)
   }
   await refresh()
 }
@@ -124,10 +153,16 @@ function lost() {
 }
 
 let refreshing = null
+// A change that comes while a refresh runs gets one more after it: that one may have read too early.
+let again = false
 async function refresh() {
   if (!pairing) return
-  if (refreshing) return refreshing
+  if (refreshing) {
+    again = true
+    return refreshing
+  }
   refreshing = (async () => {
+    if (!words.lang) await loadWords()
     try {
       const result = await api('GET', '/mobile/view')
       if (result.status < 400) {
@@ -146,8 +181,21 @@ async function refresh() {
       refreshing = null
     }
     render(true)
+    if (again) {
+      again = false
+      void refresh()
+    }
   })()
   return refreshing
+}
+
+async function loadWords() {
+  try {
+    words = await (await fetch('strings')).json()
+    document.documentElement.lang = words.lang ?? 'en'
+  } catch {
+    // Tried again with the next refresh.
+  }
 }
 
 // --- drawing ---
@@ -167,9 +215,22 @@ function render(soft = false) {
 
 function draw() {
   if (state === 'unpaired' || state === 'revoked') {
-    return [el('div', { className: 'welcome' }, el('img', { src: 'icon.png', alt: '' }), el('h1', {}, 'Switchboard'), el('p', {}, say(state === 'revoked' ? 'revoked' : 'notPaired')))]
+    return [
+      el(
+        'div',
+        { className: 'welcome' },
+        el('img', { src: 'icon.png', alt: '' }),
+        el('h1', {}, 'Switchboard'),
+        el('p', {}, say(state === 'revoked' ? 'revoked' : 'notPaired')),
+        strong() ? drawCode() : null,
+      ),
+      notice ? el('div', { className: `notice ${notice.bad ? 'bad' : ''}` }, notice.text) : null,
+    ].filter(Boolean)
   }
-  const counts = { decisions: view?.questions.length ?? 0, approvals: view?.approvals.length ?? 0, tasks: view?.tasks.filter(t => t.running).length ?? 0, sessions: view?.sessions.filter(s => s.live).length ?? 0 }
+  // Counts once the view is in; until then a dash, not a zero that reads as "nothing waits".
+  const counts = view
+    ? { decisions: view.questions.length, approvals: view.approvals.length, tasks: view.tasks.filter(t => t.running).length, sessions: view.sessions.filter(s => s.live).length }
+    : { decisions: '-', approvals: '-', tasks: '-', sessions: '-' }
   const top = el(
     'header',
     { className: 'top' },
@@ -182,7 +243,7 @@ function draw() {
           'button',
           { className: tab === name ? 'on' : '', onclick: () => ((tab = name), render()) },
           say(name),
-          el('span', { className: `count ${counts[name] ? '' : 'zero'}` }, String(counts[name])),
+          el('span', { className: `count ${counts[name] && counts[name] !== '-' ? '' : 'zero'}` }, String(counts[name])),
         ),
       ),
     ),
@@ -199,8 +260,8 @@ function draw() {
         {},
         drawNotify(),
         say('refreshed', { time: new Date(view.now).toLocaleTimeString(view.lang, { hour: '2-digit', minute: '2-digit' }) }),
-        el('br'),
-        say('homeHint'),
+        standalone() ? null : el('br'),
+        standalone() ? null : say('homeHint'),
       ),
     )
   }
@@ -212,6 +273,35 @@ function draw() {
 const empty = key => [el('div', { className: 'empty' }, say(key))]
 
 const standalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches
+
+// The code the app shows next to the QR code, for a home screen app that cannot open the QR link itself.
+let codeDraft = ''
+function drawCode() {
+  return el(
+    'div',
+    { className: 'code' },
+    el('p', { className: 'small' }, say('codeHint')),
+    el('input', { className: 'code-input', placeholder: 'ABCD-EFGH', value: codeDraft, autocapitalize: 'characters', autocomplete: 'off', oninput: e => (codeDraft = e.target.value) }),
+    el(
+      'button',
+      {
+        className: 'btn primary',
+        onclick: async () => {
+          try {
+            const res = await fetch('claim', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: codeDraft }) })
+            if (!res.ok) return flash(say(res.status === 429 ? 'tooMany' : 'codeWrong'), true)
+            keep(await res.json())
+            codeDraft = ''
+            location.reload()
+          } catch (error) {
+            trouble(error)
+          }
+        },
+      },
+      say('connect'),
+    ),
+  )
+}
 const apple = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
 
 function drawNotify() {
@@ -233,8 +323,7 @@ async function notifyOn() {
     pushOn = true
     flash(say('notifyOnDone'))
   } catch (error) {
-    if (error.revoked) return lost()
-    flash(say('failed', { error: error.message }), true)
+    trouble(error)
   }
 }
 
@@ -245,8 +334,7 @@ async function notifyOff() {
     pushOn = false
     flash(say('notifyOffDone'))
   } catch (error) {
-    if (error.revoked) return lost()
-    flash(say('failed', { error: error.message }), true)
+    trouble(error)
   }
 }
 
@@ -295,7 +383,7 @@ function drawDecisions() {
             onclick: () => {
               const choice = picks.get(q.id) ?? ''
               const text = (memos.get(q.id) ?? '').trim()
-              if (!choice && !text) return
+              if (!choice && !text) return flash(say('needChoice'), true)
               picks.delete(q.id)
               memos.delete(q.id)
               void act('POST', `/questions/${q.id}/answer`, { choice, memo: text }, say('answered'))
@@ -328,6 +416,7 @@ function drawApprovals() {
             className: `btn ${armed === a.id ? 'armed' : 'allow'}`,
             // Allowing runs the command: the first tap only arms the button for five seconds.
             onclick: () => {
+              if (!strong()) return flash(say('needStrong'), true)
               if (armed !== a.id) {
                 armed = a.id
                 clearTimeout(armTimer)
@@ -343,6 +432,7 @@ function drawApprovals() {
         el('button', { className: 'btn deny', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }) }, say('deny')),
       ),
       el('div', { className: 'actions' }, el('button', { className: 'btn', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'terminal' }) }, say('terminal'))),
+      el('p', { className: 'small' }, say(strong() ? 'terminalHint' : 'allowNeedsStrong')),
     ),
   )
 }
@@ -378,6 +468,7 @@ function drawSessions() {
       el('span', { className: 'chip' }, s.live ? say('live') : say('notLive')),
     )
     if (target !== s.id) return [row]
+    if (!strong()) return [row, el('div', { className: 'composer' }, el('p', { className: 'small' }, say('needStrong')))]
     const composer = el(
       'div',
       { className: 'composer' },
@@ -421,19 +512,45 @@ function openTab(name) {
   render()
 }
 
+// The live stream's link carries a sealed time, used once: each (re)connection makes a new one.
+function eventsLink() {
+  const nonce = crypto.getRandomValues(new Uint8Array(12))
+  const c = toB64(seal(fromB64(pairing.key), nonce, utf8(JSON.stringify({ t: Date.now() + offset })), utf8(`sb1:ev:${pairing.id}`)))
+  return `events?d=${encodeURIComponent(pairing.id)}&n=${toB64(nonce)}&c=${c}`
+}
+
+function listen() {
+  if (!pairing) return
+  const events = new EventSource(eventsLink())
+  let soon = 0
+  events.addEventListener('changed', () => {
+    clearTimeout(soon)
+    soon = setTimeout(() => void refresh(), 250)
+  })
+  events.addEventListener('error', () => {
+    if (state === 'ready') void refresh()
+    // The browser gives up on a link the bridge refused: open a new one in a moment.
+    if (events.readyState === EventSource.CLOSED) setTimeout(listen, 3000)
+  })
+}
+
+async function tryPair(pair) {
+  pairing = pair
+  state = 'loading'
+  await refresh()
+  return state === 'ready'
+}
+
 async function start() {
-  try {
-    words = await (await fetch('strings')).json()
-    document.documentElement.lang = words.lang ?? 'en'
-  } catch {
-    // The words come with the first view that loads.
-  }
-  pairing = readPairing()
+  await loadWords()
+  const { kept, candidate } = readPairing()
+  openTab(new URLSearchParams(location.hash.slice(1)).get('tab'))
+  if (candidate && ((await tryPair(candidate)) || (!kept && state === 'offline'))) keep(candidate)
+  else if (kept) await tryPair(kept)
   if (!pairing) {
-    state = 'unpaired'
+    if (state !== 'revoked') state = 'unpaired'
     return render()
   }
-  openTab(new URLSearchParams(location.hash.slice(1)).get('tab'))
   if (isSecureContext && 'serviceWorker' in navigator) {
     try {
       worker = await navigator.serviceWorker.register('sw.js')
@@ -444,16 +561,7 @@ async function start() {
     }
   }
   render()
-  await refresh()
-  const events = new EventSource(`events?d=${encodeURIComponent(pairing.id)}`)
-  let soon = 0
-  events.addEventListener('changed', () => {
-    clearTimeout(soon)
-    soon = setTimeout(() => void refresh(), 250)
-  })
-  events.addEventListener('error', () => {
-    if (state === 'ready') void refresh()
-  })
+  listen()
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && void refresh())
   setInterval(() => document.visibilityState === 'visible' && void refresh(), 20_000)
 }

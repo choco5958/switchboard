@@ -90,6 +90,7 @@ const oneTimeKey = (key, nonce) => block(key, 0, nonce).subarray(0, 32)
 // key: 32 bytes, nonce: 12 bytes, aad: bytes bound to the message but not hidden.
 // Returns the ciphertext followed by its 16-byte tag.
 export function seal(key, nonce, plaintext, aad = new Uint8Array(0)) {
+  if (key.length !== 32 || nonce.length !== 12) throw new Error('key or nonce of the wrong size')
   const ciphertext = chacha20(key, 1, nonce, plaintext)
   const tag = poly1305(oneTimeKey(key, nonce), macData(aad, ciphertext))
   const out = new Uint8Array(ciphertext.length + 16)
@@ -100,7 +101,8 @@ export function seal(key, nonce, plaintext, aad = new Uint8Array(0)) {
 
 // The plaintext, or null when the message or its aad was changed or made with another key.
 export function open(key, nonce, sealed, aad = new Uint8Array(0)) {
-  if (sealed.length < 16) return null
+  // Another size would read only part of the nonce, so two spellings could open the same message.
+  if (key.length !== 32 || nonce.length !== 12 || sealed.length < 16) return null
   const ciphertext = sealed.subarray(0, sealed.length - 16)
   const expected = poly1305(oneTimeKey(key, nonce), macData(aad, ciphertext))
   let diff = 0

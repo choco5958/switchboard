@@ -60,9 +60,13 @@ export function startAgentDelivery(options: DeliveryOptions) {
       // Typed first, acknowledged after: what a terminal that closed in between did not get
       // stays undelivered, for the session's next start (codex resume and the like).
       const reply = await options.call('POST', '/deliveries/take', { sessionId, hold: true })
+      const items = (reply.json.items ?? []) as { id: string }[]
       const still = options.terminal(sub.key)
       if (reply.ok && still?.alive && typePrompt(still, takenText(reply.json, lang()))) {
-        for (const item of (reply.json.items ?? []) as { id: string }[]) await options.call('POST', `/deliveries/${item.id}/ack`)
+        for (const item of items) await options.call('POST', `/deliveries/${item.id}/ack`)
+      } else if (reply.ok && items.length > 0) {
+        // Not typed: a cancel now finds them still waiting, as they are.
+        await options.call('POST', '/deliveries/unhold', { ids: items.map(item => item.id) })
       }
     } finally {
       sub.busy = false

@@ -872,6 +872,12 @@ describe('messages between sessions', () => {
     await call('POST', '/outbox', { sessionId: 'ch', text: '다음 일' })
     assert.match((await take('ch'))[0]!.text, new RegExp(`요청 ${typing.ids[0]}를 취소했습니다`))
 
+    // Taken to type, but the terminal closed first: released, it is still waiting when cancelled.
+    const untyped = (await call('POST', '/messages', { sessionId: 'ca', to: ['ch'], text: '못 친 일' })).json
+    await call('POST', '/deliveries/take', { sessionId: 'ch', hold: true })
+    await call('POST', '/deliveries/unhold', { ids: untyped.ids })
+    assert.deepEqual((await call('POST', '/messages/cancel', { sessionId: 'ca', ids: untyped.ids })).json.results, { [untyped.ids[0]]: 'queued' })
+
     // The mod put it in the prompt now running, with other work, so the turn goes on.
     await call('POST', '/sessions', { id: 'cm', cwd: '/w/cm' })
     const running = (await call('POST', '/messages', { sessionId: 'ca', to: ['cm'], text: '같이 들어간 일' })).json
