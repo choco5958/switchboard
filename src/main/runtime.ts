@@ -7,7 +7,7 @@
 // fixes them by starting once. A run from the repo (pnpm dev) leaves them to `pnpm run setup`.
 
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, posix, win32 } from 'node:path'
 
 export type RuntimeFile = { path: string; content: string; mode: number }
 
@@ -22,12 +22,16 @@ export type RuntimeInput = {
 const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
 const cmdLines = (...lines: string[]) => `${['@echo off', ...lines].join('\r\n')}\r\n`
 
+// Paths as the target system writes them, whatever system computes them (the tests).
+const pathsOf = (platform: string) => (platform === 'win32' ? win32 : posix)
+
 export function nodeLauncher(home: string, platform: string = process.platform): string {
-  return join(home, '.claude-ide', 'bin', platform === 'win32' ? 'switchboard-node.cmd' : 'switchboard-node')
+  return pathsOf(platform).join(home, '.claude-ide', 'bin', platform === 'win32' ? 'switchboard-node.cmd' : 'switchboard-node')
 }
 
 export function runtimeFiles(input: RuntimeInput): RuntimeFile[] {
   const platform = input.platform ?? process.platform
+  const { join } = pathsOf(platform)
   const dir = join(input.home, '.claude-ide')
   const start = join(input.root, 'bridge', 'start.ts')
   const cli = join(input.root, 'scripts', 'switchboard.ts')

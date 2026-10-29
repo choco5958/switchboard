@@ -12,7 +12,7 @@ afterEach(() => {
 
 test('the launchers point at this copy of the app and its Node', () => {
   const files = runtimeFiles({ execPath: "/Applications/Switch board's.app/Contents/MacOS/Switchboard", root: '/R/node', home: '/H', version: '0.2.0', platform: 'darwin' })
-  expect(files.map(f => f.path)).toEqual(['/H/.claude-ide/bin/switchboard-node', '/H/.claude-ide/start-bridge.json', '/H/.claude-ide/start-bridge.sh', '/H/.local/bin/switchboard'])
+  expect(files.map(f => f.path.replace(/\\/g, '/'))).toEqual(['/H/.claude-ide/bin/switchboard-node', '/H/.claude-ide/start-bridge.json', '/H/.claude-ide/start-bridge.sh', '/H/.local/bin/switchboard'])
   expect(files[0]!.content).toContain(`ELECTRON_RUN_AS_NODE=1 exec '/Applications/Switch board'\\''s.app/Contents/MacOS/Switchboard' "$@"`)
   expect(JSON.parse(files[1]!.content)).toEqual({
     argv: ["/Applications/Switch board's.app/Contents/MacOS/Switchboard", '/R/node/bridge/start.ts'],
@@ -24,9 +24,9 @@ test('the launchers point at this copy of the app and its Node', () => {
 
 test('on Windows the launchers are .cmd files and the switchboard command waits in bin', () => {
   const files = runtimeFiles({ execPath: 'C:/Program Files/Switchboard/Switchboard.exe', root: 'C:/Users/me/.claude-ide/runtime/0.2.0', home: 'C:/Users/me', version: '0.2.0', platform: 'win32' })
-  expect(files.map(f => f.path.split('.claude-ide')[1])).toEqual(['/bin/switchboard-node.cmd', '/start-bridge.json', '/start-bridge.cmd', '/bin/switchboard.cmd'])
+  expect(files.map(f => f.path.replace(/\\/g, '/').split('.claude-ide')[1])).toEqual(['/bin/switchboard-node.cmd', '/start-bridge.json', '/start-bridge.cmd', '/bin/switchboard.cmd'])
   expect(files[0]!.content).toBe('@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"C:/Program Files/Switchboard/Switchboard.exe" %*\r\n')
-  expect(files[3]!.content).toContain('"C:/Program Files/Switchboard/Switchboard.exe" "C:/Users/me/.claude-ide/runtime/0.2.0/scripts/switchboard.ts" %*')
+  expect(files[3]!.content).toContain('"C:/Program Files/Switchboard/Switchboard.exe" "C:\\Users\\me\\.claude-ide\\runtime\\0.2.0\\scripts\\switchboard.ts" %*')
 })
 
 // Mode bits and running a shell script: macOS and Linux (the .cmd text is checked above).
