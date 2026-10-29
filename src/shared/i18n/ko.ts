@@ -819,6 +819,8 @@ export const ko = {
   'notify.runFailed': '실패: {reason}',
   'notify.runDone': '실행을 마쳤습니다.',
   'notify.approval': '권한 확인: {tool} {what}',
+  'update.available': '새 버전 {version}이 나왔습니다. 눌러서 내려받는 페이지를 여세요.',
+  'update.ready': '새 버전 {version}을 내려받았습니다. 앱을 닫으면 설치됩니다. 지금 다시 시작하려면 누르세요.',
 } satisfies Record<string, string>
 
 export type Dict = Record<keyof typeof ko, string>

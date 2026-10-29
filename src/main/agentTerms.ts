@@ -9,6 +9,8 @@ import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
 import { detectScript, parseDetect, serverFor } from './agentDetect'
 import { openTerminal } from './terminals'
+import { nodeRoot } from './appRoot'
+import { nodeLauncher } from './runtime'
 
 // Terminals for agent CLIs other than Claude Code: which ones are installed (on the
 // login-shell PATH the terminals get) and opening one with the Switchboard MCP server.
@@ -52,7 +54,6 @@ function writeFiles(launch: Launch): void {
 
 export function registerAgentTerms(ipcMain: IpcMain, call: (method: string, path: string, body?: unknown) => Promise<Reply>): void {
   pruneFiles()
-  const serverPath = join(app.getAppPath(), 'mcp', 'server.ts')
 
   ipcMain.handle('agents:detect', (_e, force: boolean) => detect(force === true))
 
@@ -64,7 +65,9 @@ export function registerAgentTerms(ipcMain: IpcMain, call: (method: string, path
     const found = await detect()
     if (preset && !found.found[preset.bin]) return { error: t('agents.notInstalled', { label: preset.label, install: preset.install }) }
     const needsServer = preset ? preset.mcp !== null : custom!.mcp !== 'none'
-    if (needsServer && !found.node) return { error: t('agents.noNode') }
+    // The installed app runs the MCP server with its own Node (src/main/runtime.ts).
+    const node = app.isPackaged ? nodeLauncher(homedir()) : found.node
+    if (needsServer && !node) return { error: t('agents.noNode') }
     const id = preset?.id ?? custom!.id
     return openTerminal({
       cwd,
@@ -73,7 +76,7 @@ export function registerAgentTerms(ipcMain: IpcMain, call: (method: string, path
       title: preset ? preset.bin : custom!.name,
       agent: id,
       prepare: key => {
-        const server = serverFor(found.node ?? 'node', serverPath, id, key, process.env.CLAUDE_IDE_SOCKET)
+        const server = serverFor(node ?? 'node', join(nodeRoot(), 'mcp', 'server.ts'), id, key, process.env.CLAUDE_IDE_SOCKET)
         const configFile = join(DIR, `${key}-${id}.json`)
         const launch = preset ? presetLaunch(preset, server, configFile) : customLaunch(custom!, server, configFile)
         writeFiles(launch)

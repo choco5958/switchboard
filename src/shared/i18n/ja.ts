@@ -820,4 +820,6 @@ export const ja: Dict = {
   'notify.runFailed': '失敗: {reason}',
   'notify.runDone': '実行が終わりました。',
   'notify.approval': '権限の確認: {tool} {what}',
+  'update.available': '新しいバージョン {version} が出ました。クリックするとダウンロードページを開きます。',
+  'update.ready': '新しいバージョン {version} をダウンロードしました。アプリを閉じるとインストールされます。いま再起動するにはクリックしてください。',
 }

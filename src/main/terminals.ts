@@ -11,6 +11,7 @@ import { ccrPaths } from './account'
 import { pasteModeAfter, type TypingTarget } from './agentInput'
 import { t } from '../shared/i18n'
 import { writeOpenUrl } from './openUrl'
+import { nodeRoot } from './appRoot'
 
 // Terminals in the IDE's bottom dock. Each is a login shell in a project folder;
 // a Claude terminal types `claude --plugin-dir <this app's mod>` into it first,
@@ -149,7 +150,8 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
     browserScript = ''
   }
   configDir = accountDir(process.env, join(homedir(), '.claude-ide', 'terminal.json'))
-  const modDir = join(app.getAppPath(), 'mod')
+  // Read at each open: the installed app moves it to its runtime copy once it is ready.
+  const modDir = () => join(nodeRoot(), 'mod')
 
   ipcMain.handle('term:list', () => [...terms.values()].map(info))
 
@@ -160,7 +162,7 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
       rows,
       claude,
       title: claude ? 'claude' : t('term.shell'),
-      prepare: () => ({ line: claude ? claudeLine(claudeLauncher(), shellQuote(modDir), slot, ccrPaths().count) : undefined }),
+      prepare: () => ({ line: claude ? claudeLine(claudeLauncher(), shellQuote(modDir()), slot, ccrPaths().count) : undefined }),
     }),
   )
   openClaudeIn = cwd =>
@@ -170,7 +172,7 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
       rows: 30,
       claude: true,
       title: 'claude',
-      prepare: () => ({ line: claudeLine(claudeLauncher(), shellQuote(modDir), undefined, ccrPaths().count) }),
+      prepare: () => ({ line: claudeLine(claudeLauncher(), shellQuote(modDir()), undefined, ccrPaths().count) }),
     })
 
   ipcMain.handle('term:buffer', (_e, id: string) => {

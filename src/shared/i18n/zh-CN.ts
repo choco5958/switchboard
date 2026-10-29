@@ -820,4 +820,6 @@ export const zhCN: Dict = {
   'notify.runFailed': '失败: {reason}',
   'notify.runDone': '运行已结束。',
   'notify.approval': '权限确认: {tool} {what}',
+  'update.available': '新版本 {version} 已发布。点击打开下载页面。',
+  'update.ready': '新版本 {version} 已下载，关闭应用时会安装。点击立即重启。',
 }

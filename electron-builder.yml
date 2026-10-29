@@ -1,0 +1,58 @@
+# Installers for macOS, Windows and Linux (pnpm dist). Tags v* build all three on GitHub
+# Actions and publish them as a release (.github/workflows/release.yml); the installed app
+# updates itself from those releases (src/main/updater.ts).
+appId: io.github.choco5958.switchboard
+productName: Switchboard
+artifactName: Switchboard-${version}-${os}-${arch}.${ext}
+directories:
+  output: dist
+files:
+  - out/**
+  - resources/**
+  - package.json
+# The Node side runs as .ts files with the app's own Node (src/main/runtime.ts), so it
+# stays outside the asar archive with the folder layout its imports expect.
+extraResources:
+  - from: .
+    to: node
+    filter:
+      - bridge/*.ts
+      - mcp/server.ts
+      - scripts/switchboard.ts
+      - mod/.claude-plugin/plugin.json
+      - mod/hooks/**
+      - mod/types/**
+      - src/shared/**/*.ts
+      - '!**/*.test.ts'
+      - '!**/*.unit.ts'
+asarUnpack:
+  - node_modules/node-pty/**
+mac:
+  category: public.app-category.developer-tools
+  icon: resources/icon.png
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # Not signed yet: the first open needs right click > Open (README).
+  identity: null
+win:
+  icon: resources/icon.png
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  icon: resources/icon.png
+  category: Development
+  maintainer: choco5958 <choco5958@users.noreply.github.com>
+  # The architecture comes from the command (--x64, --arm64): node-pty builds on each.
+  target: [AppImage, deb]
+publish:
+  provider: github
+  owner: choco5958
+  repo: switchboard
+  releaseType: release

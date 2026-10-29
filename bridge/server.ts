@@ -892,7 +892,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     // Shared helpers (dev targets) word their errors through the module language.
     setLang(langNow())
 
-    if (method === 'GET' && path === '/health') return send(res, 200, { ok: true })
+    // The installed app's start script names its version: an app updated since replaces this bridge.
+    if (method === 'GET' && path === '/health') return send(res, 200, { ok: true, version: process.env.SWITCHBOARD_VERSION ?? '', pid: process.pid })
     if (method === 'GET' && path === '/state') return send(res, 200, state())
 
     if (method === 'GET' && path === '/stream') {

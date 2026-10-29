@@ -15,6 +15,9 @@ import { saveShot } from './shots'
 import { onTerminalsChange, openClaudeIn, registerTerminals, typingTarget } from './terminals'
 import { registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
+import { nodeRoot, useNodeRoot } from './appRoot'
+import { copyRuntime, staleBridge, writeRuntime } from './runtime'
+import { startUpdates } from './updater'
 import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled } from './notify'
 import { STALL_MS, stalledSessions } from '../shared/stall'
 import { limitedUntil } from '../shared/limit'
@@ -38,6 +41,28 @@ function startBridge(): Promise<boolean> {
   return new Promise(resolve => {
     execFile('sh', [join(DIR, 'start-bridge.sh')], error => resolve(error === null))
   })
+}
+
+// The installed app writes the launchers for this copy of itself (src/main/runtime.ts) and
+// replaces a bridge left running by the version before an update.
+async function prepareRuntime(): Promise<void> {
+  if (!app.isPackaged) return
+  try {
+    useNodeRoot(copyRuntime(nodeRoot(), homedir(), app.getVersion()))
+    // An AppImage runs from a folder mounted for this run only; the file itself stays.
+    writeRuntime({ execPath: process.env.APPIMAGE ?? process.execPath, root: nodeRoot(), home: homedir(), version: app.getVersion() })
+  } catch (error) {
+    console.error('could not write the launchers:', error)
+  }
+  const health = await call('GET', '/health')
+  const pid = health.ok ? staleBridge(health.json, app.getVersion()) : null
+  if (pid === null) return
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    return
+  }
+  for (let i = 0; i < 30 && (await call('GET', '/health')).ok; i++) await new Promise(resolve => setTimeout(resolve, 100))
 }
 
 function call(method: string, path: string, body?: unknown): Promise<Reply> {
@@ -436,10 +461,12 @@ app.whenReady().then(async () => {
   setLang(resolveLang(undefined, app.getLocale()))
   if (process.env.CLAUDE_IDE_CAPTURE) app.dock?.hide()
   else app.dock?.setIcon(nativeImage.createFromPath(ICON))
+  await prepareRuntime()
   await startBridge()
   createWindow()
   watch()
   watchBrowserRequests()
+  startUpdates()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

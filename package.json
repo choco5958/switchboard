@@ -4,6 +4,8 @@
   "private": true,
   "description": "Switchboard: a desktop app for running several Claude Code sessions at once: decision queue, tasks, progress graph, work log",
   "license": "MIT",
+  "author": "choco5958",
+  "homepage": "https://github.com/choco5958/switchboard",
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {
@@ -11,6 +13,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder",
+    "dist:dir": "electron-vite build && electron-builder --dir",
     "test": "node --import ./scripts/test-env.ts --test bridge/*.test.ts mcp/*.test.ts mod/tests/*.unit.ts scripts/*.test.ts && vitest run src",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true"
@@ -21,6 +25,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -31,6 +36,7 @@
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "electron-updater": "^6.8.11",
     "node-pty": "^1.1.0"
   }
 }

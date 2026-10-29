@@ -820,4 +820,6 @@ export const en: Dict = {
   'notify.runFailed': 'Failed: {reason}',
   'notify.runDone': 'The run finished.',
   'notify.approval': 'Permission: {tool} {what}',
+  'update.available': 'Version {version} is out. Click to open the download page.',
+  'update.ready': 'Version {version} is downloaded and installs when the app quits. Click to restart now.',
 }
