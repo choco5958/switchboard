@@ -82,7 +82,8 @@ describe('custom CLIs', () => {
     expect(words(line)).toEqual([
       '--cmd', '/My Tools/node',
       '--args', '/app dir/server.ts', '--agent', 'custom-x',
-      '--json', JSON.stringify(spaced.args),
+      // Spaces in JSON on a command line are written \u0020 (PowerShell 5.1); it parses the same.
+      '--json', JSON.stringify(spaced.args).replace(/ /g, '\\u0020'),
       '--file', '/tmp/a b.json',
       '--all', '/My Tools/node /app dir/server.ts --agent custom-x',
       '--name', 'switchboard',

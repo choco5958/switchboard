@@ -28,6 +28,9 @@ export type AgentPreset = {
 }
 
 const json = (value: unknown) => JSON.stringify(value)
+// JSON that goes on a command line: its spaces written \u0020, the same JSON, because
+// PowerShell 5.1 splits an argument holding both a double quote and a space.
+const jsonArg = (value: unknown) => json(value).replace(/ /g, '\\u0020')
 
 // A shell word: as it is when it holds nothing the shell would read, else quoted. On Windows
 // the terminals run PowerShell 5.1: a single quote inside is doubled, `@` and `,` mean
@@ -124,7 +127,7 @@ export const PRESETS: AgentPreset[] = [
     install: 'npm i -g @sourcegraph/amp',
     docs: 'https://ampcode.com/docs/customize/mcp',
     how: 'agents.how.amp',
-    mcp: server => ({ args: ['--mcp-config', json({ [MCP_NAME]: { command: server.command, args: server.args } })] }),
+    mcp: server => ({ args: ['--mcp-config', jsonArg({ [MCP_NAME]: { command: server.command, args: server.args } })] }),
   },
   {
     id: 'cursor',
@@ -182,7 +185,7 @@ export const PLACEHOLDERS = ['server', 'command', 'args', 'args_json', 'config_f
 // Every placeholder becomes one or more shell words, already quoted. {server} is the
 // whole command as one word, for CLIs that take a command line and split it at spaces.
 export function fillTemplate(template: string, server: McpServer, configFile: string, platform: string = process.platform): string {
-  const config = json({ mcpServers: { [MCP_NAME]: { command: server.command, args: server.args } } })
+  const config = jsonArg({ mcpServers: { [MCP_NAME]: { command: server.command, args: server.args } } })
   const word = (value: string) => shellWord(value, platform)
   // Always quoted: these hold spaces or JSON.
   const quoted = (value: string) => (platform === 'win32' ? `'${value.replace(/'/g, "''").replace(/"/g, '\\"')}'` : shellQuote(value))
@@ -190,7 +193,7 @@ export function fillTemplate(template: string, server: McpServer, configFile: st
     server: quoted([server.command, ...server.args].join(' ')),
     command: word(server.command),
     args: server.args.map(word).join(' '),
-    args_json: quoted(json(server.args)),
+    args_json: quoted(jsonArg(server.args)),
     config_file: word(configFile),
     config_json: quoted(config),
     name: MCP_NAME,
