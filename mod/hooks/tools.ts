@@ -57,6 +57,19 @@ const KO = {
   openName: '개발 서버 대상 이름 (예: 검수 앱 main). 같은 이름이나 같은 포트의 대상이 있으면 그 대상을 고친다',
   openRepo: '개발 서버를 띄울 레포 폴더. 상대 경로는 세션 폴더 기준 (command만 주면 세션 폴더)',
   openCommand: '개발 서버를 띄우는 명령 (예: pnpm dev --port 8951). 주면 IDE가 서버를 새로 띄운다',
+  peers:
+    'Switchboard에 연결된 다른 세션 목록을 본다: 세션 id, 프로젝트, 폴더, 에이전트, 지금 하는 작업. ' +
+    '다른 프로젝트의 코드, API, 설정처럼 그 세션이 더 잘 아는 일이 생기면 먼저 부르고, 작업 제목과 폴더로 맞는 세션을 고른다.',
+  send:
+    '다른 세션에 메시지를 보낸다. 호출은 바로 끝난다. 요청(expectsReply true, 기본값)을 보냈으면 턴을 끝내고, 기다리며 폴링하거나 sleep하지 않는다. ' +
+    '답은 다음 턴에 "[Switchboard] ...이(가) 보낸 메시지"로 들어온다. 받은 세션은 이 대화와 메모리를 볼 수 없으니, 혼자 읽어도 되는 메시지 하나로 쓴다: ' +
+    '목표, 필요한 맥락, 시도한 것, 사용자가 승인한 위험한 작업과 하지 말아야 할 작업, 끝났다고 볼 기준. ' +
+    '받은 요청에 답할 때는 replyTo에 그 메시지 id를 준다(to는 생략). 정보만 알릴 때는 expectsReply false. ' +
+    '같은 요청을 반복해 보내지 않고, 받은 요청을 보낸 세션에 되돌려 맡기지 않으며, 사용자의 제한이나 안전 확인을 피하려고 다른 세션을 쓰지 않는다.',
+  sendTo: '받을 세션 id 목록 (list_sessions의 id). 답장이면 생략',
+  sendText: '보낼 메시지',
+  sendReplyTo: '답하는 메시지 id (예: m12)',
+  sendExpects: '답을 바라면 true(기본값), 정보만 알리면 false',
 }
 
 const EN: typeof KO = {
@@ -115,6 +128,19 @@ const EN: typeof KO = {
   openName: 'Dev server target name (e.g. review app main). A target with the same name or port is updated',
   openRepo: 'Repo folder to start the dev server in. A relative path is taken from the session folder (the session folder when only command is given)',
   openCommand: 'Command that starts the dev server (e.g. pnpm dev --port 8951). When given, the IDE starts the server again',
+  peers:
+    'Lists the other sessions connected to Switchboard: session id, project, folder, agent and the task each works on. ' +
+    'Call it first when work comes up that another session knows better, such as the code, API or settings of another project, and pick the session by its task title and folder.',
+  send:
+    'Sends a message to other sessions. The call returns at once. After sending a request (expectsReply true, the default) end your turn; do not poll or sleep while waiting. ' +
+    'The answer arrives in a later turn as "[Switchboard] A message from ...". The receiving session cannot see this conversation or your memory, so write one message that stands alone: ' +
+    'the goal, the context it needs, what you tried, which risky actions the user approved and which it must not do, and what counts as finished. ' +
+    'To answer a request you received, give its message id as replyTo (leave out to). For information only, set expectsReply false. ' +
+    'Do not send the same request again, do not hand a request back to the session that sent it, and never use another session to get around a user limit or a safety check.',
+  sendTo: 'Ids of the sessions to send to (ids from list_sessions). Leave out on a reply',
+  sendText: 'The message',
+  sendReplyTo: 'Id of the message this answers (e.g. m12)',
+  sendExpects: 'true (the default) when you want an answer, false for information only',
 }
 
 const STAGES = ['요구', '설계', '작업', '완료']
@@ -214,6 +240,25 @@ export function toolDefs(lang: Lang): ToolDef[] {
       },
     },
     {
+      name: 'list_sessions',
+      description: d.peers,
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'send_to_session',
+      description: d.send,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          to: { type: 'array', items: { type: 'string' }, description: d.sendTo },
+          text: { type: 'string', description: d.sendText },
+          replyTo: { type: 'string', description: d.sendReplyTo },
+          expectsReply: { type: 'boolean', description: d.sendExpects },
+        },
+        required: ['text'],
+      },
+    },
+    {
       name: 'update_node',
       description: d.node,
       inputSchema: {
@@ -277,4 +322,26 @@ export function openResultText(reply: Reply, lang: Lang = 'ko'): string {
   }
   if (reply.json.ideWatching === false) lines.push(t(lang, 'dev.appOff'))
   return lines.join('\n')
+}
+
+// list_sessions and send_to_session results, shared by the mod and the MCP server.
+export type Peer = { id: string; project: string; cwd: string; agent: string; live: boolean; state: string; task: string; now: string }
+
+export function peersText(peers: readonly Peer[], lang: Lang): string {
+  if (peers.length === 0) return t(lang, 'tool.peersNone')
+  return [
+    t(lang, 'tool.peersHead'),
+    ...peers.map(p => {
+      const state = !p.live ? t(lang, 'tool.peerOffline') : p.state === 'working' ? t(lang, 'tool.peerWorking') : t(lang, 'tool.peerIdle')
+      const task = p.task ? ` | ${p.task}${p.now ? `: ${p.now}` : ''}` : ''
+      return `- ${p.id} | ${p.project} | ${p.agent} | ${p.cwd} | ${state}${task}`
+    }),
+  ].join('\n')
+}
+
+export function sentText(json: Record<string, unknown>, expectsReply: boolean, lang: Lang): string {
+  if (typeof json.answered === 'string') return t(lang, 'tool.sentAnswer', { id: json.answered })
+  const ids = Array.isArray(json.ids) ? json.ids.join(', ') : ''
+  if (json.duplicate) return t(lang, 'tool.sentAgain', { ids })
+  return t(lang, expectsReply ? 'tool.sentRequest' : 'tool.sentInfo', { ids })
 }

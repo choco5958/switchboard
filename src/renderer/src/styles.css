@@ -653,3 +653,5 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 
 .dock-tab .stalled-mark { color: var(--warn); }
 .waiting-group h3 { color: var(--warn); }
+.card .forward { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.card .forward select { max-width: 320px; }

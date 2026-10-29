@@ -120,6 +120,7 @@ const EVENT_KIND_KEYS: Record<string, Key> = {
   에이전트: 'eventKind.agent',
   '화면 코멘트': 'eventKind.comment',
   '직접 입력': 'eventKind.typed',
+  세션메시지: 'eventKind.peer',
 }
 const COMMENT_STATUS_KEYS: Record<string, Key> = { 열림: 'commentStatus.open', 보냄: 'commentStatus.sent', 해결: 'commentStatus.resolved', 전체: 'commentStatus.all' }
 

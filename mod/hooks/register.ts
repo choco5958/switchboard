@@ -3,7 +3,7 @@ import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, 
 import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
-import { toolDefs } from './tools.ts'
+import { peersText, sentText, toolDefs, type Peer } from './tools.ts'
 
 // The mod connects this Claude Code session to the Switchboard bridge:
 // questions and task state go out over the bridge's Unix socket, and answers
@@ -50,6 +50,9 @@ let touchedAt = 0
 // Activity for the app's stall check (src/shared/stall.ts): tool calls open now, and when
 // the bridge last heard of this session's work.
 let openTools = 0
+// Messages from other sessions that went in with the prompt now running: when its turn ends
+// without a reply to one, the bridge sends the turn's last answer back (POST /messages/turn-end).
+let answering: string[] = []
 let activitySentAt = 0
 let activitySent = ''
 const ACTIVITY_BEAT_MS = 15_000
@@ -205,6 +208,7 @@ async function flush($: Engine): Promise<void> {
         $.ui.log(t(currentLang(), 'log.retry', { error: submitted.drop }), { to: 'debug' })
       } else {
         await $.store.set(storeKey('sent'), remember(sent, batch.map(d => d.id), ID_CAP))
+        answering = [...answering, ...batch.filter(d => d.id.startsWith('m')).map(d => d.id)]
         $.ui.toast(toastText(batch, currentLang()))
       }
     }
@@ -437,6 +441,28 @@ export const register: Register = on => {
     return { result: t(currentLang(), reply.json.duplicate ? 'tool.askedAgain' : 'tool.asked', { id: String(reply.json.id) }) }
   }).catch(() => ({ result: t(currentLang(), 'tool.askFailedPlain') }))
 
+  on('tool.call', { tool: 'mcp__ide-bridge__list_sessions' }, async $ => {
+    const reply = await call($, 'GET', `/sessions/peers?session=${encodeURIComponent(sessionId)}`).catch(
+      (error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }),
+    )
+    if (!reply.ok) return { result: t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
+    return { result: peersText((reply.json.peers ?? []) as Peer[], currentLang()) }
+  }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+
+  on('tool.call', { tool: 'mcp__ide-bridge__send_to_session' }, async ($, e) => {
+    const expectsReply = !e.replyTo && e.expectsReply !== false
+    const reply = await call($, 'POST', '/messages', {
+      sessionId,
+      to: e.to,
+      text: e.text,
+      replyTo: e.replyTo,
+      expectsReply,
+      requestKey: e.tool_use_id,
+    }).catch((error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }))
+    if (!reply.ok) return { result: t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
+    return { result: sentText(reply.json, expectsReply, currentLang()) }
+  }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+
   on('tool.call', { tool: 'mcp__ide-bridge__set_task' }, async ($, e) => {
     const reply = await call($, 'POST', '/tasks', {
       sessionId,
@@ -527,6 +553,11 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       busy = false
       openTools = 0
+      // An interrupted turn answered nothing: its requests get no result in its place.
+      if (answering.length > 0 && sessionId && !e.isAborted) {
+        void call($, 'POST', '/messages/turn-end', { sessionId, ids: answering, answer: e.answer }).catch(() => undefined)
+      }
+      answering = []
       void flush($)
       void reportUsage($)
       void touchSeen($).catch(() => undefined)

@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { takenText } from '../mod/hooks/batch.ts'
 import { langFromLocale, langOfState, osLocale, t, type Key, type Lang, type Vars } from '../mod/hooks/i18n.ts'
-import { openBody, openResultText, openToolDef, toolDefs, type ToolDef } from '../mod/hooks/tools.ts'
+import { openBody, openResultText, openToolDef, peersText, sentText, toolDefs, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
 
 export { takenText }
 
@@ -227,6 +227,17 @@ export function createSession(options: Options, deps: Deps) {
       })
       if (!reply.ok) return { text: say('mcp.askFailed', { error: errorText(reply) }), isError: true }
       return { text: `${say(reply.json.duplicate ? 'tool.askedAgain' : 'tool.asked', { id: String(reply.json.id) })} ${say(options.terminal ? 'mcp.askInside' : 'mcp.askOutside')}` }
+    }
+    if (name === 'list_sessions') {
+      const reply = await call('GET', `/sessions/peers?session=${encodeURIComponent(sessionId)}`)
+      if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
+      return { text: peersText((reply.json.peers ?? []) as Peer[], lang) }
+    }
+    if (name === 'send_to_session') {
+      const expectsReply = !a.replyTo && a.expectsReply !== false
+      const reply = await call('POST', '/messages', { sessionId, to: a.to, text: a.text, replyTo: a.replyTo, expectsReply })
+      if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
+      return { text: sentText(reply.json, expectsReply, lang) }
     }
     if (name === 'set_task') {
       const fields = ['title', 'stage', 'status', 'now', 'why', 'what', 'result', 'artifact', 'tests', 'branch']

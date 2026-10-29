@@ -395,6 +395,12 @@ export function App() {
           agent={tags[q.session_id]}
           sessionProject={state.sessions.find(s => s.id === q.session_id)?.project ?? q.project}
           reach={reachOfQuestion(q)}
+          peers={state.sessions
+            .filter(s => s.id !== q.session_id && (state.live ?? []).includes(s.id))
+            .map(s => {
+              const task = state.tasks.find(one => one.session_id === s.id && isRunning(one))
+              return { id: s.id, name: s.project, label: `${s.project}${s.agent && s.agent !== 'claude' ? ` (${s.agent})` : ''}${task ? `: ${task.title}` : ''}` }
+            })}
           onDone={() => void advance(q.id)}
           onOpenTask={task ? () => openTask(task.id) : null}
         />

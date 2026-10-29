@@ -619,3 +619,103 @@ describe('agent CLIs other than Claude Code', () => {
     assert.equal((await call('POST', '/deliveries/take', { sessionId: 'nobody' })).status, 404)
   })
 })
+
+describe('messages between sessions', () => {
+  const take = async (sessionId: string) => (await call('POST', '/deliveries/take', { sessionId })).json.items as { id: string; text: string }[]
+  // A session whose delivery stream stays open counts as live (heldReply waits only for live ones).
+  const hold = (sessionId: string) => {
+    const req = request({ socketPath, path: `/deliveries?session=${sessionId}` })
+    req.on('error', () => undefined)
+    req.end()
+    return req
+  }
+
+  test('a request reads as collaborator input with how to answer, and the reply goes back once', async () => {
+    for (const [id, cwd] of [['pa', '/w/front'], ['pb', '/w/back']]) await call('POST', '/sessions', { id, cwd })
+    assert.equal((await call('POST', '/messages', { sessionId: 'pa', to: ['pa'], text: 'x' })).status, 400)
+    assert.equal((await call('POST', '/messages', { sessionId: 'pa', to: ['nobody'], text: 'x' })).status, 404)
+    const sent = (await call('POST', '/messages', { sessionId: 'pa', to: ['pb'], text: '주문 API 응답 형식을 알려줘', requestKey: 'toolu_p1' })).json
+    assert.equal(sent.ids.length, 1)
+    assert.deepEqual((await call('POST', '/messages', { sessionId: 'pa', to: ['pb'], text: '주문 API 응답 형식을 알려줘', requestKey: 'toolu_p1' })).json, { ids: sent.ids, duplicate: true })
+    const [got] = await take('pb')
+    assert.equal(got?.id, sent.ids[0])
+    assert.match(got!.text, /front \(pa\)이\(가\) 보낸 메시지/)
+    assert.match(got!.text, /협업자 입력/)
+    assert.match(got!.text, new RegExp(`replyTo "${sent.ids[0]}"`))
+    assert.match(got!.text, /마지막 답변이 그대로 결과로/)
+    assert.match(got!.text, /--- 메시지 ---\n주문 API 응답 형식을 알려줘$/)
+
+    // A reply needs no `to`, wants no answer, and the turn's end then sends nothing more.
+    assert.equal((await call('POST', '/messages', { sessionId: 'pa', replyTo: sent.ids[0], text: 'x' })).status, 400)
+    const reply = (await call('POST', '/messages', { sessionId: 'pb', replyTo: sent.ids[0], text: '상태: 완료\n결과: { id, items }\n근거: api/orders.ts' })).json
+    assert.equal(reply.ids.length, 1)
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '끝' })).json.relayed, 0)
+    const [back] = await take('pa')
+    assert.match(back!.text, new RegExp(`요청 ${sent.ids[0]}에 대한 답`))
+    assert.match(back!.text, /보낸 세션 이름으로 시작해/)
+    assert.doesNotMatch(back!.text, /send_to_session으로 결과를 보내세요/)
+  })
+
+  test('a request the turn ended without answering gets the last answer, once', async () => {
+    const sent = (await call('POST', '/messages', { sessionId: 'pa', to: ['pb'], text: '테스트 돌려줘' })).json
+    await take('pb')
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '' })).json.relayed, 0)
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '상태: 완료' })).json.relayed, 1)
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '상태: 완료' })).json.relayed, 0)
+    const items = await take('pa')
+    assert.equal(items.length, 1)
+    assert.match(items[0]!.text, /상태: 완료$/)
+  })
+
+  test('information wants no answer and the turn end relays nothing', async () => {
+    const sent = (await call('POST', '/messages', { sessionId: 'pa', to: ['pb'], text: '배포 끝남', expectsReply: false })).json
+    const [got] = await take('pb')
+    assert.match(got!.text, /답장이나 확인을 보내지 마세요/)
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '알겠습니다' })).json.relayed, 0)
+  })
+
+  test('answers to a request sent to several live sessions come together', async () => {
+    await call('POST', '/sessions', { id: 'pc', cwd: '/w/infra' })
+    const streams = [hold('pb'), hold('pc')]
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const sent = (await call('POST', '/messages', { sessionId: 'pa', to: ['pb', 'pc'], text: '각자 의견' })).json
+    assert.equal(sent.ids.length, 2)
+    await call('POST', '/messages', { sessionId: 'pb', replyTo: sent.ids[0], text: 'b 의견' })
+    assert.equal((await take('pa')).length, 0)
+    await call('POST', '/messages', { sessionId: 'pc', replyTo: sent.ids[1], text: 'c 의견' })
+    assert.deepEqual((await take('pa')).map(item => item.text.split('\n').at(-1)), ['b 의견', 'c 의견'])
+    for (const stream of streams) stream.destroy()
+    await take('pb')
+    await take('pc')
+  })
+
+  test('a forwarded question is answered by the session it went to', async () => {
+    const q = (await call('POST', '/questions', { sessionId: 'pa', question: '캐시 만료를 몇 분으로', options: [{ key: 'a', label: '5분' }, { key: 'b', label: '30분' }], recommend: 'a' })).json
+    assert.equal((await call('POST', `/questions/${q.id}/forward`, { to: 'pa' })).status, 400)
+    const fwd = (await call('POST', `/questions/${q.id}/forward`, { to: 'pb' })).json
+    const [got] = await take('pb')
+    assert.equal(got!.id, fwd.message)
+    assert.match(got!.text, new RegExp(`front \\(pa\\)의 결정 질문 Q${q.id}`))
+    assert.match(got!.text, /\(a\) 5분 \(질문한 세션의 추천\)/)
+    const reply = (await call('POST', '/messages', { sessionId: 'pb', replyTo: fwd.message, text: 'b\n트래픽이 적어서 길게' })).json
+    assert.equal(reply.answered, `Q${q.id}`)
+    const row = (await call('GET', '/state')).json.questions.find((one: { id: number }) => one.id === q.id)
+    assert.equal(row.status, 'answered')
+    assert.equal(row.choice, 'b')
+    assert.match(row.memo, /back \(pb\)의 답: b\n트래픽이 적어서 길게/)
+    assert.equal((await call('POST', `/questions/${q.id}/forward`, { to: 'pb' })).status, 409)
+    await take('pa')
+  })
+
+  test('peers list the other sessions with their task, connected first', async () => {
+    await call('POST', '/tasks', { sessionId: 'pb', title: '주문 API', now: '응답 형식 정리' })
+    const stream = hold('pb')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const { peers } = (await call('GET', '/sessions/peers?session=pa')).json
+    assert.ok(!peers.some((p: { id: string }) => p.id === 'pa'))
+    assert.equal(peers[0].id, 'pb')
+    assert.equal(peers[0].live, true)
+    assert.equal(peers[0].task, '주문 API')
+    stream.destroy()
+  })
+})

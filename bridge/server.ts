@@ -10,9 +10,20 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
 import type { Activity } from '../src/shared/stall.ts'
+import { HELD_REPLY_MS, PEER_RECIPIENTS_MAX, clipText, forwardText, forwardedAnswer, peerText, type PeerRow } from './peer.ts'
 import { eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
 
 export type Option = { key: string; label: string }
+
+type OutboxRow = PeerRow & {
+  session_id: string
+  kind: string
+  task_title: string
+  created_at: number
+  answered: number
+  group_key: string
+  question_id: number | null
+}
 
 export type QuestionRow = {
   id: number
@@ -223,7 +234,18 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
   ])
   addColumns('sessions', [['usage', "text not null default '{}'"]])
   addColumns('questions', [['turn_id', "text not null default ''"]])
-  addColumns('questions', [['request_key', "text not null default ''"]])
+  addColumns('questions', [['request_key', "text not null default ''"], ['forwarded_to', "text not null default ''"]])
+  // Messages between sessions (bridge/peer.ts): who sent it, what it answers, whether it
+  // wants an answer and got one, the batch it went out with, and a forwarded question.
+  addColumns('outbox', [
+    ['from_session', "text not null default ''"],
+    ['reply_to', 'integer'],
+    ['expects_reply', 'integer not null default 0'],
+    ['answered', 'integer not null default 0'],
+    ['group_key', "text not null default ''"],
+    ['question_id', 'integer'],
+    ['request_key', "text not null default ''"],
+  ])
   // Which agent CLI a session runs in (sessions before this were all Claude Code)
   // and the app terminal it runs in, when it does.
   addColumns('sessions', [['agent', "text not null default 'claude'"], ['terminal', "text not null default ''"]])
@@ -265,17 +287,93 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
       )
       .all(sessionId) as QuestionRow[]
 
+  const sessionLabel = (id: string): string => {
+    const row = db.prepare('select project from sessions where id = ?').get(id) as { project: string } | undefined
+    return row ? `${row.project} (${id})` : id
+  }
+  // A Claude Code session's mod sends the turn's last answer back when it did not reply itself.
+  const autoReplies = (id: string): boolean =>
+    ((db.prepare('select agent from sessions where id = ?').get(id) as { agent: string } | undefined)?.agent ?? 'claude') === 'claude'
+
+  // What a session reads for one outbox row: a message from another session, or a question
+  // the person forwarded, gets its header in the reader's language; the rest is the text sent.
+  const outboxText = (m: OutboxRow): string => {
+    if (m.question_id) {
+      const q = db.prepare('select * from questions where id = ?').get(m.question_id) as QuestionRow | undefined
+      if (q) return forwardText(m.id, q, sessionLabel(q.session_id), langNow(), autoReplies(m.session_id))
+    }
+    if (m.from_session) return peerText(m, sessionLabel(m.from_session), langNow(), autoReplies(m.session_id))
+    return m.text
+  }
+
+  // A reply to a request that went to several sessions waits until every live one of them
+  // answered, or HELD_REPLY_MS after the request: the asker reads the answers in one turn.
+  const heldReply = (m: OutboxRow, at = now()): boolean => {
+    if (!m.reply_to || !m.from_session) return false
+    const request = db.prepare('select group_key, created_at from outbox where id = ?').get(m.reply_to) as
+      | { group_key: string; created_at: number }
+      | undefined
+    if (!request?.group_key || at - request.created_at >= HELD_REPLY_MS) return false
+    const open = db
+      .prepare('select session_id from outbox where group_key = ? and id != ? and answered = 0')
+      .all(request.group_key, m.reply_to) as { session_id: string }[]
+    const live = liveSessions()
+    return open.some(o => live.includes(o.session_id))
+  }
+
+  const pendingOutbox = (sessionId: string): OutboxRow[] =>
+    (db.prepare('select * from outbox where session_id = ? and delivered = 0 order by id').all(sessionId) as OutboxRow[]).filter(
+      m => !heldReply(m),
+    )
+
+  const answerQuestion = (q: QuestionRow, choice: string | null, memo: string | null) => {
+    db.prepare(
+      "update questions set status = 'answered', choice = ?, memo = ?, answered_at = ?, delivered = 0 where id = ?",
+    ).run(choice, memo, now(), q.id)
+    logEvent(q.session_id, '답함', `Q${q.id} ${choice ? `(${choice})` : say('history.memo')} ${q.question}`, q.task_title)
+    changed('questions')
+    pushDeliveries(q.session_id)
+  }
+
+  // The answer a session gave to a question the person forwarded to it. The person may have
+  // answered first; then the late answer only closes the forward.
+  const answerForwarded = (row: OutboxRow, from: string, text: string) => {
+    db.prepare('update outbox set answered = 1 where id = ?').run(row.id)
+    const q = db.prepare('select * from questions where id = ?').get(row.question_id) as QuestionRow | undefined
+    if (!q || q.status === 'answered' || !text.trim()) return
+    const { choice, memo } = forwardedAnswer(text, q.options)
+    answerQuestion(q, choice, say('peer.forwardedMemo', { session: sessionLabel(from), text: memo }))
+  }
+
+  // One message from a session to others; replies and plain information want no answer.
+  const sendPeer = (from: string, to: string[], text: string, replyTo: number | null, expectsReply: boolean, requestKey = '') => {
+    const group = to.length > 1 && expectsReply ? `g${now()}-${Math.random().toString(36).slice(2, 8)}` : ''
+    const ids: string[] = []
+    for (const recipient of to) {
+      const row = db
+        .prepare(
+          `insert into outbox (session_id, kind, text, created_at, from_session, reply_to, expects_reply, group_key, request_key)
+           values (?, '세션메시지', ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(recipient, clipText(text), now(), from, replyTo, expectsReply ? 1 : 0, group, requestKey)
+      ids.push(`m${Number(row.lastInsertRowid)}`)
+    }
+    const names = to.map(sessionLabel).join(', ')
+    logEvent(from, '세션메시지', `→ ${names}: ${text.split('\n')[0]?.slice(0, 160) ?? ''}`)
+    changed('outbox')
+    for (const recipient of to) pushDeliveries(recipient)
+    // The reply may release answers the sender of the request held back (heldReply).
+    return ids
+  }
+
   // Everything waiting for a session, oldest first: answers ("q<id>") and
   // messages the IDE sent, such as screen comments ("m<id>").
   const pushDeliveries = (sessionId: string, only?: ServerResponse) => {
     const targets = only ? new Set([only]) : deliveryWatchers.get(sessionId)
     if (!targets || targets.size === 0) return
-    const messages = db
-      .prepare('select id, text, created_at from outbox where session_id = ? and delivered = 0 order by id')
-      .all(sessionId) as { id: number; text: string; created_at: number }[]
     const items = [
       ...undelivered(sessionId).map(q => ({ id: `q${q.id}`, text: deliveryText(q, langNow()), at: q.answered_at ?? 0 })),
-      ...messages.map(m => ({ id: `m${m.id}`, text: m.text, at: m.created_at })),
+      ...pendingOutbox(sessionId).map(m => ({ id: `m${m.id}`, text: outboxText(m), at: m.created_at })),
     ].sort((a, b) => a.at - b.at)
     for (const item of items) {
       for (const res of targets) sseSend(res, 'delivery', { id: item.id, text: item.text })
@@ -389,6 +487,13 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
   prune()
   const pruning = setInterval(() => prune(), 3600_000)
   pruning.unref()
+  // A held reply (heldReply) has no event to let it go when its wait runs out: look every minute.
+  const releasing = setInterval(() => {
+    for (const id of liveSessions()) {
+      if (db.prepare('select 1 from outbox where session_id = ? and delivered = 0 and reply_to is not null limit 1').get(id)) pushDeliveries(id)
+    }
+  }, 60_000)
+  releasing.unref()
 
   const state = () => ({
     sessions: db.prepare('select * from sessions order by last_seen desc').all(),
@@ -591,13 +696,34 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
         return send(res, 400, { error })
       }
       if (!choice && !memo) return send(res, 400, { error: say('bridge.needAnswer') })
-      db.prepare(
-        "update questions set status = 'answered', choice = ?, memo = ?, answered_at = ?, delivered = 0 where id = ?",
-      ).run(choice || null, memo || null, now(), id)
-      logEvent(q.session_id, '답함', `Q${id} ${choice ? `(${choice})` : say('history.memo')} ${q.question}`, q.task_title)
-      changed('questions')
-      pushDeliveries(q.session_id)
+      answerQuestion(q, choice || null, memo || null)
       return send(res, 200, { id, status: 'answered' })
+    }
+
+    // The person hands a decision question to another session, which answers in their place
+    // (bridge/peer.ts forwardText); its reply becomes the answer (answerForwarded).
+    const forward = path.match(/^\/questions\/(\d+)\/forward$/)
+    if (method === 'POST' && forward) {
+      const id = Number(forward[1])
+      const q = db.prepare('select * from questions where id = ?').get(id) as QuestionRow | undefined
+      if (!q) return send(res, 404, { error: say('bridge.noQuestion', { id }) })
+      if (q.status === 'answered') return send(res, 409, { error: say('bridge.peer.forwardNotOpen', { id }) })
+      const body = await readJson(req)
+      const to = str(body.to)
+      if (!to || !db.prepare('select 1 from sessions where id = ?').get(to)) return send(res, 404, { error: say('bridge.noSessionFound', { id: to }) })
+      if (to === q.session_id) return send(res, 400, { error: say('bridge.peer.self') })
+      const row = db
+        .prepare(
+          `insert into outbox (session_id, kind, task_title, text, created_at, expects_reply, question_id)
+           values (?, '세션메시지', ?, '', ?, 1, ?)`,
+        )
+        .run(to, q.task_title, now(), id)
+      db.prepare('update questions set forwarded_to = ? where id = ?').run(to, id)
+      logEvent(q.session_id, '세션메시지', say('bridge.event.forwarded', { id, to: sessionLabel(to) }), q.task_title)
+      changed('questions')
+      changed('outbox')
+      pushDeliveries(to)
+      return send(res, 200, { id, message: `m${Number(row.lastInsertRowid)}` })
     }
 
     const ackMessage = path.match(/^\/deliveries\/m(\d+)\/ack$/)
@@ -870,6 +996,80 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
 
     // Feature area: agent CLIs other than Claude Code (mcp/server.ts and the app's terminal typing).
     // An MCP session says it is still there without a full registration (no change event).
+    // send_to_session. `to` may be left out on a reply: it goes to the one who asked. A reply
+    // to a forwarded question answers that question instead (answerForwarded).
+    if (method === 'POST' && path === '/messages') {
+      const body = await readJson(req)
+      const from = str(body.sessionId)
+      if (!db.prepare('select 1 from sessions where id = ?').get(from)) return send(res, 404, { error: say('bridge.noSessionFound', { id: from }) })
+      const text = str(body.text).trim()
+      if (!text) return send(res, 400, { error: say('bridge.needText') })
+      const requestKey = str(body.requestKey)
+      if (requestKey) {
+        const sent = db.prepare('select id from outbox where from_session = ? and request_key = ? order by id').all(from, requestKey) as { id: number }[]
+        if (sent.length > 0) return send(res, 200, { ids: sent.map(r => `m${r.id}`), duplicate: true })
+      }
+      const replyId = Number(str(body.replyTo).replace(/^m/, '')) || null
+      const replied = replyId
+        ? (db.prepare('select * from outbox where id = ? and session_id = ?').get(replyId, from) as OutboxRow | undefined)
+        : undefined
+      if (replyId && !replied) return send(res, 400, { error: say('bridge.peer.badReply', { id: `m${replyId}` }) })
+      if (replied?.question_id) {
+        answerForwarded(replied, from, text)
+        return send(res, 200, { ids: [], answered: `Q${replied.question_id}` })
+      }
+      const named = Array.isArray(body.to) ? [...new Set(body.to.map(id => str(id)).filter(Boolean))] : []
+      const to = named.length > 0 ? named : replied?.from_session ? [replied.from_session] : []
+      if (to.length === 0) return send(res, 400, { error: say('bridge.peer.noRecipients') })
+      if (to.length > PEER_RECIPIENTS_MAX) return send(res, 400, { error: say('bridge.peer.tooMany', { max: PEER_RECIPIENTS_MAX }) })
+      if (to.includes(from)) return send(res, 400, { error: say('bridge.peer.self') })
+      const unknown = to.find(id => !db.prepare('select 1 from sessions where id = ?').get(id))
+      if (unknown) return send(res, 404, { error: say('bridge.noSessionFound', { id: unknown }) })
+      // A reply never asks for another: two sessions never answer each other's answers.
+      const expectsReply = !replied && body.expectsReply !== false
+      if (replied) db.prepare('update outbox set answered = 1 where id = ?').run(replied.id)
+      const ids = sendPeer(from, to, text, replied?.id ?? null, expectsReply, requestKey)
+      return send(res, 200, { ids })
+    }
+
+    // The mod's turn ended (turn.complete). Each request that went in with the turn and got
+    // no reply gets the turn's last answer as its result; a forwarded question, as its answer.
+    if (method === 'POST' && path === '/messages/turn-end') {
+      const body = await readJson(req)
+      const sessionId = str(body.sessionId)
+      const answerText = str(body.answer).trim()
+      const ids = Array.isArray(body.ids) ? body.ids.map(id => Number(str(id).replace(/^m/, ''))).filter(Boolean) : []
+      let relayed = 0
+      for (const id of ids) {
+        const row = db.prepare('select * from outbox where id = ? and session_id = ?').get(id, sessionId) as OutboxRow | undefined
+        if (!row || !row.expects_reply || row.answered || !answerText) continue
+        if (row.question_id) answerForwarded(row, sessionId, answerText)
+        else if (row.from_session) {
+          db.prepare('update outbox set answered = 1 where id = ?').run(row.id)
+          sendPeer(sessionId, [row.from_session], answerText, row.id, false, `auto:${row.id}`)
+        } else continue
+        relayed++
+      }
+      return send(res, 200, { relayed })
+    }
+
+    // list_sessions: the other sessions a session can write to, connected ones first.
+    if (method === 'GET' && path === '/sessions/peers') {
+      const self = url.searchParams.get('session') ?? ''
+      const live = liveSessions()
+      const rows = db
+        .prepare('select id, project, cwd, agent, last_seen from sessions where id != ? and last_seen > ? order by last_seen desc')
+        .all(self, now() - 7 * DAY) as { id: string; project: string; cwd: string; agent: string; last_seen: number }[]
+      const peers = rows.map(s => {
+        const task = db
+          .prepare("select title, now from tasks where session_id = ? and status != '보관' order by updated_at desc limit 1")
+          .get(s.id) as { title: string; now: string } | undefined
+        return { ...s, live: live.includes(s.id), state: activity.get(s.id)?.state ?? '', task: task?.title ?? '', now: task?.now ?? '' }
+      })
+      peers.sort((a, b) => Number(b.live) - Number(a.live))
+      return send(res, 200, { peers })
+    }
+
     // A turn started or ended, or a tool call opened or closed. The app is told only when
     // the picture changes (working or idle, a tool open or not); a heartbeat just moves `at`.
     if (method === 'POST' && path === '/sessions/activity') {
@@ -901,12 +1101,10 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
         return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
       }
       const answers = undelivered(sessionId)
-      const messages = db
-        .prepare('select id, kind, task_title, text, created_at from outbox where session_id = ? and delivered = 0 order by id')
-        .all(sessionId) as { id: number; kind: string; task_title: string; text: string; created_at: number }[]
+      const messages = pendingOutbox(sessionId)
       const items = [
         ...answers.map(q => ({ id: `q${q.id}`, text: deliveryText(q, langNow()), at: q.answered_at ?? 0 })),
-        ...messages.map(m => ({ id: `m${m.id}`, text: m.text, at: m.created_at })),
+        ...messages.map(m => ({ id: `m${m.id}`, text: outboxText(m), at: m.created_at })),
       ].sort((a, b) => a.at - b.at)
       for (const q of answers) {
         db.prepare('update questions set delivered = 1 where id = ?').run(q.id)
@@ -942,7 +1140,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     })
   })
 
-  return { server, db, prune, close: () => { clearInterval(pruning); server.close(); db.close() } }
+  return { server, db, prune, close: () => { clearInterval(pruning); clearInterval(releasing); server.close(); db.close() } }
 }
 
 function isAnswering(socketPath: string): Promise<boolean> {

@@ -5,6 +5,7 @@ const api: IdeApi = {
   state: () => ipcRenderer.invoke('bridge:state'),
   answer: (id, choice, memo) => ipcRenderer.invoke('bridge:answer', id, choice, memo),
   hold: id => ipcRenderer.invoke('bridge:hold', id),
+  forward: (id, to) => ipcRenderer.invoke('bridge:forward', id, to),
   connected: () => ipcRenderer.invoke('bridge:connected'),
   send: (sessionId, text, kind, taskTitle) => ipcRenderer.invoke('bridge:send', sessionId, text, kind, taskTitle),
   saveShot: dataUrl => ipcRenderer.invoke('shots:save', dataUrl),

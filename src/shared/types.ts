@@ -85,6 +85,7 @@ export type Question = {
   answered_at: number | null
   delivered: number
   turn_id: string
+  forwarded_to?: string // the session the person handed it to, '' when none
 }
 
 export type LogEvent = {
@@ -183,6 +184,7 @@ export type IdeApi = {
   state: () => Promise<BridgeState | null>
   answer: (id: number, choice: string, memo: string) => Promise<Reply>
   hold: (id: number) => Promise<Reply>
+  forward: (id: number, to: string) => Promise<Reply> // hand a question to another session to answer
   connected: () => Promise<boolean>
   send: (sessionId: string, text: string, kind: string, taskTitle: string) => Promise<Reply>
   saveShot: (dataUrl: string) => Promise<string | null>
