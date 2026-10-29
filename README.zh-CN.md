@@ -1,12 +1,70 @@
+<div align="center">
+
+<img src="resources/icon.png" width="112" alt="Switchboard 图标">
+
 # Switchboard
+
+**在一个界面上指挥多个编码智能体的桌面应用**
+
+Claude Code、Codex、Gemini CLI 会话会向你请求决定、彼此委派工作，你不在电脑前时通过 Telegram 联系你。
+
+<a href="https://github.com/choco5958/switchboard/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/choco5958/switchboard?style=flat-square&color=6366f1"></a>
+<a href="https://github.com/choco5958/switchboard/actions/workflows/test.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/choco5958/switchboard/test.yml?branch=main&style=flat-square&label=tests"></a>
+<img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0f1424?style=flat-square&logo=electron&logoColor=9feaf9">
+<a href="LICENSE"><img alt="MIT" src="https://img.shields.io/github/license/choco5958/switchboard?style=flat-square&color=22c55e"></a>
+
+<p><b>下载</b> &nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">macOS</a> &nbsp;|&nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">Windows</a> &nbsp;|&nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">Linux</a></p>
 
 [한국어](README.md) | [English](README.en.md) | [日本語](README.ja.md) | **简体中文**
 
-一款桌面应用 (macOS、Windows、Linux)，在一个界面上同时指挥多个编码智能体会话 (Claude Code、Codex、Gemini 等)。
+</div>
+
+<br>
+
+![主页: 按项目分组的任务、待决定、工作日志](docs/screenshot-home.png)
 
 会话需要人来做决定时，会把问题放进待决定队列，然后不等回答继续做别的事。你按一个键回答，答案就作为提示词回到该会话。会话之间也可以互相委派工作；你不在电脑前时，决定问题和权限确认会发到你自己的 Telegram。
 
-![主页: 按项目分组的任务、待决定、工作日志](docs/screenshot-home.png)
+## 一览
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<h3>🗳️ 待决定队列</h3>
+<p>会话把问题放进队列后继续做别的事。按一个键回答，答案就作为提示词进入该会话。</p>
+</td>
+<td width="50%" valign="top">
+<h3>🤝 会话之间协作</h3>
+<p>会话可以向其他会话提问并拿到回答。多个会话的回答会合并后一次送达，委派的工作也能中途取消。</p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<h3>📱 不在电脑前时</h3>
+<p>决定问题和 Claude Code 的权限确认会发到你的 Telegram。定时提示会在设定的时间运行。</p>
+</td>
+<td width="50%" valign="top">
+<h3>🔍 边看边改</h3>
+<p>在内置浏览器中点击元素留下批注，位置、截图和控制台错误会一并发送。会话也会亲自点击本地页面来确认。</p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<h3>🧩 多种编码 CLI</h3>
+<p>Codex、Gemini CLI、Qwen Code、Copilot CLI、OpenCode、Goose、Amp 也接入同一个待决定队列和任务报告。</p>
+</td>
+<td width="50%" valign="top">
+<h3>🎨 可选的界面</h3>
+<p>支持 13 种主题和 4 种语言。顶部显示 Claude 用量和上下文使用率。</p>
+</td>
+</tr>
+</table>
+
+## 快速开始
+
+1. 从 [Releases](https://github.com/choco5958/switchboard/releases/latest) 下载适合你系统的安装包并打开。详见[安装](#安装)。
+2. 在底部停靠栏点击 `+ Claude` 打开会话，像平时一样交代工作。
+3. 有决定问题时按键回答，其余的交给会话继续。
 
 ## 主要功能
 
@@ -53,18 +111,26 @@
 - 13 款主题: 经典藏青、冒险日志、荧光终端、像素点阵、地铁线路图、电路板、现代终端、蓝色 DOS 窗口、Dracula、Nord、Solarized 深色和浅色、GitHub 浅色。
 - 安装了 Orca 时，可以为每个节点创建工作树，也可以从 Linear 议题开始任务。
 
-![待决定: 蓝色 DOS 窗口主题](docs/screenshot-decision.png)
 
-![任务界面: 阶段与进度图](docs/screenshot-task.png)
+
+## 界面
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshot-decision.png" alt="待决定: 蓝色 DOS 窗口主题"><p align="center"><sub>待决定: 蓝色 DOS 窗口主题</sub></p></td>
+<td width="50%"><img src="docs/screenshot-task.png" alt="任务界面: 阶段与进度图"><p align="center"><sub>任务界面: 阶段与进度图</sub></p></td>
+</tr>
+</table>
 
 ## 架构
 
-```
-Claude Code 会话 ──(mod: ide-bridge)─────┐
-Claude Code 会话 ──(mod: ide-bridge)─────┼── 桥接服务 (Unix 套接字 + SQLite) ── Switchboard 应用 (Electron)
-Codex、Gemini 等 ──(MCP: mcp/server.ts)──┤
-switchboard 命令 ────────────────────────┤
-Telegram 机器人 ──(long polling)─────────┘
+```mermaid
+flowchart LR
+  cc["Claude Code 会话"] -- "mod: ide-bridge" --> bridge
+  cli["Codex、Gemini 等"] -- "MCP: mcp/server.ts" --> bridge
+  cmd["switchboard 命令"] --> bridge
+  tg["Telegram 机器人"] <-->|"long polling"| bridge
+  bridge[("桥接服务<br/>本地套接字 + SQLite")] <--> app["Switchboard 应用<br/>Electron"]
 ```
 
 | 文件夹 | 作用 |

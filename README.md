@@ -1,12 +1,70 @@
+<div align="center">
+
+<img src="resources/icon.png" width="112" alt="Switchboard 아이콘">
+
 # Switchboard
+
+**코딩 에이전트 여러 개를 한 화면에서 지휘하는 데스크톱 앱**
+
+Claude Code, Codex, Gemini CLI 세션이 결정을 묻고, 서로 일을 맡기고, 자리를 비운 사이에는 Telegram으로 연락합니다.
+
+<a href="https://github.com/choco5958/switchboard/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/choco5958/switchboard?style=flat-square&color=6366f1"></a>
+<a href="https://github.com/choco5958/switchboard/actions/workflows/test.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/choco5958/switchboard/test.yml?branch=main&style=flat-square&label=tests"></a>
+<img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0f1424?style=flat-square&logo=electron&logoColor=9feaf9">
+<a href="LICENSE"><img alt="MIT" src="https://img.shields.io/github/license/choco5958/switchboard?style=flat-square&color=22c55e"></a>
+
+<p><b>내려받기</b> &nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">macOS</a> &nbsp;|&nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">Windows</a> &nbsp;|&nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">Linux</a></p>
 
 **한국어** | [English](README.en.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md)
 
-Claude Code, Codex, Gemini 같은 코딩 에이전트 세션 여러 개를 한 화면에서 지휘하는 데스크톱 앱입니다. macOS, Windows, Linux에서 돕니다.
+</div>
+
+<br>
+
+![홈 화면: 프로젝트별 작업, 결정 대기, 작업 로그](docs/screenshot-home.png)
 
 세션은 사람의 결정이 필요하면 질문을 결정 대기 큐에 올리고, 답을 기다리지 않고 다른 일을 이어 갑니다. 키 하나로 답하면 그 답이 해당 세션에 프롬프트로 들어갑니다. 세션끼리 일을 주고받고, 자리를 비운 동안에는 결정 질문과 권한 확인이 내 Telegram으로 옵니다.
 
-![홈 화면: 프로젝트별 작업, 결정 대기, 작업 로그](docs/screenshot-home.png)
+## 한눈에 보기
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<h3>🗳️ 결정 대기 큐</h3>
+<p>세션은 질문을 올려 두고 다른 일을 이어 갑니다. 키 하나로 답하면 그 세션에 프롬프트로 들어갑니다.</p>
+</td>
+<td width="50%" valign="top">
+<h3>🤝 세션끼리 일하기</h3>
+<p>다른 세션에 묻고 답을 받습니다. 여러 세션의 답을 모아 한 번에 넣고, 맡긴 일은 도중에 취소합니다.</p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<h3>📱 자리를 비운 동안</h3>
+<p>결정 질문과 Claude Code의 권한 확인이 내 Telegram으로 옵니다. 예약 프롬프트는 정한 시간에 실행됩니다.</p>
+</td>
+<td width="50%" valign="top">
+<h3>🔍 화면 보며 고치기</h3>
+<p>내장 브라우저에서 요소를 눌러 코멘트를 남기면 위치, 스크린샷, 콘솔 오류가 함께 갑니다. 세션은 로컬 페이지를 직접 눌러 확인합니다.</p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<h3>🧩 여러 코딩 CLI</h3>
+<p>Codex, Gemini CLI, Qwen Code, Copilot CLI, OpenCode, Goose, Amp가 같은 결정 대기와 작업 보고에 연결됩니다.</p>
+</td>
+<td width="50%" valign="top">
+<h3>🎨 고르는 화면</h3>
+<p>테마 13개와 언어 4개를 지원합니다. Claude 사용량과 컨텍스트 사용률이 상단에 보입니다.</p>
+</td>
+</tr>
+</table>
+
+## 빠른 시작
+
+1. [Releases](https://github.com/choco5958/switchboard/releases/latest)에서 운영체제에 맞는 설치 파일을 받아 엽니다. 자세한 내용은 [설치](#설치)에 있습니다.
+2. 아래 도크의 `+ Claude`로 세션을 열고 평소처럼 일을 맡깁니다.
+3. 결정 질문이 오면 키로 답합니다. 나머지는 세션이 이어 갑니다.
 
 ## 주요 기능
 
@@ -53,18 +111,26 @@ Claude Code, Codex, Gemini 같은 코딩 에이전트 세션 여러 개를 한 �
 - 테마 13개: 기본 남색, 모험 일지, 인광 터미널, 도트 픽셀, 지하철 노선도, 회로 기판, 요즘 터미널, 파란 도스 창, Dracula, Nord, Solarized 어두움과 밝음, GitHub 밝음.
 - Orca가 설치되어 있으면 노드마다 워크트리를 만들고, Linear 이슈를 작업으로 시작할 수 있습니다.
 
-![결정 대기: 파란 도스 창 테마](docs/screenshot-decision.png)
 
-![작업 화면: 단계와 진행 그래프](docs/screenshot-task.png)
+
+## 화면
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshot-decision.png" alt="결정 대기: 파란 도스 창 테마"><p align="center"><sub>결정 대기: 파란 도스 창 테마</sub></p></td>
+<td width="50%"><img src="docs/screenshot-task.png" alt="작업 화면: 단계와 진행 그래프"><p align="center"><sub>작업 화면: 단계와 진행 그래프</sub></p></td>
+</tr>
+</table>
 
 ## 구조
 
-```
-Claude Code 세션 ──(mod: ide-bridge)─────┐
-Claude Code 세션 ──(mod: ide-bridge)─────┼── 브리지 (Unix 소켓 + SQLite) ── Switchboard 앱 (Electron)
-Codex, Gemini 등 ──(MCP: mcp/server.ts)──┤
-switchboard 명령 ────────────────────────┤
-Telegram 봇 ──(long polling)─────────────┘
+```mermaid
+flowchart LR
+  cc["Claude Code 세션"] -- "mod: ide-bridge" --> bridge
+  cli["Codex, Gemini 등"] -- "MCP: mcp/server.ts" --> bridge
+  cmd["switchboard 명령"] --> bridge
+  tg["Telegram 봇"] <-->|"long polling"| bridge
+  bridge[("브리지<br/>로컬 소켓 + SQLite")] <--> app["Switchboard 앱<br/>Electron"]
 ```
 
 | 폴더 | 역할 |

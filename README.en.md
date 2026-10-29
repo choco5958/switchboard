@@ -1,12 +1,70 @@
+<div align="center">
+
+<img src="resources/icon.png" width="112" alt="Switchboard icon">
+
 # Switchboard
+
+**A desktop app for directing many coding agents from one screen**
+
+Claude Code, Codex and Gemini CLI sessions ask you for decisions, hand work to each other, and reach you on Telegram while you are away.
+
+<a href="https://github.com/choco5958/switchboard/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/choco5958/switchboard?style=flat-square&color=6366f1"></a>
+<a href="https://github.com/choco5958/switchboard/actions/workflows/test.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/choco5958/switchboard/test.yml?branch=main&style=flat-square&label=tests"></a>
+<img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0f1424?style=flat-square&logo=electron&logoColor=9feaf9">
+<a href="LICENSE"><img alt="MIT" src="https://img.shields.io/github/license/choco5958/switchboard?style=flat-square&color=22c55e"></a>
+
+<p><b>Download</b> &nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">macOS</a> &nbsp;|&nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">Windows</a> &nbsp;|&nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">Linux</a></p>
 
 [한국어](README.md) | **English** | [日本語](README.ja.md) | [简体中文](README.zh-CN.md)
 
-A desktop app for macOS, Windows and Linux for directing several coding-agent sessions (Claude Code, Codex, Gemini and others) from one screen.
+</div>
+
+<br>
+
+![Home: tasks by project, decision queue, work log](docs/screenshot-home.png)
 
 When a session needs a decision from you, it posts the question to a decision queue and keeps working instead of stopping. You answer with a key press, and the answer goes back to that session as a prompt. Sessions can also hand work to each other, and while you are away, decisions and permission asks reach you on Telegram.
 
-![Home: tasks by project, decision queue, work log](docs/screenshot-home.png)
+## At a glance
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<h3>🗳️ Decision queue</h3>
+<p>A session posts its question and keeps working. Answer with one key, and the answer goes to that session as a prompt.</p>
+</td>
+<td width="50%" valign="top">
+<h3>🤝 Sessions working together</h3>
+<p>Sessions ask each other and get answers back. Replies from several sessions arrive together, and a request can be called off midway.</p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<h3>📱 While you are away</h3>
+<p>Decisions and Claude Code's permission asks reach your Telegram. Scheduled prompts run at the times you set.</p>
+</td>
+<td width="50%" valign="top">
+<h3>🔍 Fix what you see</h3>
+<p>Click an element in the built-in browser to leave a comment; its place, a screenshot and console errors go with it. Sessions click through local pages themselves to check.</p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<h3>🧩 Many coding CLIs</h3>
+<p>Codex, Gemini CLI, Qwen Code, Copilot CLI, OpenCode, Goose and Amp join the same decision queue and task reports.</p>
+</td>
+<td width="50%" valign="top">
+<h3>🎨 Your screen</h3>
+<p>13 themes and 4 languages. Claude usage and context use sit at the top.</p>
+</td>
+</tr>
+</table>
+
+## Quick start
+
+1. Get the installer for your system from [Releases](https://github.com/choco5958/switchboard/releases/latest) and open it. Details are under [Install](#install).
+2. Open a session with `+ Claude` in the dock at the bottom and give it work as usual.
+3. When a decision comes in, answer with a key. The session carries on from there.
 
 ## Features
 
@@ -53,18 +111,26 @@ When a session needs a decision from you, it posts the question to a decision qu
 - 13 themes: Classic navy, Adventure journal, Phosphor terminal, Pixel dots, Subway map, Circuit board, Modern terminal, Blue DOS window, Dracula, Nord, Solarized Dark and Light, GitHub Light.
 - With Orca installed, each node can get its own worktree, and a Linear issue can start a task.
 
-![Decision queue: Blue DOS window theme](docs/screenshot-decision.png)
 
-![Task view: stages and progress graph](docs/screenshot-task.png)
+
+## Screens
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshot-decision.png" alt="Decision queue: Blue DOS window theme"><p align="center"><sub>Decision queue: Blue DOS window theme</sub></p></td>
+<td width="50%"><img src="docs/screenshot-task.png" alt="Task view: stages and progress graph"><p align="center"><sub>Task view: stages and progress graph</sub></p></td>
+</tr>
+</table>
 
 ## Architecture
 
-```
-Claude Code session ──(mod: ide-bridge)─────┐
-Claude Code session ──(mod: ide-bridge)─────┼── Bridge (Unix socket + SQLite) ── Switchboard app (Electron)
-Codex, Gemini, ... ──(MCP: mcp/server.ts)───┤
-switchboard command ────────────────────────┤
-Telegram bot ──(long polling)───────────────┘
+```mermaid
+flowchart LR
+  cc["Claude Code session"] -- "mod: ide-bridge" --> bridge
+  cli["Codex, Gemini, ..."] -- "MCP: mcp/server.ts" --> bridge
+  cmd["switchboard command"] --> bridge
+  tg["Telegram bot"] <-->|"long polling"| bridge
+  bridge[("Bridge<br/>local socket + SQLite")] <--> app["Switchboard app<br/>Electron"]
 ```
 
 | Folder | Role |

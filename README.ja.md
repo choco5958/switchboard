@@ -1,12 +1,70 @@
+<div align="center">
+
+<img src="resources/icon.png" width="112" alt="Switchboard アイコン">
+
 # Switchboard
+
+**複数のコーディングエージェントをひとつの画面で指揮するデスクトップアプリ**
+
+Claude Code、Codex、Gemini CLI のセッションが判断を尋ね、互いに仕事を任せ、席を外している間は Telegram で連絡します。
+
+<a href="https://github.com/choco5958/switchboard/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/choco5958/switchboard?style=flat-square&color=6366f1"></a>
+<a href="https://github.com/choco5958/switchboard/actions/workflows/test.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/choco5958/switchboard/test.yml?branch=main&style=flat-square&label=tests"></a>
+<img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0f1424?style=flat-square&logo=electron&logoColor=9feaf9">
+<a href="LICENSE"><img alt="MIT" src="https://img.shields.io/github/license/choco5958/switchboard?style=flat-square&color=22c55e"></a>
+
+<p><b>ダウンロード</b> &nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">macOS</a> &nbsp;|&nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">Windows</a> &nbsp;|&nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">Linux</a></p>
 
 [한국어](README.md) | [English](README.en.md) | **日本語** | [简体中文](README.zh-CN.md)
 
-Claude Code、Codex、Gemini などのコーディングエージェントのセッションを、ひとつの画面で複数まとめて指揮するデスクトップアプリです。macOS、Windows、Linux で動きます。
+</div>
+
+<br>
+
+![ホーム画面: プロジェクト別のタスク、判断待ち、作業ログ](docs/screenshot-home.png)
 
 セッションは人の判断が必要になると質問を判断待ちキューに載せ、答えを待たずにほかの作業を続けます。キーひとつで答えると、その答えがプロンプトとしてセッションに入ります。セッション同士で仕事をやり取りでき、席を外している間は判断の質問と権限の確認が自分の Telegram に届きます。
 
-![ホーム画面: プロジェクト別のタスク、判断待ち、作業ログ](docs/screenshot-home.png)
+## ひと目でわかる
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<h3>🗳️ 判断待ちキュー</h3>
+<p>セッションは質問を載せたままほかの作業を続けます。キーひとつで答えると、そのセッションにプロンプトとして入ります。</p>
+</td>
+<td width="50%" valign="top">
+<h3>🤝 セッション同士の連携</h3>
+<p>ほかのセッションに尋ねて答えを受け取ります。複数のセッションの答えをまとめて入れ、任せた仕事は途中で取り消せます。</p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<h3>📱 席を外している間</h3>
+<p>判断の質問と Claude Code の権限確認が自分の Telegram に届きます。予約プロンプトは決めた時刻に実行されます。</p>
+</td>
+<td width="50%" valign="top">
+<h3>🔍 画面を見ながら直す</h3>
+<p>内蔵ブラウザーで要素をクリックしてコメントを残すと、位置、スクリーンショット、コンソールのエラーが一緒に届きます。セッションはローカルのページを自分で操作して確かめます。</p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<h3>🧩 さまざまなコーディング CLI</h3>
+<p>Codex、Gemini CLI、Qwen Code、Copilot CLI、OpenCode、Goose、Amp も同じ判断待ちと作業報告につながります。</p>
+</td>
+<td width="50%" valign="top">
+<h3>🎨 選べる画面</h3>
+<p>テーマ 13 種類と 4 つの言語に対応します。Claude の使用量とコンテキスト使用率を上部に表示します。</p>
+</td>
+</tr>
+</table>
+
+## クイックスタート
+
+1. [Releases](https://github.com/choco5958/switchboard/releases/latest) から OS に合ったインストーラーを入手して開きます。詳しくは[インストール](#インストール)にあります。
+2. 下のドックの `+ Claude` でセッションを開き、いつもどおり仕事を任せます。
+3. 判断の質問が来たらキーで答えます。あとはセッションが続けます。
 
 ## 主な機能
 
@@ -53,18 +111,26 @@ Claude Code、Codex、Gemini などのコーディングエージェントのセ
 - テーマ 13 種: ベーシック紺、冒険日誌、蛍光ターミナル、ドット絵、地下鉄路線図、回路基板、モダンターミナル、青い DOS 画面、Dracula、Nord、Solarized ダークとライト、GitHub ライト。
 - Orca がインストールされていれば、ノードごとにワークツリーを作り、Linear の課題からタスクを始められます。
 
-![判断待ち: 青い DOS 画面テーマ](docs/screenshot-decision.png)
 
-![タスク画面: 段階と進行グラフ](docs/screenshot-task.png)
+
+## 画面
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshot-decision.png" alt="判断待ち: 青い DOS 画面テーマ"><p align="center"><sub>判断待ち: 青い DOS 画面テーマ</sub></p></td>
+<td width="50%"><img src="docs/screenshot-task.png" alt="タスク画面: 段階と進行グラフ"><p align="center"><sub>タスク画面: 段階と進行グラフ</sub></p></td>
+</tr>
+</table>
 
 ## 構成
 
-```
-Claude Code セッション ──(mod: ide-bridge)─────┐
-Claude Code セッション ──(mod: ide-bridge)─────┼── ブリッジ (Unix ソケット + SQLite) ── Switchboard アプリ (Electron)
-Codex、Gemini など ──(MCP: mcp/server.ts)──────┤
-switchboard コマンド ──────────────────────────┤
-Telegram ボット ──(long polling)───────────────┘
+```mermaid
+flowchart LR
+  cc["Claude Code セッション"] -- "mod: ide-bridge" --> bridge
+  cli["Codex、Gemini など"] -- "MCP: mcp/server.ts" --> bridge
+  cmd["switchboard コマンド"] --> bridge
+  tg["Telegram ボット"] <-->|"long polling"| bridge
+  bridge[("ブリッジ<br/>ローカルソケット + SQLite")] <--> app["Switchboard アプリ<br/>Electron"]
 ```
 
 | フォルダー | 役割 |
