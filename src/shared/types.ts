@@ -1,5 +1,6 @@
 // Rows as the bridge's GET /state returns them.
 import type { DevTarget } from './devtargets'
+import type { Activity } from './stall'
 
 export type Option = { key: string; label: string }
 
@@ -116,6 +117,7 @@ export type GraphNode = {
 export type BridgeState = {
   sessions: Session[]
   live?: string[] // sessions whose delivery stream is open now
+  activity?: Record<string, Activity> // what each session's turn is doing (src/shared/stall.ts)
   tasks: Task[]
   questions: Question[]
   answeredCount: number

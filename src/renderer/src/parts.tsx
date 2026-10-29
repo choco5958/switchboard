@@ -46,6 +46,7 @@ export function TaskItem({
   openQuestions,
   nodeCount,
   agent,
+  stalled = false,
   onClick,
 }: {
   task: Task
@@ -53,6 +54,7 @@ export function TaskItem({
   openQuestions: number
   nodeCount: number
   agent?: AgentTag
+  stalled?: boolean // its session's turn shows no activity (src/shared/stall.ts)
   onClick: () => void
 }) {
   const at = STAGES.indexOf(task.stage)
@@ -72,6 +74,11 @@ export function TaskItem({
         ))}
       </ol>
       <div className="task-tags">
+        {stalled && (
+          <span className="tag-chip warn" title={t('task.stalledTitle')}>
+            {t('task.stalled')}
+          </span>
+        )}
         {openQuestions > 0 && <span className="tag-chip warn">{t('task.openQuestions', { n: openQuestions })}</span>}
         {task.restored_at && Date.now() - task.restored_at < 24 * 3600_000 && (
           <span className="tag-chip accent">{t('task.restoredTag')}</span>

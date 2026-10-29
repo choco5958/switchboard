@@ -124,6 +124,8 @@ export const ja: Dict = {
   'task.restoredTag': 'アーカイブから復元',
   'task.noPlanTitle': 'セッションが plan_nodes で計画を登録すると進行グラフができます',
   'task.noPlan': '計画なし',
+  'task.stalled': '停止',
+  'task.stalledTitle': 'ターンが 5 分以上動いていません。ターミナルで権限の確認を待っていないか見てください。',
   'history.recent': '最新 50件',
   'history.empty': 'まだ回答した質問はありません。判断待ちで回答するとここにたまります。',
   'history.colId': '番号',
@@ -663,4 +665,5 @@ export const ja: Dict = {
   'agents.addNote': '追加しただけでは実行しません。ドックのボタンを押すと開きます。',
   'agents.added': '{name} を追加しました。下のドックの + {name} で開きます。',
   'notify.many': '新しい決定待ち {count} 件',
+  'notify.stalled': '{minutes} 分間動きがありません。ターミナルで権限の確認を待っていないか確かめてください。',
 }

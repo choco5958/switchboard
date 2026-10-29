@@ -99,6 +99,17 @@ test('the same question is posted once: by its call id, or while the first still
   assert.notEqual((await ask({ requestKey: 'toolu_3' })).json.id, first.id)
 })
 
+test('a session reports what its turn is doing', async () => {
+  assert.equal((await call('POST', '/sessions/activity', { sessionId: 's1', state: 'busy' })).status, 400)
+  await call('POST', '/sessions/activity', { sessionId: 's1', state: 'working', openTools: 2 })
+  const { json } = await call('GET', '/state')
+  assert.equal(json.activity.s1.state, 'working')
+  assert.equal(json.activity.s1.openTools, 2)
+  assert.equal(typeof json.activity.s1.at, 'number')
+  await call('POST', '/sessions/activity', { sessionId: 's1', state: 'idle', openTools: 0 })
+  assert.equal((await call('GET', '/state')).json.activity.s1.state, 'idle')
+})
+
 test('a task upserts by title and keeps its stage when none is given', async () => {
   await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', stage: '설계' })
   const { json } = await call('POST', '/tasks', { sessionId: 's1', title: '예약 화면', now: '시안 비교' })

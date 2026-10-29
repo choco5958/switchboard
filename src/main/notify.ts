@@ -35,3 +35,9 @@ export function planNotification(fresh: Question[]): NotifyPlan | null {
   if (fresh.length > 1) return { many: fresh.length }
   return { title: q.project, body: firstLine(q.question), questionId: q.id }
 }
+
+// Sessions that stalled since the last pass (src/shared/stall.ts). Once per stall: a session
+// leaves the set when it moves again, so a later stall notifies again.
+export function scanStalled(stalled: readonly string[], previous: Set<string>): { ids: Set<string>; fresh: string[] } {
+  return { ids: new Set(stalled), fresh: stalled.filter(id => !previous.has(id)) }
+}

@@ -650,3 +650,5 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .lang-option { min-width: 104px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); cursor: pointer; }
 .lang-option:hover { border-color: var(--accent); }
 .lang-option.on { border-color: var(--accent); background: var(--accent-soft); }
+
+.dock-tab .stalled-mark { color: var(--warn); }

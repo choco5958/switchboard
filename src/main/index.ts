@@ -15,7 +15,8 @@ import { saveShot } from './shots'
 import { onTerminalsChange, registerTerminals, typingTarget } from './terminals'
 import { registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
-import { badgeText, planNotification, scanPending } from './notify'
+import { badgeText, planNotification, scanPending, scanStalled } from './notify'
+import { STALL_MS, stalledSessions } from '../shared/stall'
 import { resolveLang, setLang, t } from '../shared/i18n'
 
 const DIR = join(homedir(), '.claude-ide')
@@ -69,6 +70,7 @@ function send(channel: string, payload: unknown): void {
 
 // Pending question ids seen by the last scan; null until the first state, which is only a baseline.
 let seenPending: Set<number> | null = null
+let seenStalled = new Set<string>()
 let scanTimer: ReturnType<typeof setTimeout> | null = null
 
 // Electron drops a notification's click handler once the object is collected, so live ones are held here.
@@ -91,6 +93,7 @@ function focusWindow(afterLoad?: () => void): void {
 async function scanQueue(): Promise<void> {
   const reply = await call('GET', '/state')
   if (!reply.ok) return
+  notifyStalled(reply.json as unknown as BridgeState)
   const scan = scanPending((reply.json as unknown as BridgeState).questions ?? [], seenPending)
   seenPending = scan.ids
   app.dock?.setBadge(badgeText(scan.count))
@@ -110,6 +113,26 @@ async function scanQueue(): Promise<void> {
   notification.show()
 }
 
+// A session whose turn stopped moving (src/shared/stall.ts): one notification per stall,
+// also while the window is focused, since the terminal that waits may be in another tab.
+function notifyStalled(state: BridgeState): void {
+  const stalled = stalledSessions(state.activity ?? {}, state.live ?? [], Date.now())
+  const scan = scanStalled(stalled, seenStalled)
+  seenStalled = scan.ids
+  if (!Notification.isSupported()) return
+  for (const id of scan.fresh) {
+    const project = state.sessions.find(s => s.id === id)?.project ?? id
+    const notification = new Notification({ title: project, body: t('notify.stalled', { minutes: STALL_MS / 60_000 }) })
+    liveNotifications.add(notification)
+    notification.on('click', () => {
+      liveNotifications.delete(notification)
+      focusWindow()
+    })
+    notification.on('close', () => liveNotifications.delete(notification))
+    notification.show()
+  }
+}
+
 // SSE events arrive in bursts; one state read per burst is enough.
 function scheduleScan(): void {
   if (scanTimer) return
@@ -124,6 +147,8 @@ function scheduleScan(): void {
 // reconnect). On loss the app shows the bridge as down at once, restarts it and
 // subscribes again.
 function watch(): void {
+  // A stall is the absence of events, so the state is also read now and then without one.
+  setInterval(scheduleScan, 30_000).unref()
   watchBridge({
     socketPath: SOCKET,
     retryMs: RETRY_MS,

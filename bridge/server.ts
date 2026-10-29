@@ -9,6 +9,7 @@ import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
+import type { Activity } from '../src/shared/stall.ts'
 import { eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
 
 export type Option = { key: string; label: string }
@@ -363,6 +364,10 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
     changed('tasks')
   }
 
+  // What each session's turn is doing, from the mod's hooks (POST /sessions/activity). Kept in
+  // memory: after a restart nothing counts as stalled until the session reports again.
+  const activity = new Map<string, Activity>()
+
   // Sessions whose delivery stream is open: the mod's, or the app's for a CLI in its terminal.
   const liveSessions = () => [...deliveryWatchers].filter(([, set]) => set.size > 0).map(([id]) => id)
 
@@ -388,6 +393,7 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
   const state = () => ({
     sessions: db.prepare('select * from sessions order by last_seen desc').all(),
     live: liveSessions(),
+    activity: Object.fromEntries(activity),
     // Every running task, however many: the limit only trims waiting ones.
     tasks: db
       .prepare(
@@ -864,6 +870,20 @@ export function createBridge(dbPath: string, locale = systemLocale()) {
 
     // Feature area: agent CLIs other than Claude Code (mcp/server.ts and the app's terminal typing).
     // An MCP session says it is still there without a full registration (no change event).
+    // A turn started or ended, or a tool call opened or closed. The app is told only when
+    // the picture changes (working or idle, a tool open or not); a heartbeat just moves `at`.
+    if (method === 'POST' && path === '/sessions/activity') {
+      const body = await readJson(req)
+      const sessionId = str(body.sessionId)
+      const state = str(body.state)
+      if (!sessionId || (state !== 'working' && state !== 'idle')) return send(res, 400, { error: say('bridge.noSession') })
+      const openTools = Math.max(0, Math.floor(Number(body.openTools) || 0))
+      const before = activity.get(sessionId)
+      activity.set(sessionId, { state, openTools, at: now() })
+      if (!before || before.state !== state || (before.openTools > 0) !== (openTools > 0)) changed('activity')
+      return send(res, 200, { ok: true })
+    }
+
     if (method === 'POST' && path === '/sessions/seen') {
       const body = await readJson(req)
       const result = db.prepare('update sessions set last_seen = ? where id = ?').run(now(), str(body.sessionId))

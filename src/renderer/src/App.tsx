@@ -19,6 +19,7 @@ import { isRunning, nameForFolder, pickSession, projectsOf, savedProjects, scope
 import { Dock } from './Dock'
 import { AgentBadge, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
+import { stalledSessions } from '../../shared/stall'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
 import { HOME, activeTab, closeTab, openTab, pruneTabs, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
 import { applyTheme } from './theme'
@@ -209,6 +210,20 @@ export function App() {
   // Feature area: agent CLIs other than Claude Code. Badges by session, and the person's own CLIs.
   const customs = useMemo(() => customAgents(state.settings[CUSTOM_AGENTS_KEY]), [state.settings])
   const tags = useMemo(() => agentTags(state.sessions, customs), [state.sessions, customs])
+  // A stall is time passing without events, so the check runs on a clock as well.
+  const [clockNow, setClockNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+  const stalled = useMemo(
+    () => new Set(stalledSessions(state.activity ?? {}, state.live ?? [], clockNow)),
+    [state.activity, state.live, clockNow],
+  )
+  const stalledTerms = useMemo(
+    () => new Set(state.sessions.filter(s => stalled.has(s.id) && s.terminal).map(s => s.terminal as string)),
+    [state.sessions, stalled],
+  )
   const { pending, held } = useMemo(() => queueOf(view.questions), [view.questions])
   const reachOfQuestion = (q: Question) => reachOf(state.sessions.find(s => s.id === q.session_id), state.live ?? [])
   const inScope = (tab: Tab): boolean => {
@@ -477,6 +492,7 @@ export function App() {
                         openQuestions={state.questions.filter(q => q.status !== 'answered' && q.session_id === task.session_id && q.task_title === task.title).length}
                         nodeCount={state.nodes.filter(n => n.task_id === task.id).length}
                         agent={tags[task.session_id]}
+                        stalled={isRunning(task) && stalled.has(task.session_id)}
                         onClick={() => openTask(task.id)}
                       />
                     ))}
@@ -595,6 +611,7 @@ export function App() {
           onExpandLog={() => open({ kind: 'log' })}
           onFolder={cwd => void addProject(cwd)}
           agents={tags}
+          stalledTerms={stalledTerms}
           customs={customs}
           showOthers={showOtherAgents(state.settings[SHOW_OTHER_AGENTS_KEY])}
         />

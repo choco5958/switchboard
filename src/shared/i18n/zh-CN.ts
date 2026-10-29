@@ -124,6 +124,8 @@ export const zhCN: Dict = {
   'task.restoredTag': '已从归档恢复',
   'task.noPlanTitle': '会话用 plan_nodes 提交计划后会生成进度图',
   'task.noPlan': '暂无计划',
+  'task.stalled': '停滞',
+  'task.stalledTitle': '回合已超过 5 分钟没有动静。请看终端是否在等待权限确认。',
   'history.recent': '最近 50 条',
   'history.empty': '还没有回答过的问题。在待决定里回答后会记录在这里。',
   'history.colId': '编号',
@@ -663,4 +665,5 @@ export const zhCN: Dict = {
   'agents.addNote': '添加后不会立即运行，按停靠栏中的按钮才会打开。',
   'agents.added': '已添加 {name}。用下方停靠栏中的 + {name} 打开。',
   'notify.many': '有 {count} 个新的待决定事项',
+  'notify.stalled': '已有 {minutes} 分钟没有动静。请检查终端是否在等待权限确认。',
 }

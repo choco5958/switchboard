@@ -47,6 +47,12 @@ let mainTurnId = ''
 // Commands run one at a time, so the record of run ids is never written by two at once.
 let commandChain: Promise<void> = Promise.resolve()
 let touchedAt = 0
+// Activity for the app's stall check (src/shared/stall.ts): tool calls open now, and when
+// the bridge last heard of this session's work.
+let openTools = 0
+let activitySentAt = 0
+let activitySent = ''
+const ACTIVITY_BEAT_MS = 15_000
 
 function socketPath(): string {
   return socket || `${home}/.claude-ide/bridge.sock`
@@ -254,6 +260,18 @@ async function restore($: Engine): Promise<void> {
   for (const key of staleKeys(keys, seen, at, STALE_MS)) await $.store.delete(key)
   for (const [id, last] of Object.entries(seen)) if (at - last > STALE_MS) delete seen[id]
   await $.store.set('seen', seen)
+}
+
+// Tells the bridge the turn is working or idle and whether a tool call is open. A change goes
+// at once; the same picture again only as a heartbeat, at most every ACTIVITY_BEAT_MS.
+async function reportActivity($: Engine): Promise<void> {
+  if (!sessionId) return
+  const picture = `${busy ? 'working' : 'idle'}:${openTools > 0}`
+  const at = await $.clock.now()
+  if (picture === activitySent && at - activitySentAt < ACTIVITY_BEAT_MS) return
+  activitySent = picture
+  activitySentAt = at
+  await call($, 'POST', '/sessions/activity', { sessionId, state: busy ? 'working' : 'idle', openTools }).catch(() => undefined)
 }
 
 // A session that runs for weeks marks itself seen now and then, so nobody removes its keys.
@@ -480,7 +498,14 @@ export const register: Register = on => {
     const agentId = e.agentId
     if (agentId && stopped.has(agentId)) return { deny: t(currentLang(), 'mod.denyStopped') }
     if (agentId && paused.has(agentId)) return { deny: t(currentLang(), 'mod.denyPaused') }
-    return next(e)
+    openTools += 1
+    void reportActivity($).catch(() => undefined)
+    try {
+      return await next(e)
+    } finally {
+      openTools = Math.max(0, openTools - 1)
+      void reportActivity($).catch(() => undefined)
+    }
   }).catch(($, e, next) => next(e))
 
   on('prompt.submit', async ($, e, next) => {
@@ -494,12 +519,14 @@ export const register: Register = on => {
       busy = true
       mainTurnId = e.turnId
     }
+    void reportActivity($).catch(() => undefined)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
       busy = false
+      openTools = 0
       void flush($)
       void reportUsage($)
       void touchSeen($).catch(() => undefined)
@@ -507,6 +534,7 @@ export const register: Register = on => {
       void post($, '에이전트', t(currentLang(), 'mod.agentEnd', { text: e.answer.split('\n')[0]?.slice(0, 120) ?? '' }))
     }
     void reportAgents($)
+    void reportActivity($).catch(() => undefined)
     return next(e)
   })
 }

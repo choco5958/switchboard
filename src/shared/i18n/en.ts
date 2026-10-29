@@ -124,6 +124,8 @@ export const en: Dict = {
   'task.restoredTag': 'Restored from archive',
   'task.noPlanTitle': 'The progress graph appears once the session posts a plan with plan_nodes',
   'task.noPlan': 'No plan',
+  'task.stalled': 'Stalled',
+  'task.stalledTitle': 'The turn has shown no activity for over 5 minutes. See whether its terminal waits for a permission prompt.',
   'history.recent': 'Latest 50',
   'history.empty': 'No answered questions yet. Answers you give under Decisions collect here.',
   'history.colId': 'No.',
@@ -663,4 +665,5 @@ export const en: Dict = {
   'agents.addNote': 'Adding runs nothing; it opens when you press its dock button.',
   'agents.added': 'Added {name}. Open it with + {name} in the dock below.',
   'notify.many': '{count} new decisions waiting',
+  'notify.stalled': 'No activity for {minutes} minutes. Check whether its terminal waits for a permission prompt.',
 }

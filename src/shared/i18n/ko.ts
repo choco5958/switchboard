@@ -123,6 +123,8 @@ export const ko = {
   'task.restoredTag': '보관에서 되살림',
   'task.noPlanTitle': '세션이 plan_nodes로 계획을 올리면 진행 그래프가 생깁니다',
   'task.noPlan': '계획 없음',
+  'task.stalled': '멈춤',
+  'task.stalledTitle': '턴이 진행 중인데 5분 넘게 움직임이 없습니다. 터미널에서 권한 확인을 기다리는지 보세요.',
   'history.recent': '최근 50건',
   'history.empty': '아직 답한 질문이 없습니다. 결정 대기에서 답하면 여기에 쌓입니다.',
   'history.colId': '번호',
@@ -662,6 +664,7 @@ export const ko = {
   'agents.addNote': '추가해도 바로 실행하지 않습니다. 독의 버튼을 눌러야 열립니다.',
   'agents.added': '{name}을(를) 추가했습니다. 아래 독의 + {name}으로 엽니다.',
   'notify.many': '새 결정 요청 {count}건',
+  'notify.stalled': '{minutes}분째 움직임이 없습니다. 터미널에서 권한 확인을 기다리는지 확인하세요.',
 } satisfies Record<string, string>
 
 export type Dict = Record<keyof typeof ko, string>
