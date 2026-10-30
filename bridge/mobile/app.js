@@ -16,7 +16,6 @@ let offset = 0
 let view = null
 let tab = 'decisions'
 let state = 'loading' // loading | unpaired | revoked | weak | offline | ready
-let notice = null
 let noticeTimer = 0
 let armed = null
 let armTimer = 0
@@ -37,7 +36,11 @@ const FALLBACK = {
   revoked: 'This phone was disconnected. Show a new QR code in the app to connect again.',
   offline: 'Cannot reach the computer. Check that it is on and on the same network.',
   pairAgain: 'This phone was connected through an address without HTTPS (Wi-Fi or a Tailscale IP), or before an update, so it is not heard through this address and cannot allow permission asks, write to sessions or add a memo. Show a new QR code for the Tailscale HTTPS address in the app and scan it.',
+  linkOn: 'Connected to the computer',
+  linkOff: 'Cannot reach the computer',
+  linkWait: 'Checking the connection',
 }
+const TABS = ['decisions', 'approvals', 'tasks', 'sessions']
 const say = (key, vars = {}) => String(words[`mobile.page.${key}`] ?? FALLBACK[key] ?? '').replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ''))
 
 // Over the Tailscale HTTPS address the page cannot have been swapped on the way, and only then may
@@ -124,12 +127,19 @@ async function api(method, path, body, retried = false) {
   return JSON.parse(fromUtf8(opened))
 }
 
+// The notices stay outside the part that is drawn anew, so a screen reader reads each one once:
+// a trouble at once (alert), the rest when it is free (status).
+const said = el('div', { className: 'notice', role: 'status' })
+const alarm = el('div', { className: 'notice bad', role: 'alert' })
+document.body.append(said, alarm)
+
 function flash(text, bad = false) {
-  notice = { text, bad }
+  ;(bad ? alarm : said).textContent = text
+  ;(bad ? said : alarm).textContent = ''
   clearTimeout(noticeTimer)
   noticeTimer = setTimeout(() => {
-    notice = null
-    render(true)
+    said.textContent = ''
+    alarm.textContent = ''
   }, 2600)
   render()
 }
@@ -216,15 +226,36 @@ async function loadWords() {
 
 const typing = () => ['TEXTAREA', 'INPUT'].includes(document.activeElement?.tagName ?? '')
 
-// `soft`: a redraw nobody asked for (new data, a notice going away). It would take the text box
-// from under the person's fingers, so it waits until they leave it. A tap redraws at once.
+// `soft`: a redraw nobody asked for (new data). It would take the text box from under the
+// person's fingers, so it waits until they leave it. A tap redraws at once.
+// The page is drawn anew each time: the control the person was on (its data-key) gets the focus
+// back, with the caret where it was. One that went (an answered question) leaves it on the tab.
 function render(soft = false) {
   if (soft && typing() && state === 'ready') {
     renderLater = true
     return
   }
   renderLater = false
+  const was = document.activeElement
+  const inside = app.contains(was)
+  const key = inside ? was.dataset.key : undefined
+  const caret = inside && typeof was.selectionStart === 'number' ? [was.selectionStart, was.selectionEnd] : null
   app.replaceChildren(...draw())
+  if (!inside) return
+  const back = (key && app.querySelector(`[data-key="${CSS.escape(key)}"]`)) || app.querySelector('[role="tab"][aria-selected="true"]')
+  back?.focus({ preventScroll: true })
+  if (caret && back?.setSelectionRange) back.setSelectionRange(caret[0], caret[1])
+}
+
+// The tabs as a screen reader and a keyboard expect them: the arrows, Home and End move between them.
+function tabKeys(event) {
+  const at = TABS.indexOf(tab)
+  const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: TABS.length - 1 }[event.key]
+  if (next === undefined) return
+  event.preventDefault()
+  tab = TABS[(next + TABS.length) % TABS.length]
+  render()
+  app.querySelector(`[data-key="tab:${tab}"]`)?.focus()
 }
 
 function draw() {
@@ -238,24 +269,40 @@ function draw() {
         el('p', {}, state === 'weak' ? strongWhy() : say(state === 'revoked' ? 'revoked' : 'notPaired')),
         strong() ? drawCode() : standalone() ? el('p', { className: 'small' }, say('homeNeedsHttps')) : null,
       ),
-      notice ? el('div', { className: `notice ${notice.bad ? 'bad' : ''}` }, notice.text) : null,
-    ].filter(Boolean)
+    ]
   }
   // Counts once the view is in; until then a dash, not a zero that reads as "nothing waits".
   const counts = view
     ? { decisions: view.questions.length, approvals: view.approvals.length, tasks: view.tasks.filter(t => t.running).length, sessions: view.sessions.filter(s => s.live).length }
     : { decisions: '-', approvals: '-', tasks: '-', sessions: '-' }
+  // The dot says in words too what its colour says.
+  const link = say(state === 'ready' ? 'linkOn' : state === 'offline' ? 'linkOff' : 'linkWait')
   const top = el(
     'header',
     { className: 'top' },
-    el('div', { className: 'brand' }, el('img', { src: 'icon.png', alt: '' }), el('h1', {}, 'Switchboard'), el('span', { className: `dot ${state === 'ready' ? 'on' : state === 'offline' ? 'off' : ''}` })),
     el(
-      'nav',
-      { className: 'tabs' },
-      ['decisions', 'approvals', 'tasks', 'sessions'].map(name =>
+      'div',
+      { className: 'brand' },
+      el('img', { src: 'icon.png', alt: '' }),
+      el('h1', {}, 'Switchboard'),
+      el('span', { className: `dot ${state === 'ready' ? 'on' : state === 'offline' ? 'off' : ''}`, role: 'img', 'aria-label': link, title: link }),
+    ),
+    el(
+      'div',
+      { className: 'tabs', role: 'tablist', onkeydown: tabKeys },
+      TABS.map(name =>
         el(
           'button',
-          { className: tab === name ? 'on' : '', onclick: () => ((tab = name), render()) },
+          {
+            className: tab === name ? 'on' : '',
+            id: `tab-${name}`,
+            role: 'tab',
+            'aria-selected': String(tab === name),
+            'aria-controls': 'panel',
+            tabIndex: tab === name ? 0 : -1,
+            'data-key': `tab:${name}`,
+            onclick: () => ((tab = name), render()),
+          },
           say(name),
           el('span', { className: `count ${counts[name] && counts[name] !== '-' ? '' : 'zero'}` }, String(counts[name])),
         ),
@@ -263,8 +310,8 @@ function draw() {
     ),
   )
   const parts = [top]
-  if (state === 'offline') parts.push(el('div', { className: 'banner' }, say('offline')))
-  const main = el('main')
+  if (state === 'offline') parts.push(el('div', { className: 'banner', role: 'status' }, say('offline')))
+  const main = el('main', { id: 'panel', role: 'tabpanel', 'aria-labelledby': `tab-${tab}` })
   if (view) {
     const body = { decisions: drawDecisions, approvals: drawApprovals, tasks: drawTasks, sessions: drawSessions }[tab]()
     main.append(...body)
@@ -280,7 +327,6 @@ function draw() {
     )
   }
   parts.push(main)
-  if (notice) parts.push(el('div', { className: `notice ${notice.bad ? 'bad' : ''}` }, notice.text))
   return parts
 }
 
@@ -297,12 +343,13 @@ function drawCode() {
   return el(
     'div',
     { className: 'code' },
-    el('p', { className: 'small' }, say('codeHint')),
-    el('input', { className: 'code-input', placeholder: 'ABCD-EFGH', value: codeDraft, autocapitalize: 'characters', autocomplete: 'off', oninput: e => (codeDraft = e.target.value) }),
+    el('label', { className: 'small', htmlFor: 'code' }, say('codeHint')),
+    el('input', { className: 'code-input', id: 'code', 'data-key': 'code', placeholder: 'ABCD-EFGH', value: codeDraft, autocapitalize: 'characters', autocomplete: 'off', oninput: e => (codeDraft = e.target.value) }),
     el(
       'button',
       {
         className: 'btn primary',
+        'data-key': 'connect',
         onclick: async () => {
           try {
             const res = await fetch('claim', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: codeDraft }) })
@@ -323,7 +370,7 @@ const apple = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
 
 function drawNotify() {
   if (worker && 'PushManager' in window) {
-    return el('div', { className: 'notify' }, el('button', { className: 'btn', onclick: () => void (pushOn ? notifyOff() : notifyOn()) }, say(pushOn ? 'notifyOff' : 'notifyOn')))
+    return el('div', { className: 'notify' }, el('button', { className: 'btn', 'data-key': 'notify', onclick: () => void (pushOn ? notifyOff() : notifyOn()) }, say(pushOn ? 'notifyOff' : 'notifyOn')))
   }
   if (isSecureContext && apple() && !standalone()) return el('p', { className: 'notify' }, say('notifyIos'))
   if (!isSecureContext) return el('p', { className: 'notify' }, say('notifyHttps'))
@@ -381,6 +428,8 @@ function drawDecisions() {
                 'button',
                 {
                   className: `option ${o.key === q.recommend ? 'rec' : ''} ${o.key === picked ? 'picked' : ''}`,
+                  'aria-pressed': String(o.key === picked),
+                  'data-key': `option:${q.id}:${o.key}`,
                   onclick: () => (picks.set(q.id, o.key === picked ? '' : o.key), render()),
                 },
                 el('span', { className: 'key' }, o.key),
@@ -391,7 +440,10 @@ function drawDecisions() {
         : null,
       // A memo goes into the session's prompt, as a message would: the same address only.
       mayStrong()
-        ? el('textarea', { placeholder: say('memo'), value: memo, maxLength: TEXT_MAX, oninput: e => memos.set(q.id, e.target.value), onblur: () => renderLater && setTimeout(render) })
+        ? [
+            el('label', { className: 'field', htmlFor: `memo-${q.id}` }, say('memo')),
+            el('textarea', { id: `memo-${q.id}`, 'data-key': `memo:${q.id}`, value: memo, maxLength: TEXT_MAX, oninput: e => memos.set(q.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
+          ]
         : el('p', { className: 'small' }, strongWhy()),
       el(
         'div',
@@ -400,6 +452,7 @@ function drawDecisions() {
           'button',
           {
             className: 'btn primary',
+            'data-key': `send:${q.id}`,
             onclick: () => {
               const choice = picks.get(q.id) ?? ''
               const text = mayStrong() ? (memos.get(q.id) ?? '').trim() : ''
@@ -411,7 +464,7 @@ function drawDecisions() {
           },
           say('send'),
         ),
-        q.held ? el('span', { className: 'chip warn' }, say('held')) : el('button', { className: 'btn', onclick: () => void act('POST', `/questions/${q.id}/hold`, {}) }, say('hold')),
+        q.held ? el('span', { className: 'chip warn' }, say('held')) : el('button', { className: 'btn', 'data-key': `hold:${q.id}`, onclick: () => void act('POST', `/questions/${q.id}/hold`, {}) }, say('hold')),
       ),
     )
   })
@@ -429,6 +482,7 @@ function drawApprovals() {
           'button',
           {
             className: `btn ${armed === a.id ? 'armed' : 'allow'}`,
+            'data-key': `allow:${a.id}`,
             onclick: () => {
               if (!mayStrong()) return flash(strongWhy(), true)
               if (armed !== a.id) {
@@ -451,8 +505,8 @@ function drawApprovals() {
       a.hidden ? el('p', { className: 'small warn' }, say('hiddenChars')) : null,
       a.reason ? el('p', { className: 'small' }, say('reason', { reason: a.reason })) : null,
       a.cwd ? el('p', { className: 'small' }, a.cwd) : null,
-      el('div', { className: 'actions' }, allow, el('button', { className: 'btn deny', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }) }, say('deny'))),
-      el('div', { className: 'actions' }, el('button', { className: 'btn', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'terminal' }) }, say('terminal'))),
+      el('div', { className: 'actions' }, allow, el('button', { className: 'btn deny', 'data-key': `deny:${a.id}`, onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }) }, say('deny'))),
+      el('div', { className: 'actions' }, el('button', { className: 'btn', 'data-key': `terminal:${a.id}`, onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'terminal' }) }, say('terminal'))),
       el('p', { className: 'small' }, mayStrong() ? say('terminalHint') : strong() ? say('pairAgain') : say('allowNeedsStrong')),
     )
   })
@@ -470,7 +524,7 @@ function drawTasks() {
         el('span', { className: 'chip accent' }, t.project),
         el('span', { className: `chip ${t.running ? 'good' : ''}` }, t.status),
         el('span', { className: 'chip' }, t.stage),
-        el('span', { className: `dot ${t.live ? 'on' : ''}` }),
+        el('span', { className: `dot ${t.live ? 'on' : ''}`, role: 'img', 'aria-label': say(t.live ? 'live' : 'notLive'), title: say(t.live ? 'live' : 'notLive') }),
       ),
       el('p', { className: 'title' }, t.title),
       t.now ? el('p', { className: 'small' }, t.now) : null,
@@ -483,8 +537,9 @@ function drawSessions() {
   const rows = view.sessions.map(s => {
     const row = el(
       'button',
-      { className: 'row', onclick: () => ((target = target === s.id ? '' : s.id), render()) },
-      el('span', { className: `dot ${s.live ? 'on' : ''}` }),
+      { className: 'row', 'aria-expanded': String(target === s.id), 'data-key': `session:${s.id}`, onclick: () => ((target = target === s.id ? '' : s.id), render()) },
+      // The chip at the end says it in words.
+      el('span', { className: `dot ${s.live ? 'on' : ''}`, 'aria-hidden': 'true' }),
       el('span', { className: 'grow' }, el('div', { className: 'name' }, s.label), el('div', { className: 'small' }, s.cwd)),
       el('span', { className: 'chip' }, s.live ? say('live') : say('notLive')),
     )
@@ -493,7 +548,8 @@ function drawSessions() {
     const composer = el(
       'div',
       { className: 'composer' },
-      el('textarea', { placeholder: say('message'), value: drafts.get(s.id) ?? '', maxLength: TEXT_MAX, oninput: e => drafts.set(s.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
+      el('label', { className: 'field', htmlFor: `message-${s.id}` }, say('message')),
+      el('textarea', { id: `message-${s.id}`, 'data-key': `message:${s.id}`, value: drafts.get(s.id) ?? '', maxLength: TEXT_MAX, oninput: e => drafts.set(s.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
       el(
         'div',
         { className: 'actions' },
@@ -501,6 +557,7 @@ function drawSessions() {
           'button',
           {
             className: 'btn primary',
+            'data-key': `post:${s.id}`,
             onclick: () => {
               const text = (drafts.get(s.id) ?? '').trim()
               if (!text) return
@@ -527,7 +584,7 @@ addEventListener('hashchange', () => {
 
 // A tapped notification names the tab to show.
 function openTab(name) {
-  if (!['decisions', 'approvals', 'tasks', 'sessions'].includes(name)) return
+  if (!TABS.includes(name)) return
   tab = name
   history.replaceState(null, '', location.pathname)
   render()
