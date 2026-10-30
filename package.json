@@ -7,6 +7,7 @@
   "author": "choco5958",
   "homepage": "https://github.com/choco5958/switchboard",
   "main": "out/main/index.js",
+  "packageManager": "pnpm@11.21.0",
   "type": "module",
   "scripts": {
     "setup": "sh scripts/setup.sh",

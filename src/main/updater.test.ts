@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { installsUpdates, stopBridgeNow, terminalsClosing } from './updater'
+import type { UpdateInfo } from 'electron-updater'
+import { installsUpdates, requireSignature, stopBridgeNow, terminalsClosing } from './updater'
 
 // The real modules would install Electron's binary while the tests run, and two workers doing
 // that at once collide (CI). These tests touch neither.
@@ -39,5 +40,33 @@ describe('updates', () => {
     expect(await stopBridgeNow(() => new Promise(resolve => setTimeout(() => resolve(4300), 200)), p => killed.push(p), 20)).toBe(null)
     expect(await stopBridgeNow(() => Promise.resolve(process.pid), p => killed.push(p))).toBe(null)
     expect(killed).toEqual([])
+  })
+
+  it('reports a version only once its update file is signed, and downloads nothing for any other', async () => {
+    const info = (version: string) => ({ version, files: [], path: '', sha512: '', releaseDate: '' }) as UpdateInfo
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    let osSupported = true
+    const checker = { isUpdateSupported: (_: UpdateInfo): boolean | Promise<boolean> => osSupported }
+    const checked: string[] = []
+    const signed = requireSignature(checker, async found => {
+      checked.push(found.version)
+      if (found.version !== '0.3.6') throw new Error('latest.yml of 0.3.7 has no valid signature')
+      return { version: found.version, files: [] }
+    })
+    const good = info('0.3.6')
+    expect(await checker.isUpdateSupported(good)).toBe(true)
+    expect(signed(good)).toEqual({ version: '0.3.6', files: [] })
+    // A missing or wrong signature: electron-updater does not report it, and it has no signed file.
+    const bad = info('0.3.7')
+    expect(await checker.isUpdateSupported(bad)).toBe(false)
+    expect(signed(bad)).toBe(undefined)
+    expect(errors).toHaveBeenCalledWith('update refused:', 'latest.yml of 0.3.7 has no valid signature')
+    // A version reported without this check, or a copy of the one checked, is not trusted either.
+    expect(signed(info('0.3.6'))).toBe(undefined)
+    // electron-updater's own check (minimum system version) still comes first.
+    osSupported = false
+    expect(await checker.isUpdateSupported(info('0.3.8'))).toBe(false)
+    expect(checked).toEqual(['0.3.6', '0.3.7'])
+    errors.mockRestore()
   })
 })

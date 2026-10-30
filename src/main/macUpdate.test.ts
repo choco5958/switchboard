@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { allowedUrl, BUNDLE_ID, bundleOf, canReplace, cleanUpdates, fileMatches, isNewer, SWAP_SCRIPT, swapArgs, unpack, zipFor, zipUrl } from './macUpdate'
+import { allowedUrl, BUNDLE_ID, bundleOf, canReplace, cleanUpdates, fetchSmall, fileMatches, isNewer, releaseUrl, SWAP_SCRIPT, swapArgs, unpack, zipFor } from './macUpdate'
 
 const root = mkdtempSync(join(tmpdir(), 'sb-macupdate-'))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -38,10 +38,13 @@ describe('macOS updates', () => {
     expect(zipFor([{ url: 'Switchboard-0.3.5-mac-arm64.zip', size: 119 }], '0.3.5', 'arm64')).toBe(null)
     expect(zipFor([{ url: 'Switchboard-0.3.5-mac-arm64.zip', sha512: 'a', size: 0 }], '0.3.5', 'arm64')).toBe(null)
     expect(zipFor([{ url: '../Switchboard-0.3.5-mac-arm64.zip', sha512: 'a', size: 1 }], '0.3.5', 'arm64')).toBe(null)
-    expect(zipUrl('0.3.5', 'Switchboard-0.3.5-mac-arm64.zip')).toBe('https://github.com/choco5958/switchboard/releases/download/v0.3.5/Switchboard-0.3.5-mac-arm64.zip')
+    expect(releaseUrl('0.3.5', 'Switchboard-0.3.5-mac-arm64.zip')).toBe('https://github.com/choco5958/switchboard/releases/download/v0.3.5/Switchboard-0.3.5-mac-arm64.zip')
   })
 
-  it('downloads only over https from GitHub and its file storage', () => {
+  it('downloads only over https from GitHub and its file storage', async () => {
+    // The update file and its signature come the same way; nothing else is even asked.
+    await expect(fetchSmall('http://github.com/choco5958/switchboard/releases/download/v0.3.5/latest.yml', 1024)).rejects.toThrow(/refused/)
+    await expect(fetchSmall('https://evil.example/latest.yml', 1024)).rejects.toThrow(/refused/)
     expect(allowedUrl('https://github.com/choco5958/switchboard/releases/download/v0.3.5/a.zip')).toBe(true)
     expect(allowedUrl('https://objects.githubusercontent.com/github-production-release-asset/1?x=1')).toBe(true)
     expect(allowedUrl('https://release-assets.githubusercontent.com/github-production-release-asset/1')).toBe(true)
