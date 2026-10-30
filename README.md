@@ -21,7 +21,8 @@ Claude Code, Codex, Gemini CLI 세션이 결정을 묻고, 서로 일을 맡기�
 
 <br>
 
-<p align="center"><a href="https://github.com/choco5958/switchboard/blob/main/docs/intro-ko.mp4"><img src="docs/intro-ko.png" width="720" alt="소개 영상 (58초)"></a></p>
+<p align="center"><a href="https://cdn.jsdelivr.net/gh/choco5958/switchboard@main/docs/intro-ko.mp4"><img src="docs/intro-ko-preview.gif" width="720" alt="소개 영상 (58초)"></a><br>
+<a href="https://cdn.jsdelivr.net/gh/choco5958/switchboard@main/docs/intro-ko.mp4">▶ 눌러서 소리와 함께 전체 영상 보기 (58초)</a></p>
 
 ![홈 화면: 프로젝트별 작업, 결정 대기, 작업 로그](docs/screenshot-home.png)
 

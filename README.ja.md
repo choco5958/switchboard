@@ -21,7 +21,8 @@ Claude Code、Codex、Gemini CLI のセッションが判断を尋ね、互い�
 
 <br>
 
-<p align="center"><a href="https://github.com/choco5958/switchboard/blob/main/docs/intro-en.mp4"><img src="docs/intro-en.png" width="720" alt="紹介動画 (58秒、英語)"></a></p>
+<p align="center"><a href="https://cdn.jsdelivr.net/gh/choco5958/switchboard@main/docs/intro-en.mp4"><img src="docs/intro-en-preview.gif" width="720" alt="紹介動画 (58秒、英語)"></a><br>
+<a href="https://cdn.jsdelivr.net/gh/choco5958/switchboard@main/docs/intro-en.mp4">▶ クリックすると音声付きの全編を再生します (58秒、英語)</a></p>
 
 ![ホーム画面: プロジェクト別のタスク、判断待ち、作業ログ](docs/screenshot-home.png)
 
