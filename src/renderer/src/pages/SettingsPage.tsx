@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DEFAULT_THEME, THEMES, applyTheme, themeLabel, themeOf } from '../theme'
 import { LANGS, isLang, resolveLang, t, type Key, type Lang } from '../../../shared/i18n'
 import { useToast } from '../parts'
@@ -8,6 +8,7 @@ import { TelegramSection } from './TelegramSection'
 import { MobileSection } from './MobileSection'
 import type { Routine, RoutineRun } from '../../../shared/types'
 import type { ProjectInfo } from '../../../shared/projects'
+import { saveSetting } from '../settings'
 
 const SECTIONS: [string, Key][] = [
   ['settings-lang', 'settings.language'],
@@ -45,6 +46,11 @@ export function SettingsPage({
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [error, setError] = useState('')
   const current = chosen ?? saved
+  // The pick shows at once; once the saved theme is the same, the saved one rules again, so a
+  // theme changed elsewhere (the top bar's light and dark button) shows here too.
+  useEffect(() => {
+    if (chosen !== null && chosen === saved) setChosen(null)
+  }, [chosen, saved])
   const isDefault = settings.theme === undefined && current === DEFAULT_THEME
 
   const save = async (value: string | null) => {
@@ -53,7 +59,7 @@ export function SettingsPage({
     applyTheme(next)
     setStatus('saving')
     setError('')
-    const reply = await window.ide.bridge('POST', '/settings', { key: 'theme', value })
+    const reply = await saveSetting('theme', value)
     if (reply.ok) return setStatus('saved')
     setChosen(null)
     applyTheme(saved)
@@ -65,13 +71,13 @@ export function SettingsPage({
   const lang = resolveLang(settings.lang, navigator.language)
   const langSet = isLang(settings.lang)
   const saveLang = async (value: Lang | null) => {
-    const reply = await window.ide.bridge('POST', '/settings', { key: 'lang', value })
+    const reply = await saveSetting('lang', value)
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 
   // The component gallery in the rail is for building the IDE itself; off unless asked for.
   const toggleDevMenu = async () => {
-    const reply = await window.ide.bridge('POST', '/settings', { key: 'devMenu', value: devMenu ? null : true })
+    const reply = await saveSetting('devMenu', devMenu ? null : true)
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 

@@ -5,6 +5,7 @@ import { AGENTS_FOUND } from '../Dock'
 import { useToast } from '../parts'
 import { t } from '../../../shared/i18n'
 import { tx } from '../tx'
+import { saveSetting } from '../settings'
 
 // Settings for agent CLIs other than Claude Code: which presets are installed, and
 // the person's own entries. Saving an entry runs nothing; its dock button does.
@@ -30,13 +31,13 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
   }, [])
 
   const save = async (list: typeof customs) => {
-    const reply = await window.ide.bridge('POST', '/settings', { key: CUSTOM_AGENTS_KEY, value: list.length > 0 ? list : null })
+    const reply = await saveSetting(CUSTOM_AGENTS_KEY, list.length > 0 ? list : null)
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
     return reply.ok
   }
 
   const toggleOthers = async () => {
-    const reply = await window.ide.bridge('POST', '/settings', { key: SHOW_OTHER_AGENTS_KEY, value: showOthers ? false : null })
+    const reply = await saveSetting(SHOW_OTHER_AGENTS_KEY, showOthers ? false : null)
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 

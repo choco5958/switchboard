@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { GraphNode, Question, Task } from '../../shared/types'
-import { ago, attentionOf, keyAction, layoutGraph, nextAfter, optionsOf, queueOf, reachOf, reviewLoops, stageCounts, stations, stripTaskPrefix, taskOfEvent, tasksByProject, waitingFirst } from './model'
+import { ago, attentionOf, keyAction, layoutGraph, nextAfter, optionsOf, queueOf, reachOf, reviewLoops, stageCounts, stations, stripTaskPrefix, taskFacts, taskOfEvent, tasksByProject, waitingFirst } from './model'
 
 const q = (id: number, status: Question['status'] = 'pending'): Question => ({
   id,
@@ -184,4 +184,32 @@ test('waiting tasks come first, strongest reason then newest', () => {
   const { waiting, rest } = waitingFirst([...tasks], task => task.why)
   expect(waiting.map(task => task.id)).toEqual([4, 3, 2])
   expect(rest.map(task => task.id)).toEqual([1])
+})
+
+test('task facts are counted once for every task', () => {
+  const task = (id: number, session_id: string, title: string, stage = '작업') => ({ id, session_id, title, stage, status: '하는 중' }) as Task
+  const facts = taskFacts(
+    {
+      tasks: [task(1, 's1', 'A'), task(2, 's1', 'B'), task(3, 's2', 'C'), task(4, 'gone', 'D', '완료')],
+      questions: [
+        { ...q(1), session_id: 's1', task_title: 'A' },
+        { ...q(2, 'held'), session_id: 's1', task_title: 'A' },
+        { ...q(3, 'answered'), session_id: 's1', task_title: 'B' },
+      ],
+      nodes: [{ task_id: 1 }, { task_id: 1 }, { task_id: 3 }],
+      sessions: [
+        { id: 's1', agent: 'claude', terminal: '' },
+        { id: 's2', agent: 'claude', terminal: '' },
+      ],
+      live: ['s1', 's2'],
+    },
+    new Set(['s2']),
+    new Set(),
+    t => t.stage !== '완료',
+  )
+  expect(facts.get(1)).toEqual({ openQuestions: 2, nodeCount: 2, attention: 'question' })
+  expect(facts.get(2)).toEqual({ openQuestions: 0, nodeCount: 0, attention: null })
+  expect(facts.get(3)).toEqual({ openQuestions: 0, nodeCount: 1, attention: 'stalled' })
+  // A finished task of a dropped session needs nothing.
+  expect(facts.get(4)?.attention).toBe(null)
 })

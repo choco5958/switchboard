@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BridgeState } from './types'
-import { hiddenProjects, isRunning, moveToFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
+import { hiddenProjects, isRunning, moveToFolder, restoreFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
 
 const state = {
   sessions: [
@@ -122,6 +122,22 @@ describe('projects', () => {
     expect(beta.archived.map(t => t.id)).toEqual([4])
     expect(beta.agents.map(a => a.id)).toEqual(['b'])
     expect(beta.commands).toHaveLength(1)
+    // No approvals sent: none made up.
+    expect('approvals' in beta).toBe(false)
+  })
+
+  it("leaves other projects' permission asks out of a project's view", () => {
+    const asks = {
+      ...state,
+      approvals: [
+        { id: 1, project: 'alpha', status: 'pending' },
+        { id: 2, project: 'beta', status: 'pending' },
+        { id: 3, project: 'beta', status: 'allowed' },
+      ],
+    } as unknown as BridgeState
+    expect(scopeState(asks, 'beta').approvals?.map(a => a.id)).toEqual([2, 3])
+    expect(scopeState(asks, 'gamma').approvals).toEqual([])
+    expect(scopeState(asks, null).approvals).toHaveLength(3)
   })
 })
 
@@ -198,5 +214,16 @@ describe('project folders', () => {
     expect(moved.map(f => f.projects)).toEqual([['beta'], ['alpha']])
     expect(moveToFolder(moved, 'alpha', null).map(f => f.projects)).toEqual([['beta'], []])
     expect(moveToFolder(folders, 'beta', 'f1').map(f => f.projects)).toEqual([['alpha', 'beta'], []])
+  })
+
+  it('puts an ungrouped folder back where it was', () => {
+    const work = { id: 'f1', name: 'Work', projects: ['alpha', 'beta'], closed: true }
+    const side = { id: 'f2', name: 'Side', projects: ['gamma'], closed: false }
+    // Ungrouped, then beta moved into Side before the undo: it goes back to Work.
+    const after = [{ ...side, projects: ['gamma', 'beta'] }]
+    expect(restoreFolder(after, work, 0)).toEqual([work, side])
+    expect(restoreFolder([side], work, 5).map(f => f.id)).toEqual(['f2', 'f1'])
+    // Already back: nothing changes.
+    expect(restoreFolder([work, side], work, 1)).toEqual([work, side])
   })
 })

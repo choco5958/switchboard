@@ -5,7 +5,8 @@ import { Icon } from './Icons'
 import { countLabel, flipTheme, isLight, resetText } from './taskInfo'
 import { DEFAULT_THEME, themeOf } from './theme'
 import { isClaude } from '../../shared/agents'
-import { t } from '../../shared/i18n'
+import { LOCALE_TAG, getLang, t } from '../../shared/i18n'
+import { saveSetting } from './settings'
 
 // The search key as this system writes it (App.tsx takes both).
 const SEARCH_KEY = /Mac/.test(navigator.userAgent) ? '⌘K' : 'Ctrl+K'
@@ -69,7 +70,7 @@ export function slotUsage(slot: CcrSlot, sessions: BridgeState['sessions'], now 
 
 export function slotTitle(slot: CcrSlot, current: boolean, usage: SlotUsage, now = Date.now()): string {
   const pct = (n: number | undefined) => (n === undefined ? '-' : `${Math.round(n)}%`)
-  const time = (sec: number) => new Date(sec * 1000).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const time = (sec: number) => new Date(sec * 1000).toLocaleString(LOCALE_TAG[getLang()], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   const lines = [t('top.ccrSlotTitle', { n: slot.slot, email: slot.email || t('top.ccrNoLogin') })]
   if (current) lines.push(t('top.ccrCurrent'))
   if (slot.until * 1000 > now) lines.push(t('top.ccrSpent', { reset: resetText(slot.until, now) }))
@@ -211,8 +212,8 @@ export function TopBar({
 
   const flip = async () => {
     const next = flipTheme(theme, typeof state.settings.darkTheme === 'string' ? state.settings.darkTheme : undefined, DEFAULT_THEME)
-    if (!light) await window.ide.bridge('POST', '/settings', { key: 'darkTheme', value: next.lastDark })
-    await window.ide.bridge('POST', '/settings', { key: 'theme', value: next.theme })
+    if (!light) await saveSetting('darkTheme', next.lastDark)
+    await saveSetting('theme', next.theme)
   }
 
   return (

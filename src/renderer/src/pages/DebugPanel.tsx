@@ -4,6 +4,7 @@ import { fieldErrors, gitErrorText, makeTarget, targetsOf, type DevDraft, type D
 import { debugStore, sendable, sessionFor, useDebugStore, waitUntilAnswering, whereTo } from '../debugStore'
 import { t } from '../../../shared/i18n'
 import { composing } from '../ime'
+import { saveSetting } from '../settings'
 
 const POLL_MS = 3000
 const EMPTY_DRAFT: DevDraft = { name: '', description: '', repo: '', command: '', url: '' }
@@ -94,7 +95,7 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
     if (logBox.current) logBox.current.scrollTop = logBox.current.scrollHeight
   }, [log])
 
-  const saveTargets = (list: DevTarget[]) => window.ide.bridge('POST', '/settings', { key: 'devTargets', value: list })
+  const saveTargets = (list: DevTarget[]) => saveSetting('devTargets', list)
 
   const select = (target: DevTarget) => {
     debugStore.setTarget(target.id)
@@ -356,7 +357,7 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
             <input
               type="checkbox"
               checked={pullRestart}
-              onChange={event => void window.ide.bridge('POST', '/settings', { key: 'devPullRestart', value: event.target.checked })}
+              onChange={event => void saveSetting('devPullRestart', event.target.checked)}
             />
             {t('dev.pullRestart')}
           </label>

@@ -9,9 +9,9 @@ import { ROUTINE_FAIL_LIMIT } from '../../../../bridge/schedule.ts'
 // Settings: scheduled prompts (bridge/schedule.ts). Each goes to a connected Claude Code
 // session of its project at its time; with none, the app opens one there.
 
-type Draft = { id: number; name: string; project: string; prompt: string; kind: RoutineSchedule['kind']; time: string; every: string; at: string; runMissed: boolean }
+type Draft = { id: number; name: string; project: string; cwd: string; prompt: string; kind: RoutineSchedule['kind']; time: string; every: string; at: string; runMissed: boolean }
 
-const EMPTY: Draft = { id: 0, name: '', project: '', prompt: '', kind: 'daily', time: '09:00', every: '60', at: '', runMissed: false }
+const EMPTY: Draft = { id: 0, name: '', project: '', cwd: '', prompt: '', kind: 'daily', time: '09:00', every: '60', at: '', runMissed: false }
 
 const STATUS_KEYS: Record<RoutineRun['status'], Key> = {
   waiting: 'routines.status.waiting',
@@ -45,6 +45,7 @@ function draftOf(routine: Routine): Draft {
     id: routine.id,
     name: routine.name,
     project: routine.project,
+    cwd: routine.cwd,
     prompt: routine.prompt,
     kind: s?.kind ?? 'daily',
     time: s && 'time' in s ? s.time : '09:00',
@@ -58,7 +59,11 @@ export function RoutinesSection({ routines, runs, projects }: { routines: Routin
   const toast = useToast()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
+  // Projects taken off the sidebar list still run routines, so they stay pickable here.
   const folders = projects.filter(p => p.cwd)
+  // A routine whose project no longer has a known folder keeps its own project and folder.
+  const editedProject = draft?.id ? routines.find(r => r.id === draft.id)?.project : undefined
+  const own = editedProject && !folders.some(p => p.name === editedProject) ? editedProject : null
   const set = (patch: Partial<Draft>) => setDraft(current => (current ? { ...current, ...patch } : current))
 
   const call = async (path: string, body?: unknown) => {
@@ -77,7 +82,7 @@ export function RoutinesSection({ routines, runs, projects }: { routines: Routin
       name: draft.name,
       prompt: draft.prompt,
       project: draft.project,
-      cwd: project?.cwd ?? '',
+      cwd: project?.cwd ?? (draft.project === own ? draft.cwd : ''),
       schedule,
       missed: draft.runMissed ? 'run-once' : 'skip',
     })
@@ -141,6 +146,7 @@ export function RoutinesSection({ routines, runs, projects }: { routines: Routin
           <input placeholder={t('routines.name')} value={draft.name} onChange={e => set({ name: e.target.value })} />
           <select className="session-select inline" value={draft.project} onChange={e => set({ project: e.target.value })}>
             <option value="">{t('routines.pickProject')}</option>
+            {own && <option value={own}>{own}</option>}
             {folders.map(p => (
               <option key={p.name} value={p.name}>
                 {p.name}

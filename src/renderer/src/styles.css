@@ -403,11 +403,14 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .project-line { position: relative; display: flex; align-items: center; }
 .project-line > .project-row { flex: 1; min-width: 0; }
 .row-more {
-  position: absolute; right: 2px; display: none; padding: 3px 4px; border: none; border-radius: 4px;
-  background: var(--panel-2); color: var(--quiet); cursor: pointer;
+  position: absolute; right: 2px; display: inline-flex; padding: 3px 4px; border: none; border-radius: 4px;
+  background: var(--panel-2); color: var(--quiet); cursor: pointer; opacity: 0; pointer-events: none;
 }
-.project-line:hover .row-more, .row-more:focus-visible, .project-line:has(.row-menu) .row-more { display: inline-flex; }
+/* Hidden but still in the tab order, so the keyboard reaches it; it shows on hover or while its row holds focus. */
+.project-line:hover .row-more, .project-line:focus-within .row-more, .project-line:has(.row-menu) .row-more { opacity: 1; pointer-events: auto; }
 .row-more:hover { color: var(--text); }
+.row-menu button:focus-visible { background: var(--panel-2); outline: none; }
+.toast-action { flex-shrink: 0; font-weight: 600; }
 .row-menu {
   position: absolute; top: 100%; right: 0; z-index: 30; display: flex; flex-direction: column; min-width: 200px; padding: 4px;
   border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
@@ -501,6 +504,11 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
   border-bottom: 2px solid var(--bad); background: var(--panel-2); color: var(--text);
 }
 .disconnected b { color: var(--bad); }
+/* Live paused: the screen is frozen on purpose, so it says so. */
+.paused-note {
+  position: sticky; top: -20px; z-index: 20; display: flex; align-items: center; gap: 12px; margin: -20px -20px 16px; padding: 8px 20px;
+  border-bottom: 2px solid var(--warn); background: var(--panel-2); color: var(--text);
+}
 
 /* Toasts: short notices after an action, bottom right above the dock. */
 .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }

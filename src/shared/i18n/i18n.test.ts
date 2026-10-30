@@ -128,7 +128,7 @@ describe('labels of stored values', () => {
   const cases: [string, (value: string, lang?: Lang) => string, string[], Record<Lang, string[]>][] = [
     ['stage', stageLabel, ['요구', '설계', '작업', '완료'], {
       ko: ['요구', '설계', '작업', '완료'],
-      en: ['Requirements', 'Design', 'Build', 'Done'],
+      en: ['Requirements', 'Design', 'Work', 'Done'],
       ja: ['要件', '設計', '作業', '完了'],
       'zh-CN': ['需求', '设计', '开发', '完成'],
     }],

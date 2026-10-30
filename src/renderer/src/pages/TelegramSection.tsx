@@ -71,7 +71,14 @@ export function TelegramSection() {
             {status.paired ? `, ${t('telegram.pairedWith', { name: status.name || '-' })}` : ''}
           </p>
           {!status.paired && !pair && (
-            <button disabled={busy} onClick={async () => setPair(((await post('/telegram/pair')).json as { code: string; link: string }) ?? null)}>
+            <button
+              disabled={busy}
+              onClick={async () => {
+                // A failed request answers with { error }, which post() shows; only a code is kept.
+                const reply = await post('/telegram/pair')
+                if (reply.ok && typeof reply.json.code === 'string') setPair(reply.json as { code: string; link: string })
+              }}
+            >
               {t('telegram.getCode')}
             </button>
           )}

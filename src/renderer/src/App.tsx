@@ -6,7 +6,7 @@ import { PropsPanel } from './PropsPanel'
 import { QuestionCard } from './QuestionCard'
 import { TaskView } from './TaskView'
 import { TopBar } from './TopBar'
-import { attentionOf, nextAfter, queueOf, reachOf, tasksByProject, waitingFirst, type Attention } from './model'
+import { nextAfter, queueOf, reachOf, taskFacts, tasksByProject, waitingFirst, type Attention } from './model'
 import { ArchivePage } from './pages/ArchivePage'
 import { DebugPage } from './pages/DebugPage'
 import { DebugPanel } from './pages/DebugPanel'
@@ -23,8 +23,9 @@ import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
 import { stalledSessions } from '../../shared/stall'
 import { limitedUntil } from '../../shared/limit'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
-import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
+import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, railPickFor, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
 import { applyTheme } from './theme'
+import { installSettingSaver, postSetting, settle, withPending, type Pending } from './settings'
 import { LOCALE_TAG, resolveLang, setLang, stageLabel, t, type Key } from '../../shared/i18n'
 
 const EMPTY: BridgeState = {
@@ -95,7 +96,16 @@ function loadTabs(): Tabs {
 }
 
 export function App() {
-  const [state, setState] = useState<BridgeState>(EMPTY)
+  const [bridgeState, setState] = useState<BridgeState>(EMPTY)
+  // Settings writes still on their way to the bridge, shown at once (settings.ts).
+  const [unsaved, setUnsaved] = useState<Pending>({})
+  const pendingRef = useRef<Pending>({})
+  const state = useMemo(
+    () => (Object.keys(unsaved).length === 0 ? bridgeState : { ...bridgeState, settings: withPending(bridgeState.settings, unsaved) }),
+    [bridgeState, unsaved],
+  )
+  const stateRef = useRef(state)
+  stateRef.current = state
   const [loaded, setLoaded] = useState(false)
   // null until the first check, so the app never flashes the disconnected notice on start.
   const [connected, setConnected] = useState<boolean | null>(null)
@@ -130,6 +140,11 @@ export function App() {
     document.documentElement.lang = LOCALE_TAG[lang]
   }, [lang])
   const NO_SESSION = t('app.noSession')
+  const toggleLive = () => {
+    liveRef.current = !live
+    setLive(!live)
+    if (!live) void refresh()
+  }
 
   // Busy sessions send many changes a second: one read at a time, and one more after it for
   // whatever came in meanwhile, instead of a full read and redraw for each.
@@ -154,6 +169,40 @@ export function App() {
       reading.current = false
     }
   }, [])
+
+  // A settings write reads the settings back whether or not Live is paused: a paused screen keeps
+  // its tasks and questions as they were, and takes only the new settings.
+  const readSettings = useCallback(async () => {
+    const next = await window.ide.state()
+    if (!next) return
+    setState(current => (liveRef.current ? next : { ...current, settings: next.settings }))
+    setLoaded(true)
+  }, [])
+  const writeSetting = useCallback(
+    async (key: string, value: unknown) => {
+      pendingRef.current = { ...pendingRef.current, [key]: value }
+      setUnsaved(pendingRef.current)
+      const reply = await postSetting(key, value)
+      if (reply.ok) await readSettings()
+      pendingRef.current = settle(pendingRef.current, key, value)
+      setUnsaved(pendingRef.current)
+      return reply
+    },
+    [readSettings],
+  )
+  useEffect(() => {
+    installSettingSaver(writeSetting)
+    return () => installSettingSaver(null)
+  }, [writeSetting])
+  // A change built on the latest value of a setting, writes still on their way included, so two
+  // quick changes in a row both stay.
+  const updateSetting = useCallback(
+    (key: string, change: (current: unknown) => unknown) => {
+      const current = key in pendingRef.current ? pendingRef.current[key] : stateRef.current.settings[key]
+      return writeSetting(key, change(current))
+    },
+    [writeSetting],
+  )
 
   // The top bar's play button opens a terminal in the dock; a closed dock would hold it out of sight.
   useEffect(() => {
@@ -221,7 +270,11 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const open = useCallback((tab: Tab) => setTabs(current => openTab(current, tab)), [])
+  // Opening a tab from anywhere moves the rail's light with it (tabs.ts railPickFor).
+  const open = useCallback((tab: Tab) => {
+    setTabs(current => openTab(current, tab))
+    setRailPick(railPickFor(RAIL, tab))
+  }, [])
   // A task or question of another project would open as a hidden tab; the view follows it instead.
   const openTask = (id: number) => {
     setScope(current => scopeFor(current, state.tasks.find(t => t.id === id)?.project))
@@ -239,6 +292,7 @@ export function App() {
   const allProjects = useMemo(() => projectsOf(state, saved), [state, saved])
   const hidden = useMemo(() => hiddenProjects(state.settings[HIDDEN_KEY]), [state.settings])
   const projects = useMemo(() => allProjects.filter(p => !hidden.includes(p.name)), [allProjects, hidden])
+  const hiddenPending = useMemo(() => Object.fromEntries(allProjects.filter(p => hidden.includes(p.name)).map(p => [p.name, p.pending])), [allProjects, hidden])
   const folders = useMemo(() => projectFolders(state.settings.projectFolders), [state.settings])
   // Feature area: agent CLIs other than Claude Code. Badges by session, and the person's own CLIs.
   const customs = useMemo(() => customAgents(state.settings[CUSTOM_AGENTS_KEY]), [state.settings])
@@ -257,24 +311,20 @@ export function App() {
     () => new Set(state.sessions.filter(s => limitedUntil(s.usage, s.last_seen, clockNow) !== null).map(s => s.id)),
     [state.sessions, clockNow],
   )
-  const openQuestionsOf = (task: Task) =>
-    state.questions.filter(q => q.status !== 'answered' && q.session_id === task.session_id && q.task_title === task.title).length
-  const attentionOfTask = (task: Task): Attention | null =>
-    attentionOf({
-      openQuestions: openQuestionsOf(task),
-      stalled: stalled.has(task.session_id),
-      limited: limited.has(task.session_id),
-      offline: reachOf(state.sessions.find(s => s.id === task.session_id), state.live ?? []) === 'gone',
-      running: isRunning(task),
-    })
-  const waitingTasks = waitingFirst(view.tasks, attentionOfTask)
+  // Counted once per bridge state, not once per task on every render (model.ts taskFacts).
+  const facts = useMemo(
+    () => taskFacts({ tasks: state.tasks, questions: state.questions, nodes: state.nodes, sessions: state.sessions, live: state.live }, stalled, limited, isRunning),
+    [state.tasks, state.questions, state.nodes, state.sessions, state.live, stalled, limited],
+  )
+  const attentionOfTask = (task: Task): Attention | null => facts.get(task.id)?.attention ?? null
+  const waitingTasks = useMemo(() => waitingFirst(view.tasks, task => facts.get(task.id)?.attention ?? null), [view.tasks, facts])
   const taskItem = (task: Task, showProject: boolean) => (
     <TaskItem
       key={task.id}
       task={task}
       active={tabs.active === `task:${task.id}`}
-      openQuestions={openQuestionsOf(task)}
-      nodeCount={state.nodes.filter(n => n.task_id === task.id).length}
+      openQuestions={facts.get(task.id)?.openQuestions ?? 0}
+      nodeCount={facts.get(task.id)?.nodeCount ?? 0}
       agent={tags[task.session_id]}
       attention={attentionOfTask(task)}
       project={showProject ? task.project : undefined}
@@ -286,7 +336,7 @@ export function App() {
     [state.sessions, stalled],
   )
   const { pending, held } = useMemo(() => queueOf(view.questions), [view.questions])
-  const pendingApprovals = (state.approvals ?? []).filter(a => a.status === 'pending' && (scope === null || a.project === scope))
+  const pendingApprovals = (view.approvals ?? []).filter(a => a.status === 'pending')
   const reachOfQuestion = (q: Question) => reachOf(state.sessions.find(s => s.id === q.session_id), state.live ?? [])
   const inScope = (tab: Tab): boolean => {
     if (scope === null) return true
@@ -296,22 +346,32 @@ export function App() {
   }
   const shownTabs = tabs.open.filter(inScope)
   const active = inScope(activeTab(tabs)) ? activeTab(tabs) : HOME
+  const activeKey = tabKey(active)
+  // A tab opened at the far end of a full tab bar scrolls into sight.
+  const tabbarRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    tabbarRef.current?.querySelector('.tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [activeKey])
   // Reports, syncs and Linear sends go to the newest session of the project in view, or nowhere.
   const latestSession = useMemo(() => pickSession(state.sessions, scope), [state.sessions, scope])
   const showDev = devMenuShown(state.settings)
   const rail = RAIL.filter(r => !r.dev || showDev)
-  const railOn = railActive(rail, { picked: railPick, active: tabs.active, section, sidebarOpen })
+  // The tab on screen, not the stored one: a tab of another project is hidden and home shows instead.
+  const railOn = railActive(rail, { picked: railPick, active: tabKey(active), section, sidebarOpen })
 
   // A folder a terminal opened in becomes a project of its own in the switcher.
   const addProject = useCallback(
     async (cwd: string) => {
       // A folder taken off the list comes back when it is added again.
       const name = nameForFolder(allProjects, cwd)
-      if (hidden.includes(name)) await window.ide.bridge('POST', '/settings', { key: HIDDEN_KEY, value: hidden.filter(h => h !== name) })
+      if (hidden.includes(name)) await updateSetting(HIDDEN_KEY, current => hiddenProjects(current).filter(h => h !== name))
       if (saved.some(p => p.cwd === cwd)) return
-      await window.ide.bridge('POST', '/settings', { key: 'projects', value: [...saved, { name, cwd }] })
+      await updateSetting('projects', current => {
+        const list = savedProjects(current)
+        return list.some(p => p.cwd === cwd) ? list : [...list, { name, cwd }]
+      })
     },
-    [saved, allProjects, hidden],
+    [saved, allProjects, hidden, updateSetting],
   )
   const pickProject = async () => {
     const cwd = await window.ide.pickFolder()
@@ -369,8 +429,19 @@ export function App() {
   const offline = connected === false && !loaded
   const sessionHint = latestSession ? t('app.sessionHint', { id: latestSession.id.slice(0, 8), project: latestSession.project }) : undefined
 
-  const paletteItems: PaletteItem[] = [
+  // Built only while the palette is open; a busy bridge redraws the app many times a second.
+  const paletteItems = (): PaletteItem[] => [
     ...state.tasks.map(task => ({ id: `t${task.id}`, group: t('palette.groupTask'), label: task.title, hint: `${task.project}, ${stageLabel(task.stage)}`, run: () => openTask(task.id) })),
+    ...(scope !== null ? [{ id: 'r*', group: t('palette.groupProject'), label: t('palette.allProjects'), run: () => setScope(null) }] : []),
+    ...projects
+      .filter(p => p.name !== scope)
+      .map(p => ({
+        id: `r${p.name}`,
+        group: t('palette.groupProject'),
+        label: t('palette.goProject', { name: p.name }),
+        hint: p.cwd ? p.cwd.replace(/^\/Users\/[^/]+/, '~') : undefined,
+        run: () => setScope(p.name),
+      })),
     ...state.questions.map(q => ({
       id: `q${q.id}`,
       group: t('palette.groupQuestion'),
@@ -466,7 +537,7 @@ export function App() {
     if (tab.kind === 'archive') return <ArchivePage archived={view.archived} onRestore={id => void restore(id)} />
     if (tab.kind === 'log') return <LogPage events={view.events} tasks={logTasks} agents={tags} />
     if (tab.kind === 'linear') return <LinearPage sessions={view.sessions} />
-    if (tab.kind === 'settings') return <SettingsPage settings={state.settings} routines={state.routines} runs={state.routineRuns} projects={projects} />
+    if (tab.kind === 'settings') return <SettingsPage settings={state.settings} routines={state.routines} runs={state.routineRuns} projects={allProjects} />
     if (tab.kind === 'gallery') return showDev ? <GalleryPage /> : null
     return null
   }
@@ -478,11 +549,7 @@ export function App() {
           state={state}
           scoped={scope ? view : null}
           live={live}
-          onToggleLive={() => {
-            liveRef.current = !live
-            setLive(!live)
-            if (!live) void refresh()
-          }}
+          onToggleLive={toggleLive}
           onToggleSidebar={() => setSidebarOpen(open => !open)}
           onToggleDock={() => setDockOpen(open => !open)}
           connected={connected === true}
@@ -526,13 +593,14 @@ export function App() {
             <ProjectList
               projects={projects}
               hidden={hidden}
+              hiddenPending={hiddenPending}
               folders={folders}
               scope={scope}
               totals={{ running: state.tasks.filter(isRunning).length, pending: state.questions.filter(q => q.status === 'pending').length }}
               badges={name => projectAgents(state.sessions, tags, name).map(tag => <AgentBadge key={tag.kind} tag={tag} />)}
               onScope={setScope}
               onAddProject={() => void pickProject()}
-              save={(key, value) => void window.ide.bridge('POST', '/settings', { key, value })}
+              update={(key, change) => void updateSetting(key, change)}
             />
             {section === 'home' && offline && (
               <section>
@@ -631,7 +699,7 @@ export function App() {
           </aside>
         )}
 
-        <div className="tabbar">
+        <div className="tabbar" ref={tabbarRef}>
           {!sidebarOpen && (
             <div className="tabbar-scope">
               <button className="tabbar-expand" title={t('tabbar.expand')} aria-label={t('tabbar.expand')} onClick={() => setSidebarOpen(true)}>
@@ -654,6 +722,15 @@ export function App() {
                 aria-selected={key === tabKey(active)}
                 className={`tab ${key === tabKey(active) ? 'on' : ''}`}
                 onClick={() => setTabs(current => ({ ...current, active: key }))}
+                // The middle button closes a tab, as in a browser; pressing it down would start autoscroll.
+                onMouseDown={event => {
+                  if (event.button === 1) event.preventDefault()
+                }}
+                onAuxClick={event => {
+                  if (event.button !== 1 || tab.kind === 'home') return
+                  event.preventDefault()
+                  setTabs(current => closeTab(current, key))
+                }}
                 onKeyDown={event => {
                   if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
                   event.preventDefault()
@@ -681,6 +758,14 @@ export function App() {
         </div>
 
         <main className="main">
+          {connected === true && !live && (
+            <div className="paused-note" role="status">
+              <span className="small">{t('app.paused')}</span>
+              <button className="link small" onClick={toggleLive}>
+                {t('app.resumeLive')}
+              </button>
+            </div>
+          )}
           {connected === false && (
             <div className="disconnected" role="alert">
               <b>{t('app.disconnected')}</b>
@@ -728,7 +813,7 @@ export function App() {
           showOthers={showOtherAgents(state.settings[SHOW_OTHER_AGENTS_KEY])}
         />
 
-        {palette && <Palette items={paletteItems} onClose={() => setPalette(false)} />}
+        {palette && <Palette items={paletteItems()} onClose={() => setPalette(false)} />}
         <PropsPanel tab={active} state={state} node={pickedNode} />
         <Toast toasts={toasts} onDismiss={dismiss} />
       </div>

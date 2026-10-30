@@ -5,6 +5,16 @@ import { eventKindLabel, stageLabel, t } from '../../shared/i18n'
 import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent, type Attention } from './model'
 import type { AgentTag } from '../../shared/agents'
 
+// Enter or Space on a focused row or box that is not a button runs what a click runs.
+// Keys pressed on a control inside it (a close button) are left to that control.
+export function onPress(run: () => void): (event: React.KeyboardEvent) => void {
+  return event => {
+    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+    event.preventDefault()
+    run()
+  }
+}
+
 // Six task colors, cycled by task number (the round badge in the task list).
 export function taskColor(task: Pick<Task, 'number'>): string {
   return `var(--task-${((task.number || 1) - 1) % 6})`
@@ -129,7 +139,7 @@ export function History({ questions, onOpen }: { questions: Question[]; onOpen: 
             {answered.map(q => {
               const label = optionsOf(q).find(o => o.key === q.choice)?.label
               return (
-                <tr key={q.id} onClick={() => onOpen(q.id)} className="clickable">
+                <tr key={q.id} onClick={() => onOpen(q.id)} onKeyDown={onPress(() => onOpen(q.id))} tabIndex={0} className="clickable">
                   <td>Q{q.id}</td>
                   <td>{q.task_title || q.project}</td>
                   <td>{q.question}</td>
@@ -186,8 +196,10 @@ export function LogLines({
 // Short notices after an action ("진행 보고를 요청했습니다", or the error). App keeps the
 // list and renders <Toast>; any component under it calls useToast() to add one.
 export type ToastKind = 'good' | 'bad' | 'info'
-export type ToastItem = { id: number; text: string; kind: ToastKind }
-export type ShowToast = (text: string, kind?: ToastKind) => void
+// action: one button on the notice, such as Undo; pressing it runs it and closes the notice.
+export type ToastAction = { label: string; run: () => void }
+export type ToastItem = { id: number; text: string; kind: ToastKind; action?: ToastAction }
+export type ShowToast = (text: string, kind?: ToastKind, action?: ToastAction) => void
 
 const ToastContext = createContext<ShowToast>(() => {})
 export const ToastProvider = ToastContext.Provider
@@ -202,10 +214,11 @@ export function useToastList(ms = 4000): { toasts: ToastItem[]; show: ShowToast;
   const next = useRef(1)
   const dismiss = useCallback((id: number) => setToasts(list => list.filter(t => t.id !== id)), [])
   const show = useCallback<ShowToast>(
-    (text, kind = 'good') => {
+    (text, kind = 'good', action) => {
       const id = next.current++
-      setToasts(list => [...list.slice(-3), { id, text, kind }])
-      setTimeout(() => dismiss(id), kind === 'bad' ? ms * 2 : ms)
+      setToasts(list => [...list.slice(-3), { id, text, kind, action }])
+      // A notice with an action stays longer, so there is time to reach its button.
+      setTimeout(() => dismiss(id), kind === 'bad' || action ? ms * 2 : ms)
     },
     [dismiss, ms],
   )
@@ -218,6 +231,17 @@ export function Toast({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (
       {toasts.map(item => (
         <div key={item.id} className={`toast toast-${item.kind}`}>
           <span>{item.text}</span>
+          {item.action && (
+            <button
+              className="link small toast-action"
+              onClick={() => {
+                onDismiss(item.id)
+                item.action?.run()
+              }}
+            >
+              {item.action.label}
+            </button>
+          )}
           <button className="toast-close" title={t('common.close')} onClick={() => onDismiss(item.id)}>
             ×
           </button>

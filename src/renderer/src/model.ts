@@ -194,3 +194,49 @@ export function waitingFirst<T extends { updated_at: number }>(tasks: T[], atten
     .sort((a, b) => ATTENTION_ORDER.indexOf(attention(a)!) - ATTENTION_ORDER.indexOf(attention(b)!) || b.updated_at - a.updated_at)
   return { waiting, rest: tasks.filter(task => attention(task) === null) }
 }
+
+// What the task list shows for each task, worked out once per bridge state instead of once per
+// task per render: its open questions (same session and title), its node count, and why it needs
+// the person. stalled and limited are session ids.
+export type TaskFacts = { openQuestions: number; nodeCount: number; attention: Attention | null }
+
+export function taskFacts(
+  state: {
+    tasks: readonly Task[]
+    questions: readonly Pick<Question, 'status' | 'session_id' | 'task_title'>[]
+    nodes: readonly Pick<GraphNode, 'task_id'>[]
+    sessions: readonly Pick<Session, 'id' | 'agent' | 'terminal'>[]
+    live?: readonly string[]
+  },
+  stalled: ReadonlySet<string>,
+  limited: ReadonlySet<string>,
+  running: (task: Task) => boolean,
+): Map<number, TaskFacts> {
+  const key = (session: string, title: string) => `${session}\n${title}`
+  const open = new Map<string, number>()
+  for (const q of state.questions) {
+    if (q.status === 'answered') continue
+    const k = key(q.session_id, q.task_title)
+    open.set(k, (open.get(k) ?? 0) + 1)
+  }
+  const nodes = new Map<number, number>()
+  for (const n of state.nodes) nodes.set(n.task_id, (nodes.get(n.task_id) ?? 0) + 1)
+  const sessions = new Map(state.sessions.map(s => [s.id, s]))
+  const live = state.live ?? []
+  const facts = new Map<number, TaskFacts>()
+  for (const task of state.tasks) {
+    const openQuestions = open.get(key(task.session_id, task.title)) ?? 0
+    facts.set(task.id, {
+      openQuestions,
+      nodeCount: nodes.get(task.id) ?? 0,
+      attention: attentionOf({
+        openQuestions,
+        stalled: stalled.has(task.session_id),
+        limited: limited.has(task.session_id),
+        offline: reachOf(sessions.get(task.session_id), live) === 'gone',
+        running: running(task),
+      }),
+    })
+  }
+  return facts
+}
