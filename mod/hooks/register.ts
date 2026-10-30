@@ -164,6 +164,20 @@ async function ensureBridge($: Engine): Promise<boolean> {
   return started.exitCode === 0
 }
 
+// A write the bridge must not miss while it restarts (a new app version replaces it): tried
+// again after starting the bridge, about half a minute in all. Only one that never reached it
+// is sent again, and the bridge takes each one once.
+const RESEND_TRIES = 5
+const RESEND_MS = 2000
+async function sendSurely($: Engine, path: string, body: unknown): Promise<void> {
+  for (let attempt = 0; attempt < RESEND_TRIES; attempt++) {
+    const reply = await call($, 'POST', path, body).catch(() => undefined)
+    if (reply && reply.status !== 0) return
+    await $.clock.sleep(RESEND_MS).catch(() => undefined)
+    await ensureBridge($).catch(() => false)
+  }
+}
+
 function post($: Engine, kind: string, text: string, taskTitle = ''): Promise<Reply | undefined> {
   return call($, 'POST', '/events', { sessionId, kind, text, taskTitle }).catch(() => undefined)
 }
@@ -739,7 +753,7 @@ export const register: Register = on => {
       // An interrupted turn answered nothing: the bridge sends no result for its requests and
       // ends a scheduled run it carried as failed.
       if (answering.length > 0 && sessionId) {
-        void call($, 'POST', '/messages/turn-end', { sessionId, ids: answering, answer: e.answer, aborted: e.isAborted }).catch(() => undefined)
+        void sendSurely($, '/messages/turn-end', { sessionId, ids: answering, answer: e.answer, aborted: e.isAborted })
       }
       answering = []
       turnItems = []
