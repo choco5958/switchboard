@@ -1,11 +1,15 @@
 import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import { request } from 'node:http'
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
+import { Worker } from 'node:worker_threads'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, deliveryText, listen, nodeEventText, projectName } from './server.ts'
 import { ROUTINE_FAIL_LIMIT } from './schedule.ts'
+import { OFFLINE_NOTE_MS } from './peer.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'claude-ide-'))
 const socketPath = join(dir, 'bridge.sock')
@@ -690,7 +694,7 @@ describe('messages between sessions', () => {
     assert.equal(reply.ids.length, 1)
     assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '끝' })).json.relayed, 0)
     const [back] = await take('pa')
-    assert.match(back!.text, new RegExp(`요청 ${sent.ids[0]}에 대한 답`))
+    assert.match(back!.text, new RegExp(`요청 ${sent.ids[0]}의 답`))
     assert.match(back!.text, /보낸 세션 이름으로 시작해/)
     assert.doesNotMatch(back!.text, /send_to_session으로 결과를 보내세요/)
   })
@@ -965,6 +969,9 @@ describe('hardening', () => {
   test('a body over the limit is refused', async () => {
     assert.notEqual(await raw('POST', '/outbox', `{"sessionId":"x","text":"${'a'.repeat(9 * 1024 * 1024)}"}`), 200)
     assert.equal((await call('GET', '/health')).status, 200)
+    // The debugging routes (bridge/debug.ts) read with the same cap.
+    assert.notEqual(await raw('POST', '/comments', `{"url":"http://127.0.0.1:1/big","text":"${'a'.repeat(9 * 1024 * 1024)}"}`), 200)
+    assert.equal((await call('GET', `/comments?url=${encodeURIComponent('http://127.0.0.1:1/big')}`)).json.comments.length, 0)
   })
 
   test('a long agent description does not stall the bridge', async () => {
@@ -1097,6 +1104,21 @@ describe('scheduled prompts and waits', () => {
     for (const r of [skip, once, one]) await call('POST', `/routines/${r.id}/delete`)
   })
 
+  test('deleting a routine takes back its prompt still waiting; saving one that is gone is a 404', async () => {
+    const { json: r } = await call('POST', '/routines', { name: '지울 점검', prompt: '로그를 봐줘', project: 'gone-r', cwd: '/w/gone-r', schedule: { kind: 'daily', time: '09:00' } })
+    await call('POST', '/sessions', { id: 'gr-1', cwd: '/w/gone-r' })
+    const stream = open('gr-1')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    await call('POST', `/routines/${r.id}/run`)
+    assert.deepEqual((await runs(r.id)).map(run => run.status), ['sent'])
+    await call('POST', `/routines/${r.id}/delete`)
+    stream.destroy()
+    assert.deepEqual(await take('gr-1'), [])
+    const saved = await call('POST', '/routines', { id: r.id, name: '지울 점검', prompt: 'p', project: 'gone-r', cwd: '/w/gone-r', schedule: { kind: 'daily', time: '09:00' } })
+    assert.equal(saved.status, 404)
+    assert.ok(!(await call('GET', '/state')).json.routines.some((row: { id: number }) => row.id === r.id))
+  })
+
   test('a wait goes back into its session when it fires', async () => {
     await call('POST', '/sessions', { id: 'wt-1', cwd: '/w/wait' })
     const { json } = await call('POST', '/waits', { sessionId: 'wt-1', note: 'CI가 끝나면 결과를 보고 배포 여부 판단' })
@@ -1109,5 +1131,258 @@ describe('scheduled prompts and waits', () => {
     assert.match(got!.text, /함께 온 내용:\nCI 통과 \(12분\)/)
     assert.equal((await call('POST', `/waits/${json.id}/fire`, {})).status, 404)
     assert.equal((await call('GET', '/waits?session=wt-1')).json.waits.length, 0)
+  })
+})
+
+describe("the database over the bridge's life", () => {
+  test('a stopped bridge closes its database: the WAL is folded in and removed', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'sb-sig-'))
+    const db = join(home, 'ide.db')
+    const sock = join(home, 'b.sock')
+    const child = spawn(process.execPath, [join(import.meta.dirname, 'server.ts')], {
+      env: { ...process.env, CLAUDE_IDE_SOCKET: sock, CLAUDE_IDE_DB: db },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    await new Promise<void>((resolve, reject) => {
+      let out = ''
+      child.stdout!.on('data', chunk => {
+        out += String(chunk)
+        if (out.includes('listening')) resolve()
+        if (out.includes('not started')) reject(new Error(out))
+      })
+      child.on('error', reject)
+    })
+    await new Promise<void>((resolve, reject) => {
+      const req = request({ socketPath: sock, method: 'POST', path: '/sessions', headers: { 'content-type': 'application/json' } }, res => {
+        res.resume()
+        res.on('end', () => resolve())
+      })
+      req.on('error', reject)
+      req.end(JSON.stringify({ id: 'sig-1', cwd: '/w/sig' }))
+    })
+    assert.ok(existsSync(`${db}-wal`))
+    const exited = new Promise<number | null>(resolve => child.on('exit', code => resolve(code)))
+    child.kill('SIGTERM')
+    assert.equal(await exited, 0)
+    assert.ok(!existsSync(`${db}-wal`))
+    const check = new DatabaseSync(db)
+    assert.equal((check.prepare("select count(*) n from sessions where id = 'sig-1'").get() as { n: number }).n, 1)
+    check.close()
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  test('pruning checkpoints the WAL back to nothing', async () => {
+    await call('POST', '/sessions', { id: 'wal-1', cwd: '/w/wal' })
+    for (let i = 0; i < 20; i++) await call('POST', '/events', { sessionId: 'wal-1', text: `기록 ${i} ${'x'.repeat(400)}` })
+    assert.ok(statSync(join(dir, 'ide.db-wal')).size > 0)
+    bridge.prune()
+    assert.equal(statSync(join(dir, 'ide.db-wal')).size, 0)
+  })
+
+  test("a write waits for another connection's lock instead of failing", async () => {
+    // Another thread holds the write lock for 300 ms (this one blocks while the bridge waits).
+    const other = new Worker(
+      `const { DatabaseSync } = require('node:sqlite')
+       const { parentPort, workerData } = require('node:worker_threads')
+       const db = new DatabaseSync(workerData)
+       db.exec('begin immediate')
+       parentPort.postMessage('locked')
+       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300)
+       db.exec('commit')
+       db.close()`,
+      { eval: true, workerData: join(dir, 'ide.db') },
+    )
+    const done = new Promise(resolve => other.once('exit', resolve))
+    await new Promise(resolve => other.once('message', resolve))
+    const reply = await call('POST', '/sessions', { id: 'busy-1', cwd: '/w/busy' })
+    await done
+    assert.equal(reply.status, 200)
+  })
+
+  test("a timer's work that fails is logged, not the end of the bridge", () => {
+    const home = mkdtempSync(join(tmpdir(), 'sb-tick-'))
+    const path = join(home, 'ide.db')
+    createBridge(path, 'ko-KR').close()
+    // A routine due now whose schedule cannot be read: tickRoutines throws on it.
+    const raw = new DatabaseSync(path)
+    raw.prepare("insert into routines (project, cwd, name, prompt, schedule, next_at, created_at, updated_at) values ('p', '/w', 'n', 'x', 'not json', 1, 1, 1)").run()
+    raw.close()
+    const logged: string[] = []
+    const log = console.log
+    console.log = (text: unknown) => void logged.push(String(text))
+    try {
+      createBridge(path, 'ko-KR').close()
+    } finally {
+      console.log = log
+    }
+    assert.ok(logged.some(line => /routines failed/.test(line)))
+    rmSync(home, { recursive: true, force: true })
+  })
+})
+
+describe('retention and the size of /state', () => {
+  const DAY = 24 * 3600_000
+
+  test('pruning drops what is long finished and sessions long gone, never what still waits', () => {
+    const home = mkdtempSync(join(tmpdir(), 'sb-keep-'))
+    const own = createBridge(join(home, 'ide.db'), 'ko-KR')
+    const db = own.db
+    const at = Date.now()
+    const old = at - 40 * DAY
+    const count = (sql: string) => (db.prepare(sql).get() as { n: number }).n
+    const session = db.prepare('insert into sessions (id, project, cwd, started_at, last_seen) values (?, ?, ?, 1, ?)')
+    session.run('gone', 'p', '/w/p', old)
+    session.run('older', 'p', '/w/p', old + DAY)
+    session.run('asked', 'p', '/w/p', old)
+    session.run('owed', 'p', '/w/p', old)
+    session.run('recent', 'p', '/w/p', at)
+    session.run('only', 'solo', '/w/solo', old)
+    db.prepare("insert into questions (session_id, project, question, created_at) values ('asked', 'p', '아직 기다림', ?)").run(old)
+    db.prepare("insert into questions (session_id, project, question, status, created_at, answered_at, delivered) values ('owed', 'p', '답 전달 전', 'answered', ?, ?, 0)").run(old, old)
+    // Messages for a session that never came back go; one for a recent session stays however old.
+    db.prepare("insert into outbox (session_id, text, created_at) values ('gone', '못 받음', ?)").run(old)
+    db.prepare("insert into outbox (session_id, text, created_at) values ('recent', '받을 것', ?)").run(old)
+    // A scheduled prompt whose run was deleted closes instead of going in empty.
+    db.prepare("insert into outbox (session_id, kind, text, created_at, expects_reply, routine_run) values ('recent', '예약', '', ?, 1, 9999)").run(at)
+    db.prepare("insert into routines (id, project, cwd, name, prompt, schedule, created_at, updated_at) values (1, 'p', '/w/p', 'r', 'x', '{}', 1, 1)").run()
+    const run = db.prepare('insert into routine_runs (routine_id, scheduled_for, created_at, status, finished_at) values (1, ?, ?, ?, ?)')
+    for (let i = 0; i < 25; i++) run.run(old, old, 'done', old)
+    run.run(old, old, 'sent', null)
+    db.prepare("insert into approvals (session_id, project, tool, summary, status, created_at, answered_at) values ('recent', 'p', 'Bash', 'ls', 'allow', ?, ?)").run(old, old)
+    db.prepare("insert into approvals (session_id, project, tool, summary, status, created_at) values ('recent', 'p', 'Bash', 'pwd', 'pending', ?)").run(old)
+    db.prepare('insert into telegram_approvals (approval_id, message_id) values (1, 10)').run()
+    db.prepare("insert into waits (session_id, note, created_at, fired_at) values ('recent', '끝난 것', ?, ?)").run(old, old)
+    const fired = Number(db.prepare("insert into waits (session_id, note, created_at, fired_at) values ('recent', '전달 전', ?, ?)").run(old, old).lastInsertRowid)
+    db.prepare("insert into outbox (session_id, text, created_at, wait_id) values ('recent', '', ?, ?)").run(at, fired)
+    db.prepare("insert into waits (session_id, note, created_at) values ('recent', '열린 것', ?)").run(old)
+    db.prepare('insert into telegram_messages (question_id, message_id, created_at) values (1, 20, ?)').run(old)
+    db.prepare('insert into telegram_messages (question_id, message_id, created_at) values (999, 21, ?)').run(old)
+
+    own.prune(at)
+    // 'only' is the newest of its project; 'older' is not, and 'gone' has nothing waiting.
+    const sessions = (db.prepare('select id from sessions order by id').all() as { id: string }[]).map(r => r.id)
+    assert.deepEqual(sessions, ['asked', 'only', 'owed', 'recent'])
+    assert.deepEqual((db.prepare('select text from outbox where wait_id is null and routine_run is null').all() as { text: string }[]).map(r => r.text), ['받을 것'])
+    assert.equal(count('select count(*) n from outbox where routine_run = 9999 and delivered = 1 and answered = 1'), 1)
+    // The newest 20 runs stay: the one still running and 19 finished.
+    assert.equal(count("select count(*) n from routine_runs where status = 'done'"), 19)
+    assert.equal(count("select count(*) n from routine_runs where status = 'sent'"), 1)
+    assert.deepEqual((db.prepare('select status from approvals').all() as { status: string }[]).map(r => r.status), ['pending'])
+    assert.equal(count('select count(*) n from telegram_approvals'), 0)
+    assert.deepEqual((db.prepare('select note from waits order by id').all() as { note: string }[]).map(r => r.note), ['전달 전', '열린 것'])
+    assert.deepEqual((db.prepare('select question_id from telegram_messages').all() as { question_id: number }[]).map(r => r.question_id), [1])
+    own.close()
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  test('/state sends the live, recent and needed sessions, not every one ever seen', async () => {
+    await call('POST', '/sessions', { id: 'cap-now', cwd: '/w/cap' })
+    const insert = bridge.db.prepare("insert into sessions (id, project, cwd, started_at, last_seen, usage) values (?, ?, '/w/many', 1, ?, '{}')")
+    for (let i = 0; i < 400; i++) insert.run(`many-${i}`, 'many', 1000 + i)
+    // Seen long ago, but the only one of its project (its folder), or with a question still waiting.
+    insert.run('lone-1', 'lone', 1)
+    bridge.db.prepare("insert into questions (session_id, project, question, created_at) values ('many-0', 'many', '오래된 세션의 질문', 1)").run()
+    const sessions = (await call('GET', '/state')).json.sessions as { id: string }[]
+    const ids = new Set(sessions.map(s => s.id))
+    assert.ok(sessions.length < 400, String(sessions.length))
+    assert.ok(!ids.has('many-1'))
+    for (const id of ['many-0', 'lone-1', 'many-399', 'cap-now']) assert.ok(ids.has(id), id)
+    bridge.db.exec("delete from questions where session_id = 'many-0'")
+    bridge.db.exec("delete from sessions where id like 'many-%' or id = 'lone-1'")
+  })
+
+  test('the hot lookups read through an index, not the whole table', () => {
+    const plan = (sql: string, args: (string | number)[]) =>
+      (bridge.db.prepare(`explain query plan ${sql}`).all(...args) as { detail: string }[]).map(r => r.detail).join(' | ')
+    for (const [sql, args] of [
+      ['select * from outbox where session_id = ? and delivered = 0 order by id', ['s']],
+      ["select session_id from outbox where group_key = ? and id != ? and answered = 0 and no_reply = ''", ['g', 1]],
+      ["select count(*) as n from outbox where chain = ? and from_session != '' and expects_reply = 1", [1]],
+      ['select count(*) as n from outbox where from_session = ? and session_id = ? and expects_reply = 1 and created_at > ?', ['a', 'b', 1]],
+      ["select * from outbox where from_session != '' and expects_reply = 1 and answered = 0 and cancelled = 0 and no_reply = '' and question_id is null", []],
+      ["select * from questions where session_id = ? and status = 'answered' and delivered = 0 order by id", ['s']],
+      ["select project, count(*) n from questions where status = 'answered' group by project", []],
+      ["select * from questions where status = 'answered' order by answered_at desc limit 50", []],
+      ["select id from routine_runs where (status = 'waiting' and created_at < ?) or (status = 'sent' and created_at < ?)", [1, 1]],
+    ] as [string, (string | number)[]][]) {
+      assert.doesNotMatch(plan(sql, args), /SCAN (outbox|questions|routine_runs)(?! USING)/, sql)
+    }
+  })
+
+  test('memory lets go of a session once its stream closes', async () => {
+    await call('POST', '/sessions', { id: 'mem-1', cwd: '/w/mem' })
+    const base = bridge.memory()
+    const stream = request({ socketPath, path: '/deliveries?session=mem-1' })
+    stream.on('error', () => undefined)
+    stream.end()
+    await new Promise(resolve => stream.on('response', resolve))
+    await call('POST', '/sessions/activity', { sessionId: 'mem-1', state: 'working', openTools: 0 })
+    assert.equal(bridge.memory().streams, base.streams + 1)
+    assert.ok((await call('GET', '/state')).json.activity['mem-1'])
+    stream.destroy()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(bridge.memory().streams, base.streams)
+    assert.equal((await call('GET', '/state')).json.activity['mem-1'], undefined)
+    assert.equal(bridge.memory().offlineSince, base.offlineSince + 1)
+    // Past OFFLINE_NOTE_MS its close time says nothing more, and goes too.
+    bridge.forgetGone(Date.now() + OFFLINE_NOTE_MS)
+    assert.equal(bridge.memory().offlineSince, 0)
+    // Activity reported without a stream ends after a day.
+    await call('POST', '/sessions/activity', { sessionId: 'mem-1', state: 'idle', openTools: 0 })
+    bridge.forgetGone(Date.now() + 25 * 3600_000)
+    assert.equal((await call('GET', '/state')).json.activity['mem-1'], undefined)
+  })
+})
+
+// A trigger makes a later statement of a route fail, as a crash between statements would:
+// the earlier ones of the same route must not stay.
+describe('writes that belong together', () => {
+  const failing = (name: string, sql: string) => {
+    bridge.db.exec(`create trigger ${name} ${sql} begin select raise(abort, 'boom'); end`)
+    return () => bridge.db.exec(`drop trigger ${name}`)
+  }
+  const count = (sql: string, ...args: (string | number)[]) => (bridge.db.prepare(sql).get(...args) as { n: number }).n
+
+  test('a request that starts a run is never kept without its chain', async () => {
+    for (const id of ['tx-a', 'tx-b']) await call('POST', '/sessions', { id, cwd: `/w/${id}` })
+    const drop = failing('tx_chain', "before update of chain on outbox when new.from_session = 'tx-a'")
+    const sent = await call('POST', '/messages', { sessionId: 'tx-a', to: ['tx-b'], text: '빌드 봐줘' })
+    drop()
+    assert.equal(sent.status, 400)
+    assert.equal(count("select count(*) n from outbox where from_session = 'tx-a'"), 0)
+  })
+
+  test('taking deliveries marks all of them or none', async () => {
+    await call('POST', '/sessions', { id: 'tx-t', cwd: '/w/tx-t' })
+    const { json: q } = await call('POST', '/questions', { sessionId: 'tx-t', question: '진행?', options: [{ key: 'a', label: '예' }] })
+    await call('POST', `/questions/${q.id}/answer`, { choice: 'a' })
+    await call('POST', '/outbox', { sessionId: 'tx-t', text: '화면 코멘트' })
+    await call('POST', '/commands', { sessionId: 'tx-t', kind: 'report' })
+    const drop = failing('tx_take', "before update of done_at on commands when new.session_id = 'tx-t'")
+    assert.equal((await call('POST', '/deliveries/take', { sessionId: 'tx-t' })).status, 400)
+    drop()
+    assert.equal(count('select delivered n from questions where id = ?', q.id), 0)
+    assert.equal(count("select count(*) n from outbox where session_id = 'tx-t' and delivered = 0"), 1)
+    assert.equal((await call('POST', '/deliveries/take', { sessionId: 'tx-t' })).json.items.length, 2)
+  })
+
+  test('a cancel closes each request together with its note', async () => {
+    for (const id of ['tx-c', 'tx-r']) await call('POST', '/sessions', { id, cwd: `/w/${id}` })
+    const { json: sent } = await call('POST', '/messages', { sessionId: 'tx-c', to: ['tx-r'], text: '로그 정리' })
+    await call('POST', '/deliveries/take', { sessionId: 'tx-r' })
+    const drop = failing('tx_cancel', "before insert on outbox when new.session_id = 'tx-r' and new.piggyback = 1")
+    assert.equal((await call('POST', '/messages/cancel', { sessionId: 'tx-c', ids: sent.ids })).status, 400)
+    drop()
+    assert.equal(count('select cancelled n from outbox where id = ?', Number(sent.ids[0].slice(1))), 0)
+    await call('POST', '/messages/cancel', { sessionId: 'tx-c', ids: sent.ids })
+    await call('POST', '/deliveries/take', { sessionId: 'tx-r' })
+  })
+
+  test('a new task is not kept without the summary fields it came with', async () => {
+    await call('POST', '/sessions', { id: 'tx-k', cwd: '/w/tx-k' })
+    const drop = failing('tx_task', "before update of why on tasks when new.why = 'boom'")
+    assert.equal((await call('POST', '/tasks', { sessionId: 'tx-k', title: '반쪽 작업', why: 'boom' })).status, 400)
+    drop()
+    assert.equal(count("select count(*) n from tasks where session_id = 'tx-k'"), 0)
   })
 })
