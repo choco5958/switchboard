@@ -1,6 +1,6 @@
 {
   "name": "claude-ide",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "private": true,
   "description": "Switchboard: a desktop app for running several Claude Code sessions at once: decision queue, tasks, progress graph, work log",
   "license": "MIT",
