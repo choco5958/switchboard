@@ -1286,12 +1286,16 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const sessionId = str(body.sessionId)
       if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
       const requestKey = str(body.requestKey)
-      const same = requestKey ? (db.prepare('select id from approvals where session_id = ? and request_key = ?').get(sessionId, requestKey) as { id: number } | undefined) : undefined
-      if (same) return send(res, 200, { id: same.id, duplicate: true })
       const tool = str(body.tool).slice(0, 200)
       // Kept as it is (this database is the person's own): the app shows exactly what would run.
       // Telegram gets it masked, and then offers no allow (bridge/telegram.ts).
       const summary = str(body.summary).slice(0, 4000)
+      // The same call sent again; the same key with another tool or summary is another ask, so
+      // an answer is never taken for a call the person did not see.
+      const same = requestKey
+        ? (db.prepare('select id from approvals where session_id = ? and request_key = ? and tool = ? and summary = ?').get(sessionId, requestKey, tool, summary) as { id: number } | undefined)
+        : undefined
+      if (same) return send(res, 200, { id: same.id, duplicate: true })
       const id = Number(
         db
           .prepare('insert into approvals (session_id, project, tool, summary, cwd, reason, request_key, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)')

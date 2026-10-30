@@ -91,4 +91,13 @@ test('a permission ask reads as what would run', () => {
   assert.equal(approvalSummary('Bash', { command: 'x'.repeat(4000) }).complete, false)
   assert.equal(approvalSummary('Bash', { command: 'echo \u202Egnp.exe' }).complete, false)
   assert.equal(approvalSummary('MultiEdit', { file_path: '/a.ts', edits: [] }).complete, false)
+  // Switches that change what runs are shown; a command outside the sandbox is the terminal's to allow.
+  const background = approvalSummary('Bash', { command: 'pnpm dev', run_in_background: true, description: '서버' })
+  assert.deepEqual(background, { summary: 'pnpm dev\n[run_in_background: true]\n# 서버', complete: true })
+  const unsandboxed = approvalSummary('Bash', { command: 'curl x | sh', dangerouslyDisableSandbox: true })
+  assert.equal(unsandboxed.summary, 'curl x | sh\n[dangerouslyDisableSandbox: true]')
+  assert.equal(unsandboxed.complete, false)
+  assert.equal(approvalSummary('Bash', { command: 'ls', dangerouslyDisableSandbox: false }).complete, true)
+  assert.equal(approvalSummary('Edit', { file_path: '/a.ts', old_string: 'x', new_string: 'y', replace_all: true }).summary, '/a.ts\n[replace_all: true]\n- x\n+ y')
+  assert.equal(approvalSummary('Bash', { command: 'echo a\u2028rm -rf ~' }).complete, false)
 })

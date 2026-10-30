@@ -41,7 +41,7 @@ const KO = {
   worktreeTask: '작업 제목',
   worktreeKey: '워크트리를 줄 노드 key',
   worktreeBase: '기준 브랜치 (생략하면 레포 기본 브랜치)',
-  worktreeRepo: '레포 경로. 세션이 여러 레포의 상위 폴더에서 돌 때 적는다 (생략하면 세션 폴더)',
+  worktreeRepo: '레포 경로. 세션이 여러 레포의 상위 폴더에서 돌 때 그 안의 레포를 적는다 (생략하면 세션 폴더)',
   node:
     '노드 상태를 바꾼다. 서브에이전트를 노드에 보낼 때 "지금", 끝나면 "끝", 막히면 "실패"로 부른다. ' +
     '노드를 맡기는 Agent 호출의 description은 "[작업 제목::노드 key] 할 일" 형식으로 써야 IDE 작업자 줄에 연결된다. ' +
@@ -93,7 +93,7 @@ const KO = {
   browserType: 'ref의 입력칸에 글을 넣는다(있던 내용은 바뀐다). submit이 true면 Enter를 누른다. 넣은 뒤의 새 읽기를 돌려준다.',
   browserText: '넣을 글',
   browserSubmit: '넣은 뒤 Enter를 누를지',
-  browserNavigate: '내장 브라우저로 로컬 주소(localhost, 127.0.0.1, 사설망)를 연다. 열린 뒤의 읽기를 돌려준다.',
+  browserNavigate: '내장 브라우저로 이 컴퓨터의 주소(localhost, 127.0.0.1, ::1, 이름.localhost)를 연다. 사설망 주소와 이름.local은 사람이 설정에서 허용했을 때만 열린다. 열린 뒤의 읽기를 돌려준다.',
   browserUrl: '열 주소',
   browserConsole: '지금 페이지의 콘솔 경고와 오류, 실패한 요청(400 이상, 응답 없음)을 최근 것부터 보여 준다.',
   browserScreenshot: '내장 브라우저 화면을 PNG로 저장하고 경로를 돌려준다. 그 파일을 읽어 화면을 볼 수 있다.',
@@ -139,7 +139,7 @@ const EN: typeof KO = {
   worktreeTask: 'Task title',
   worktreeKey: 'Key of the node that gets the worktree',
   worktreeBase: 'Base branch (the repo\'s default branch when left out)',
-  worktreeRepo: 'Repo path. Give it when the session runs in a folder above several repos (the session folder when left out)',
+  worktreeRepo: 'Repo path. Give it when the session runs in a folder above several repos: one of the repos inside it (the session folder when left out)',
   node:
     'Changes a node\'s status. Call it with "지금" (now) when sending a subagent to the node, "끝" (done) when it finishes, "실패" (failed) when it is blocked. ' +
     'The description of the Agent call that takes the node must read "[task title::node key] what to do" to link to the worker row in the IDE. ' +
@@ -191,7 +191,7 @@ const EN: typeof KO = {
   browserType: 'Puts text into the field of a ref (what was there is replaced). With submit true it presses Enter. Returns a fresh reading.',
   browserText: 'The text to put in',
   browserSubmit: 'Whether to press Enter afterwards',
-  browserNavigate: 'Opens a local address (localhost, 127.0.0.1, the private network) in the in-app browser. Returns the reading once it loaded.',
+  browserNavigate: 'Opens an address on this computer (localhost, 127.0.0.1, ::1, name.localhost) in the in-app browser. Private network addresses and name.local open only when the person allowed them in settings. Returns the reading once it loaded.',
   browserUrl: 'The address to open',
   browserConsole: 'Shows the page\'s console warnings and errors and its failed requests (status 400 or more, or no answer), newest last.',
   browserScreenshot: 'Saves the in-app browser\'s screen as a PNG and returns the path. Read that file to see the screen.',
@@ -465,6 +465,40 @@ export function cancelText(json: Record<string, unknown>, lang: Lang): string {
   return Object.entries(results)
     .map(([id, result]) => t(lang, key[result as keyof typeof key] ?? 'tool.cancelDone', { id }))
     .join('\n')
+}
+
+// node_worktree, shared by the mod and the MCP server. The model picks `repo` and `base`, and
+// git and orca run there outside the permission checks, so: a base that would read as an
+// option is refused, the repo must be the session's folder or one inside it, and the git run
+// here starts no hook or fsmonitor of the repo. `stdout`: a command's output run in a folder,
+// '' when it fails.
+export const SAFE_GIT = ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false']
+
+// Whether `path` is `folder` or inside it; both absolute, with '/'.
+export function insideFolder(path: string, folder: string): boolean {
+  const trim = (value: string) => value.replace(/\/+$/, '') || '/'
+  const [p, f] = [trim(path), trim(folder)]
+  return p === f || p.startsWith(f === '/' ? '/' : `${f}/`)
+}
+
+export async function worktreeRoot(
+  stdout: (argv: string[], cwd: string) => Promise<string>,
+  home: string,
+  repo?: string,
+  base?: string,
+): Promise<{ root: string } | { refused: 'wt.badBase' | 'wt.outside' | 'wt.notRepo'; vars: Record<string, string> }> {
+  if (base?.startsWith('-')) return { refused: 'wt.badBase', vars: { base } }
+  const from = !repo ? home : repo.startsWith('/') ? repo : `${home.replace(/\/+$/, '')}/${repo.replace(/^\.\//, '')}`
+  // Compared as the folders really are, so a symlink inside the session folder leads nowhere else.
+  const real = async (dir: string) => (await stdout(['sh', '-c', 'pwd -P'], dir).catch(() => '')).trim()
+  const realHome = await real(home)
+  const realFrom = from === home ? realHome : await real(from)
+  if (!realHome || !realFrom || !insideFolder(realFrom, realHome)) return { refused: 'wt.outside', vars: { path: from } }
+  const root = (await stdout([...SAFE_GIT, 'rev-parse', '--show-toplevel'], from).catch(() => '')).trim()
+  if (!root) return { refused: 'wt.notRepo', vars: { path: from } }
+  // The repo the session folder is in, or one inside it; never one a repo's own config points elsewhere.
+  if (!insideFolder(root, realHome) && !insideFolder(realHome, root)) return { refused: 'wt.outside', vars: { path: root } }
+  return { root }
 }
 
 // The browser_* tools and the bridge action each asks for (bridge POST /browser/act).

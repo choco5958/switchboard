@@ -36,7 +36,7 @@ afterAll(() => {
 
 function fakeTerminal(over: Partial<TypingTarget> = {}) {
   const written: string[] = []
-  const target: TypingTarget = { alive: true, shell: '/bin/zsh', foreground: 'node', lastOutput: 0, paste: true, write: d => written.push(d), ...over }
+  const target: TypingTarget = { agent: 'codex', alive: true, shell: '/bin/zsh', foreground: 'node', expect: ['codex', 'node'], lastOutput: 0, paste: true, write: d => written.push(d), ...over }
   return { target, written }
 }
 
@@ -51,6 +51,20 @@ describe('typing for agent CLIs in app terminals', () => {
     expect(typePrompt(target, '  ')).toBe(false)
   })
 
+  it('Enter stays back when a menu came up or the CLI left after the text went in', () => {
+    const { target, written } = fakeTerminal()
+    const later: (() => void)[] = []
+    const menu = { ...target, screen: [' Allow execution?', '● 1. Yes', '  2. No'] }
+    typePrompt(target, '답', fn => later.push(fn), () => menu)
+    later[0]!()
+    expect(written).not.toContain('\r')
+    typePrompt(target, '답', fn => later.push(fn), () => ({ ...target, foreground: 'zsh' }))
+    later[1]!()
+    typePrompt(target, '답', fn => later.push(fn), () => undefined)
+    later[2]!()
+    expect(written).not.toContain('\r')
+  })
+
   it('types only for non-Claude sessions whose terminal is open here', () => {
     const open = fakeTerminal().target
     const sessions = [
@@ -60,6 +74,15 @@ describe('typing for agent CLIs in app terminals', () => {
       { id: 'd', agent: 'gemini', terminal: 'k-t9' },
     ] as Session[]
     expect(typedSessions(sessions, key => (key === 'k-t1' ? open : undefined)).map(s => s.id)).toEqual(['a'])
+  })
+
+  it('a session that names a terminal not opened for its agent gets nothing typed there', () => {
+    // A registration anyone could post: a codex session naming the person's own shell or ssh terminal.
+    const forged = [{ id: 'x', agent: 'codex', terminal: 'k-t3' }] as Session[]
+    const shell = fakeTerminal({ agent: undefined, expect: [], foreground: 'ssh' }).target
+    const gemini = fakeTerminal({ agent: 'gemini', expect: ['gemini', 'node'] }).target
+    const noBins = fakeTerminal({ expect: [] }).target
+    for (const target of [shell, gemini, noBins]) expect(typedSessions(forged, () => target)).toEqual([])
   })
 
   it('an answer given in the app is typed into the terminal once, and marked delivered', async () => {

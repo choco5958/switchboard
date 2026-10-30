@@ -128,14 +128,16 @@ export function restateText(
 
 // Longest summary a permission ask may have and still be answered away from the terminal.
 export const APPROVAL_MAX = 3000
-// Characters that make text read differently from what it is (direction overrides, zero width).
-const HIDING = /[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/
+// Characters that make text read differently from what it is (direction overrides, zero width,
+// line separators and the other format characters).
+const HIDING = /[\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF\p{Cf}]/u
 
 // What a permission ask would run, for the person deciding away from the terminal: the
-// command first, then the model's own description, short; the file and the change; the
-// address; or the arguments of another tool. `complete` is false when the person could not
-// see all of it there (cut, hidden characters, a change the summary cannot show), and then
-// only the terminal asks.
+// command first, with the switches that change what it does, then the model's own
+// description, short; the file and the change; the address; or the arguments of another
+// tool. `complete` is false when the person could not see all of it there (cut, hidden
+// characters, a change the summary cannot show) or should not answer it there (a command
+// outside the sandbox), and then only the terminal asks.
 export function approvalSummary(tool: string, input: unknown): { summary: string; complete: boolean } {
   const v = (input ?? {}) as Record<string, unknown>
   const text = (value: unknown) => (typeof value === 'string' ? value : '')
@@ -143,12 +145,15 @@ export function approvalSummary(tool: string, input: unknown): { summary: string
     summary: value.length > APPROVAL_MAX ? `${value.slice(0, APPROVAL_MAX - 1)}…` : value,
     complete: shows && value.length <= APPROVAL_MAX && !HIDING.test(value),
   })
+  // A switch set to true, as its own line the description cannot push out of view.
+  const flags = (...names: string[]) => names.filter(name => v[name] === true).map(name => `\n[${name}: true]`).join('')
   if (tool === 'Bash') {
     const about = text(v.description).replace(/\s+/g, ' ').trim().slice(0, 200)
-    return whole(about ? `${text(v.command)}\n# ${about}` : text(v.command))
+    const head = `${text(v.command)}${flags('dangerouslyDisableSandbox', 'run_in_background')}`
+    return whole(about ? `${head}\n# ${about}` : head, v.dangerouslyDisableSandbox !== true)
   }
   if (tool === 'Write') return whole(`${text(v.file_path)}\n${text(v.content)}`)
-  if (tool === 'Edit') return whole(`${text(v.file_path)}\n- ${text(v.old_string)}\n+ ${text(v.new_string)}`)
+  if (tool === 'Edit') return whole(`${text(v.file_path)}${flags('replace_all')}\n- ${text(v.old_string)}\n+ ${text(v.new_string)}`)
   if (tool === 'MultiEdit' || tool === 'NotebookEdit') return whole(text(v.file_path) || text(v.notebook_path), false)
   if (tool === 'Read') return whole(text(v.file_path) || JSON.stringify(v))
   if (tool === 'WebFetch') return whole(text(v.url))

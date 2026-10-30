@@ -11,7 +11,7 @@ import { createInterface } from 'node:readline'
 import { requestTarget, resolveEndpoint, startCommand, usesTcp } from '../bridge/endpoint.ts'
 import { takenText } from '../mod/hooks/batch.ts'
 import { langFromLocale, langOfState, osLocale, t, type Key, type Lang, type Vars } from '../mod/hooks/i18n.ts'
-import { BROWSER_TOOLS, cancelText, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
+import { BROWSER_TOOLS, cancelText, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, worktreeRoot, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
 
 export { takenText }
 
@@ -183,9 +183,9 @@ export function createSession(options: Options, deps: Deps) {
   const errorText = (reply: Reply) => String(reply.json.error ?? reply.status)
 
   async function createWorktree(task: string, key: string, base?: string, repo?: string): Promise<string> {
-    const from = repo ?? options.cwd
-    const root = (await deps.run(['git', 'rev-parse', '--show-toplevel'], from)).stdout.trim()
-    if (!root) return say('wt.notRepo', { path: from })
+    const found = await worktreeRoot(async (argv, cwd) => (await deps.run(argv, cwd)).stdout, options.cwd, repo, base)
+    if ('refused' in found) return say(found.refused, found.vars)
+    const { root } = found
     const orca = async (args: string[]): Promise<Json> => {
       const ran = await deps.run(['sh', '-c', `exec "$(command -v orca || echo ${ORCA})" "$@"`, 'orca', ...args, '--json'])
       try {

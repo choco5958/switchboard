@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PASTE_END, PASTE_START, QUIET_MS, cleanText, cliInFront, pasteModeAfter, permissionMenu, readyToType, typedInput, typingBlock } from './agentInput'
+import { PASTE_END, PASTE_START, QUIET_MS, cleanText, cliInFront, enterAllowed, pasteModeAfter, permissionMenu, readyToType, typedInput, typingBlock } from './agentInput'
 import { createScreen, settled } from './termScreen'
 
 const answer = '[Switchboard] Q7 답이 왔습니다.\n질문: 어디에 둘까\n고른 것: (a) 카드 안\n이 답에 따라 멈춰 있던 작업을 이어서 진행하세요.'
@@ -28,13 +28,14 @@ describe('typing an answer', () => {
   })
 
   it('types only while the CLI, not the shell, is in front and the screen has been quiet', () => {
-    expect(cliInFront('node', '/bin/zsh')).toBe(true)
-    expect(cliInFront('codex', '/bin/zsh')).toBe(true)
-    expect(cliInFront('zsh', '/bin/zsh')).toBe(false)
-    expect(cliInFront('-zsh', '/bin/zsh')).toBe(false)
-    expect(cliInFront('bash', '/bin/zsh')).toBe(false)
-    expect(cliInFront('', '/bin/zsh')).toBe(false)
-    const t = { alive: true, foreground: 'node', shell: '/bin/zsh', lastOutput: 1000 }
+    const bins = ['codex', 'node']
+    expect(cliInFront('node', '/bin/zsh', bins)).toBe(true)
+    expect(cliInFront('codex', '/bin/zsh', bins)).toBe(true)
+    expect(cliInFront('zsh', '/bin/zsh', bins)).toBe(false)
+    expect(cliInFront('-zsh', '/bin/zsh', bins)).toBe(false)
+    expect(cliInFront('bash', '/bin/zsh', bins)).toBe(false)
+    expect(cliInFront('', '/bin/zsh', bins)).toBe(false)
+    const t = { alive: true, foreground: 'node', shell: '/bin/zsh', lastOutput: 1000, expect: bins }
     expect(readyToType(t, 1000 + QUIET_MS)).toBe(true)
     expect(readyToType(t, 1000 + QUIET_MS - 1)).toBe(false)
     expect(readyToType({ ...t, alive: false }, 1e9)).toBe(false)
@@ -58,10 +59,15 @@ describe('typing an answer', () => {
     expect(permissionMenu(await shown(codex))).toBe(true)
     expect(permissionMenu(await shown(claude))).toBe(true)
     expect(permissionMenu(await shown('Overwrite the file? [y/N] '))).toBe(true)
-    const t = { alive: true, foreground: 'node', shell: '/bin/zsh', lastOutput: 0 }
+    const t = { alive: true, foreground: 'node', shell: '/bin/zsh', lastOutput: 0, expect: ['gemini', 'node'] }
     expect(typingBlock({ ...t, screen: await shown(gemini) }, 1e9)).toBe('menu')
     expect(typingBlock({ ...t, screen: await shown('gemini> ') }, 1e9)).toBe(null)
     expect(readyToType({ ...t, lastOutput: 1e9 - 10 }, 1e9)).toBe(false)
+    // Before Enter: the echo of the text just typed is no reason to wait, a menu or a shell is.
+    expect(enterAllowed({ ...t, lastOutput: 1e9, screen: await shown('gemini> ') })).toBe(true)
+    expect(enterAllowed({ ...t, lastOutput: 1e9, screen: await shown(gemini) })).toBe(false)
+    expect(enterAllowed({ ...t, foreground: 'zsh', screen: [] })).toBe(false)
+    expect(enterAllowed(undefined)).toBe(false)
   })
 
   it('an idle screen with the person\'s own words, a quote or an answered menu is not a menu', async () => {

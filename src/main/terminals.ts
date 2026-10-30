@@ -29,8 +29,10 @@ import type { SpawnPty } from './termCore'
 // termClient.ts hostSupported) they run in this process and end with it.
 
 // seq numbers every output chunk, so a view that replays the buffer can skip live chunks it already holds.
-// key names the terminal to an agent's MCP server (SWITCHBOARD_TERMINAL); lastOutput and
-// paste tell the answer typing whether the CLI waits for input and takes bracketed paste.
+// key names the terminal to an agent's MCP server (SWITCHBOARD_TERMINAL): 128 random bits
+// (newKey), so a session left from an earlier run never maps onto a new terminal and no other
+// process can guess one to have answers typed into it. A terminal the host kept keeps its key.
+// lastOutput and paste tell the answer typing whether the CLI waits for input and takes bracketed paste.
 // screen: what the terminal shows now (termScreen.ts), for the typing check's menu test.
 // fg: the program in front, as the backend last read it. backend: where the shell runs.
 type Live = TermInfo & { buffer: string; seq: number; key: string; shell: string; lastOutput: number; paste: boolean; fg: string; bins: string[]; screen: Screen; backend: TermBackend }
@@ -38,12 +40,11 @@ type Live = TermInfo & { buffer: string; seq: number; key: string; shell: string
 const BUFFER_MAX = 256 * 1024
 const terms = new Map<string, Live>()
 let seq = 0
-// Terminal ids restart at t1 with every app start; the key stays unique across starts,
-// so a session left from an earlier run never maps onto a new terminal.
-const RUN = randomBytes(3).toString('hex')
 const changeListeners = new Set<() => void>()
 // Close the terminals with the app (the closeTerminalsOnQuit setting); off, the host keeps them.
 let closeOnQuit = false
+
+const newKey = (): string => randomBytes(16).toString('hex')
 
 const byKey = (key: string) => [...terms.values()].find(one => one.key === key)
 
@@ -52,6 +53,7 @@ export function typingTarget(key: string): TypingTarget | undefined {
   const term = byKey(key)
   if (!term) return undefined
   return {
+    agent: term.agent,
     alive: term.alive,
     shell: term.shell,
     lastOutput: term.lastOutput,
@@ -168,7 +170,7 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
   if (!folder || !existsSync(folder)) return { error: t('term.noFolder', { path: start.cwd }) }
   const shell = loginShell()
   const id = `t${++seq}`
-  const key = `${RUN}-${id}`
+  const key = newKey()
   const prepared = start.prepare?.(key) ?? {}
   const cols = Math.max(20, start.cols || 100)
   const rows = Math.max(5, start.rows || 30)
