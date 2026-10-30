@@ -6,7 +6,7 @@ import { useToast } from '../parts'
 import { clock } from '../model'
 import { MIN_INTERVAL_MINUTES, ROUTINE_FAIL_LIMIT } from '../../../../bridge/schedule.ts'
 import { agentLabel, routineAgents, type CustomAgent } from '../../../shared/agents'
-import { Button, Card, EmptyState, Input, Notice, Select, TextArea, cx } from '../ui'
+import { Button, Card, EmptyState, Input, More, Notice, Select, TextArea, cx } from '../ui'
 
 // Settings: scheduled prompts (bridge/schedule.ts). Each goes to a connected Claude Code
 // session of its project at its time; with none, the app opens one there.
@@ -137,7 +137,10 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
   return (
     <section id="settings-routines" className="settings-row routines">
       <h2>{t('routines.title')}</h2>
-      <p className="quiet small">{t('routines.hint')}</p>
+      <p className="quiet small">
+        {t('routines.hint')}
+        <More>{t('routines.hintMore')}</More>
+      </p>
       {!connected && (
         <Notice tone="warn">
           <span className="small">{t('routines.offline')}</span>

@@ -40,8 +40,7 @@
   --btn-primary-text: #000000;
 }
 
-[data-theme='dotpico'] .node,
-[data-theme='dotpico'] .node-detail {
+[data-theme='dotpico'] .node {
   border-width: 2px;
   box-shadow: 4px 4px 0 #000000;
 }

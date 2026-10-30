@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { t } from '../../../shared/i18n'
 import { useToast } from '../parts'
-import { Button, Input, Notice } from '../ui'
+import { Button, Input, More, Notice } from '../ui'
 
 // Settings: the person's own Telegram bot for answering decisions away from the desk
 // (bridge/telegram.ts). The token goes to the bridge and never comes back to this screen.
@@ -69,7 +69,10 @@ export function TelegramSection() {
   return (
     <section id="settings-telegram" className="settings-row telegram">
       <h2>{t('telegram.title')}</h2>
-      <p className="quiet small">{t('telegram.hint')}</p>
+      <p className="quiet small">
+        {t('telegram.hint')}
+        <More>{t('telegram.hintMore')}</More>
+      </p>
       {!status.configured && (
         <>
           <ol className="small telegram-steps">

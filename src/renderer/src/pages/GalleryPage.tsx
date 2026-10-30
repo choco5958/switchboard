@@ -14,6 +14,7 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
+  More,
   Notice,
   Select,
   TabList,
@@ -470,6 +471,10 @@ function Feedback() {
         세션이 작업을 올리면 여기에 나타납니다.
       </EmptyState>
       <EmptyState>제목 없는 빈 상태: 한 줄 안내만 둡니다.</EmptyState>
+      <p className="quiet small">
+        긴 설명은 한 문장만 보이고, 나머지는 자세히 뒤에 접어 둡니다.
+        <More>펼치면 이 문장이 짧은 설명 아래에 나옵니다. 버튼은 열림 상태를 aria-expanded로 알립니다.</More>
+      </p>
       <div style={{ position: 'relative', height: 200 }}>
         <Toast
           toasts={[
@@ -533,21 +538,41 @@ export function GalleryPage() {
           </div>
         </Part>
         <Part title="홈 카드와 통계">
-          <div className={surfaceClass({}, 'stat')}>
+          <button type="button" className={surfaceClass({ interactive: true }, 'stat')}>
             <b>3</b>
             <span>진행 중 작업</span>
-          </div>
-          <button type="button" className={surfaceClass({}, 'home-card')}>
-            <div className="task-title">
+          </button>
+          <button type="button" className={surfaceClass({ interactive: true, tone: 'warn' }, 'home-question')}>
+            <span className="home-question-head">
+              <span className="qid">Q1397</span>
+              <span className="tag">테마 시스템과 부품 갤러리</span>
+              <span className="quiet small home-age">3분 전</span>
+            </span>
+            <span className="home-question-text">기본 테마를 A3로 둘까</span>
+            <span className="home-question-rec small">
+              <Badge tone="good">추천</Badge>
+              <span>(a) A3를 기본으로 둠</span>
+            </span>
+          </button>
+          <button type="button" className={surfaceClass({ interactive: true }, 'home-card')}>
+            <span className="task-title">
               <NumberBadge task={TASK} /> {TASK.title}
-            </div>
-            <div className="quiet small">claude-ide, 작업, 노드 2/4, 2분 전</div>
-            <div className="mini-stages" aria-hidden="true">
+            </span>
+            <span className="home-card-meta">
+              <Badge shape="pill" tone="accent">
+                진행 중
+              </Badge>
+              <Badge>claude-ide</Badge>
+              <Badge>구현</Badge>
+              <Badge>노드 2/4</Badge>
+              <span className="quiet small home-age">2분 전</span>
+            </span>
+            <span className="mini-stages" aria-hidden="true">
               <span className="done" />
               <span className="done" />
               <span className="now" />
               <span />
-            </div>
+            </span>
           </button>
         </Part>
         <Part title="권한 요청">
@@ -570,26 +595,31 @@ export function GalleryPage() {
           <ul className="options">
             <li>
               <button type="button" className={surfaceClass({ on: true }, 'option')} aria-pressed="true">
-                <kbd>a</kbd>
-                <span>A3를 기본으로 둠</span>
+                <span className="option-keys">
+                  <kbd>a</kbd>
+                  <kbd>1</kbd>
+                </span>
+                <span className="option-text">
+                  <span>A3를 기본으로 둠</span>
+                  <span className="option-note quiet small">처음 여는 사람이 가장 많이 본 화면입니다</span>
+                </span>
                 <Badge tone="good" fill="solid" className="recommend">
                   추천
                 </Badge>
-                <span className="quiet small num">1</span>
               </button>
             </li>
             <li>
               <button type="button" className={surfaceClass({}, 'option')} aria-pressed="false">
-                <kbd>b</kbd>
-                <span>인광 터미널을 기본으로 둠</span>
-                <span className="quiet small num">2</span>
+                <span className="option-keys">
+                  <kbd>b</kbd>
+                  <kbd>2</kbd>
+                </span>
+                <span className="option-text">인광 터미널을 기본으로 둠</span>
               </button>
             </li>
             <li>
               <button type="button" className={surfaceClass({}, 'option')} disabled>
-                <kbd>c</kbd>
-                <span>답한 질문의 선택지(꺼짐)</span>
-                <span className="quiet small num">3</span>
+                <span className="option-text">답한 질문의 선택지(꺼짐)</span>
               </button>
             </li>
           </ul>

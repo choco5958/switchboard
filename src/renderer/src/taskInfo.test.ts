@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import type { GraphNode, LogEvent, Question, Task } from '../../shared/types'
-import { artifactFromNotes, countLabel, flipTheme, isLight, nodeDetailKey, resetText, taskEvents, taskQuestions, testsFromNotes } from './taskInfo'
+import type { GraphNode, LogEvent, Question, Task, TermInfo } from '../../shared/types'
+import { artifactFromNotes, countLabel, flipTheme, isLight, nodeDetailKey, resetText, taskEvents, taskQuestions, terminalOf, testsFromNotes } from './taskInfo'
 
 const task = (session_id: string): Task =>
   ({ id: session_id === 's1' ? 1 : 2, session_id, project: 'p', title: '같은 제목', stage: '작업', status: '하는 중' }) as Task
@@ -76,5 +76,21 @@ describe('top bar helpers', () => {
   test('scoped counts show the total too', () => {
     expect(countLabel('결정', 3, null)).toBe('결정 3')
     expect(countLabel('결정', 3, 1)).toBe('결정 1 (전체 3)')
+  })
+})
+
+describe('the terminal of a session', () => {
+  const term = (id: string, over: Partial<TermInfo> = {}): TermInfo => ({ id, project: 'p', cwd: '/w/p', title: 'Claude', claude: true, alive: true, exitCode: null, ...over })
+  test('the one running terminal of the same agent in the session folder', () => {
+    const terms = [term('t1'), term('t2', { cwd: '/w/q' }), term('t3', { claude: false, agent: 'codex' })]
+    expect(terminalOf({ cwd: '/w/p', agent: 'claude' }, terms)?.id).toBe('t1')
+    expect(terminalOf({ cwd: '/w/p' }, terms)?.id).toBe('t1')
+    expect(terminalOf({ cwd: '/w/p', agent: 'codex' }, terms)?.id).toBe('t3')
+  })
+  test('none when it ended, when nothing fits, or when two could be it', () => {
+    expect(terminalOf({ cwd: '/w/p' }, [term('t1', { alive: false })])).toBeUndefined()
+    expect(terminalOf({ cwd: '/w/p' }, [term('t1', { claude: false })])).toBeUndefined()
+    expect(terminalOf({ cwd: '/w/p' }, [term('t1'), term('t2')])).toBeUndefined()
+    expect(terminalOf(undefined, [term('t1')])).toBeUndefined()
   })
 })

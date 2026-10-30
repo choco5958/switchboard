@@ -18,10 +18,11 @@ import { LogPage } from './pages/LogPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { HIDDEN_KEY, hiddenProjects, isRunning, nameForFolder, pickSession, projectFolders, projectsOf, savedProjects, scopeFor, scopeState } from '../../shared/projects'
 import { ProjectList } from './ProjectList'
-import { Dock } from './Dock'
+import { Dock, SHOW_TERMINAL } from './Dock'
 import { AgentBadge, ApprovalItem, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
 import { Badge, Button, Chip, EmptyState, IconButton, Notice, TabList } from './ui'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
+import { waitingIds } from './outbox'
 import { stalledSessions } from '../../shared/stall'
 import { limitedUntil } from '../../shared/limit'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
@@ -210,11 +211,16 @@ export function App() {
     [writeSetting],
   )
 
-  // The top bar's play button opens a terminal in the dock; a closed dock would hold it out of sight.
+  // The top bar's play button opens a terminal in the dock, and the task view goes to one there;
+  // a closed dock would hold it out of sight.
   useEffect(() => {
     const open = () => setDockOpen(true)
     window.addEventListener(OPEN_CLAUDE_SLOT, open)
-    return () => window.removeEventListener(OPEN_CLAUDE_SLOT, open)
+    window.addEventListener(SHOW_TERMINAL, open)
+    return () => {
+      window.removeEventListener(OPEN_CLAUDE_SLOT, open)
+      window.removeEventListener(SHOW_TERMINAL, open)
+    }
   }, [])
 
   useEffect(() => {
@@ -442,7 +448,9 @@ export function App() {
     async (fromId: number) => {
       const fresh = await window.ide.state()
       if (fresh) setState(fresh)
-      const all = fresh?.questions ?? []
+      // An answer still waiting in the app (outbox.ts) is as good as given: not the next one.
+      const sending = waitingIds()
+      const all = (fresh?.questions ?? []).filter(q => !sending.has(q.id))
       const next = nextAfter(scope === null ? all : all.filter(q => q.project === scope), fromId) ?? nextAfter(all, fromId)
       if (next !== null) setScope(current => scopeFor(current, all.find(q => q.id === next)?.project))
       setTabs(current => {
@@ -535,6 +543,13 @@ export function App() {
           badges={tags}
           onOpenTask={openTask}
           onOpenQuestion={openQuestion}
+          onOpenQueue={() => {
+            setRailPick('question')
+            setSection('questions')
+            setSidebarOpen(true)
+            if (pending[0]) openQuestion(pending[0].id)
+          }}
+          onOpenHistory={() => open({ kind: 'history' })}
           onPickFolder={() => void pickProject()}
           onAnswerApproval={async (id, decision) => {
             const reply = await window.ide.approve(id, decision)
@@ -555,6 +570,7 @@ export function App() {
           questions={state.questions}
           events={state.events}
           agents={state.agents.filter(a => a.session_id === task.session_id && a.task_title === task.title)}
+          session={(state.live ?? []).includes(task.session_id) ? state.sessions.find(s => s.id === task.session_id) : undefined}
           onQuestion={openQuestion}
           onCommand={(kind, payload) => void command(kind, payload, task.session_id)}
         />
@@ -578,6 +594,7 @@ export function App() {
               return { id: s.id, name: s.project, label: `${s.project}${s.agent && s.agent !== 'claude' ? ` (${s.agent})` : ''}${task ? `: ${task.title}` : ''}` }
             })}
           onDone={() => void advance(q.id)}
+          onReopen={() => openQuestion(q.id)}
           onOpenTask={task ? () => openTask(task.id) : null}
           keysAnywhere={state.settings[DECISION_KEYS_KEY] === true}
         />

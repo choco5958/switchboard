@@ -3,7 +3,7 @@ import type { AgentDetect } from '../../../shared/types'
 import { CLOSE_TERMINALS_KEY, CUSTOM_AGENTS_KEY, PLACEHOLDERS, PRESETS, SHOW_OTHER_AGENTS_KEY, TRUST_FOLDERS_KEY, customAgents, showOtherAgents, trustFolders, validateCustom } from '../../../shared/agents'
 import { AGENTS_FOUND } from '../Dock'
 import { agentTone, useToast } from '../parts'
-import { Badge, Button, EmptyState, Input } from '../ui'
+import { Badge, Button, EmptyState, Input, More } from '../ui'
 import { t } from '../../../shared/i18n'
 import { tx } from '../tx'
 import { saveSetting } from '../settings'
@@ -83,21 +83,17 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
   return (
     <section id="settings-agents" className="settings-row agent-settings">
       <h2>{t('agents.title')}</h2>
-      <p className="quiet small">{t('agents.intro')}</p>
+      <p className="quiet small">
+        {t('agents.intro')}
+        <More>{t('agents.introMore')}</More>
+      </p>
+
+      {/* A long section: four parts with their own headings, the switches first. */}
+      <h3 className="settings-sub">{t('agents.secDock')}</h3>
       <label className="check-row">
         <input type="checkbox" checked={showOthers} onChange={() => void toggleOthers()} />
         {t('agents.showOthers')}
         <span className="quiet small">{t('agents.showOthersHint')}</span>
-      </label>
-      <label className="check-row">
-        <input type="checkbox" checked={trusting} onChange={() => void toggleTrust()} />
-        {t('agents.trustFolders')}
-        <span className="quiet small">{t('agents.trustFoldersHint')}</span>
-      </label>
-      <label className="check-row">
-        <input type="checkbox" checked={browserLan} onChange={() => void toggleBrowserLan()} />
-        {t('agents.browserLan')}
-        <span className="quiet small">{t('agents.browserLanHint')}</span>
       </label>
       {confirming && (
         <RiskyConfirm
@@ -114,10 +110,33 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
         <label className="check-row">
           <input type="checkbox" checked={closeOnQuit} onChange={() => void toggleCloseOnQuit()} />
           {t('agents.closeOnQuit')}
-          <span className="quiet small">{t('agents.closeOnQuitHint')}</span>
+          <span className="quiet small">
+            {t('agents.closeOnQuitHint')}
+            <More>{t('agents.closeOnQuitHintMore')}</More>
+          </span>
         </label>
       )}
       {keeps === false && <p className="quiet small">{t('agents.closeOnQuitOff')}</p>}
+
+      <h3 className="settings-sub">{t('agents.secSafety')}</h3>
+      <label className="check-row">
+        <input type="checkbox" checked={trusting} onChange={() => void toggleTrust()} />
+        {t('agents.trustFolders')}
+        <span className="quiet small">
+          {t('agents.trustFoldersHint')}
+          <More>{t('agents.trustFoldersHintMore')}</More>
+        </span>
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={browserLan} onChange={() => void toggleBrowserLan()} />
+        {t('agents.browserLan')}
+        <span className="quiet small">
+          {t('agents.browserLanHint')}
+          <More>{t('agents.browserLanHintMore')}</More>
+        </span>
+      </label>
+
+      <h3 className="settings-sub">{t('agents.secCli')}</h3>
       <ul className="agent-list">
         {PRESETS.map(p => {
           const path = found?.found[p.bin]
@@ -161,7 +180,7 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
         {t('agents.lookNote')}
       </p>
 
-      <h3>{t('agents.customTitle')}</h3>
+      <h3 className="settings-sub">{t('agents.customTitle')}</h3>
       {customs.length === 0 && <EmptyState className="small">{t('agents.customNone')}</EmptyState>}
       <ul className="agent-list">
         {customs.map(c => (
@@ -176,6 +195,7 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
           </li>
         ))}
       </ul>
+      <h4 className="settings-sub-small">{t('agents.secAdd')}</h4>
       <div className="agent-form">
         <label>
           <span className="small">{t('agents.name')}</span>
@@ -200,9 +220,13 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
           />
         </label>
         <p className="quiet small">
-          {t('agents.mcpHelp', { list: PLACEHOLDERS.map(p => `{${p}}`).join(', '), file: '{config_file}' })}
+          {t('agents.mcpHelp', { list: PLACEHOLDERS.map(p => `{${p}}`).join(', ') })}
+          <More>{t('agents.mcpHelpMore', { file: '{config_file}' })}</More>
         </p>
-        <p className="quiet small">{t('agents.llama', { example: '{server}' })}</p>
+        <p className="quiet small">
+          {t('agents.llama')}
+          <More>{t('agents.llamaMore', { example: '{server}' })}</More>
+        </p>
         {error && <p className="error small">{error}</p>}
         <div className="actions">
           <Button disabled={!form.name.trim() || !form.command.trim()} onClick={() => void add()}>

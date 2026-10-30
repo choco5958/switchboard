@@ -3,7 +3,9 @@ import {
   forwardRef,
   useContext,
   useEffect,
+  useId,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
   type InputHTMLAttributes,
@@ -15,6 +17,7 @@ import {
 } from 'react'
 import { Icon, type IconName, type IconSize } from './Icons'
 import { composing } from './ime'
+import { t } from '../../shared/i18n'
 
 // The shared parts of every screen: buttons, icon buttons, badges, fields, surfaces, menus, tabs,
 // dialogs, notices and empty states. Each one is a class in styles.css ("Parts") drawn from the
@@ -408,6 +411,25 @@ export function Dialog({
         {children}
       </div>
     </div>
+  )
+}
+
+// The rest of an explanation, folded: a "자세히" button after the short text opens it under it.
+// Inline, so it fits in a hint paragraph or a check row's hint; the button says whether it is open.
+export function More({ children, className }: { children: ReactNode; className?: string }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  return (
+    <>
+      {' '}
+      <button type="button" className={cx('link', 'small', 'more-toggle', className)} aria-expanded={open} aria-controls={id} onClick={() => setOpen(on => !on)}>
+        {open ? t('common.less') : t('common.more')}
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} size="sm" />
+      </button>
+      <span id={id} className="more-body" hidden={!open}>
+        {children}
+      </span>
+    </>
   )
 }
 
