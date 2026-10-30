@@ -362,8 +362,13 @@ export function appOnly(method: string, path: string): boolean {
 
 export function createBridge(dbPath: string, locale = systemLocale(), options: BridgeOptions = {}) {
   privateDir(dirname(dbPath))
-  const db = new DatabaseSync(dbPath)
+  // `timeout`: a write that meets another's lock waits for it instead of failing at once.
+  const db = new DatabaseSync(dbPath, { timeout: 5000 })
   db.exec('pragma journal_mode = wal;')
+  // The WAL shrinks back to this after a checkpoint instead of keeping its largest size.
+  db.exec('pragma journal_size_limit = 16777216;')
+  // What a bridge that died left in the WAL goes into the database now.
+  db.exec('pragma wal_checkpoint(TRUNCATE);')
   for (const file of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) if (existsSync(file)) chmodSync(file, 0o600)
   db.exec(SCHEMA)
   // Columns added after the first release: create them on databases made before.
@@ -907,25 +912,39 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
        and session_id not in (select value from json_each(?))
        and (session_id not in (select id from sessions) or session_id in (select id from sessions where last_seen < ?))`,
     ).run(JSON.stringify(live), at - DAY)
+    // The WAL folds back into the database and shrinks (journal_size_limit).
+    db.exec('pragma wal_checkpoint(TRUNCATE);')
   }
-  prune()
-  const pruning = setInterval(() => prune(), 3600_000)
+  // A timer's work that fails (the database still locked after its timeout, a bad row) is
+  // logged and tried again on the next tick: an exception in a timer would end the bridge.
+  const guarded = (what: string, work: () => void) => () => {
+    try {
+      work()
+    } catch (error) {
+      console.log(`claude-ide bridge: ${what} failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  guarded('prune', () => prune())()
+  const pruning = setInterval(guarded('prune', () => prune()), 3600_000)
   pruning.unref()
   // A held reply (heldReply) and a usage limit's reset have no event to let what waits go:
   // look every minute.
-  const releasing = setInterval(() => {
-    checkNoReplies()
-    for (const id of liveSessions()) {
-      const waiting =
-        db.prepare('select 1 from outbox where session_id = ? and delivered = 0 limit 1').get(id) ||
-        db.prepare("select 1 from questions where session_id = ? and status = 'answered' and delivered = 0 limit 1").get(id)
-      if (waiting) pushDeliveries(id)
-    }
-  }, 60_000)
+  const releasing = setInterval(
+    guarded('release', () => {
+      checkNoReplies()
+      for (const id of liveSessions()) {
+        const waiting =
+          db.prepare('select 1 from outbox where session_id = ? and delivered = 0 limit 1').get(id) ||
+          db.prepare("select 1 from questions where session_id = ? and status = 'answered' and delivered = 0 limit 1").get(id)
+        if (waiting) pushDeliveries(id)
+      }
+    }),
+    60_000,
+  )
   releasing.unref()
   telegram.start()
-  tickRoutines()
-  const routineTimer = setInterval(() => tickRoutines(), 30_000)
+  guarded('routines', () => tickRoutines())()
+  const routineTimer = setInterval(guarded('routines', () => tickRoutines()), 30_000)
   routineTimer.unref()
 
   const state = () => ({
@@ -2130,7 +2149,27 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     })
   })
 
-  return { server, db, prune, tickRoutines, checkNoReplies, close: () => { shuttingDown = true; telegram.stop(); void mobile.stop(); clearInterval(pruning); clearInterval(releasing); clearInterval(routineTimer); server.close(); db.close() } }
+  // Once only: a signal and the self-check may both ask. The last checkpoint leaves the WAL empty.
+  let closed = false
+  const close = () => {
+    if (closed) return
+    closed = true
+    shuttingDown = true
+    telegram.stop()
+    void mobile.stop()
+    clearInterval(pruning)
+    clearInterval(releasing)
+    clearInterval(routineTimer)
+    server.close()
+    try {
+      db.exec('pragma wal_checkpoint(TRUNCATE);')
+    } catch {
+      // Another connection still reads: closing checkpoints what it can.
+    }
+    db.close()
+  }
+
+  return { server, db, prune, tickRoutines, checkNoReplies, close }
 }
 
 function sameSecret(given: string, expected: string): boolean {
@@ -2263,6 +2302,14 @@ if (import.meta.main) {
   const token = usesTcp() ? newToken() : undefined
   const appKey = await keyFromStdin()
   const bridge = createBridge(defaultDbPath(), undefined, { token, appKey })
+  // Stopped from outside (the app quitting or replacing it, a kill, Ctrl-C): the database
+  // closes first, so the WAL is folded in and Telegram and the phone server stop cleanly.
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+    process.once(signal, () => {
+      bridge.close()
+      process.exit(0)
+    })
+  }
   try {
     let where = defaultSocketPath()
     if (token === undefined) await listen(bridge.server, where)

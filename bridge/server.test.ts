@@ -1,7 +1,10 @@
 import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import { request } from 'node:http'
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
+import { Worker } from 'node:worker_threads'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, deliveryText, listen, nodeEventText, projectName } from './server.ts'
@@ -1127,5 +1130,91 @@ describe('scheduled prompts and waits', () => {
     assert.match(got!.text, /함께 온 내용:\nCI 통과 \(12분\)/)
     assert.equal((await call('POST', `/waits/${json.id}/fire`, {})).status, 404)
     assert.equal((await call('GET', '/waits?session=wt-1')).json.waits.length, 0)
+  })
+})
+
+describe("the database over the bridge's life", () => {
+  test('a stopped bridge closes its database: the WAL is folded in and removed', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'sb-sig-'))
+    const db = join(home, 'ide.db')
+    const sock = join(home, 'b.sock')
+    const child = spawn(process.execPath, [join(import.meta.dirname, 'server.ts')], {
+      env: { ...process.env, CLAUDE_IDE_SOCKET: sock, CLAUDE_IDE_DB: db },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    await new Promise<void>((resolve, reject) => {
+      let out = ''
+      child.stdout!.on('data', chunk => {
+        out += String(chunk)
+        if (out.includes('listening')) resolve()
+        if (out.includes('not started')) reject(new Error(out))
+      })
+      child.on('error', reject)
+    })
+    await new Promise<void>((resolve, reject) => {
+      const req = request({ socketPath: sock, method: 'POST', path: '/sessions', headers: { 'content-type': 'application/json' } }, res => {
+        res.resume()
+        res.on('end', () => resolve())
+      })
+      req.on('error', reject)
+      req.end(JSON.stringify({ id: 'sig-1', cwd: '/w/sig' }))
+    })
+    assert.ok(existsSync(`${db}-wal`))
+    const exited = new Promise<number | null>(resolve => child.on('exit', code => resolve(code)))
+    child.kill('SIGTERM')
+    assert.equal(await exited, 0)
+    assert.ok(!existsSync(`${db}-wal`))
+    const check = new DatabaseSync(db)
+    assert.equal((check.prepare("select count(*) n from sessions where id = 'sig-1'").get() as { n: number }).n, 1)
+    check.close()
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  test('pruning checkpoints the WAL back to nothing', async () => {
+    await call('POST', '/sessions', { id: 'wal-1', cwd: '/w/wal' })
+    for (let i = 0; i < 20; i++) await call('POST', '/events', { sessionId: 'wal-1', text: `기록 ${i} ${'x'.repeat(400)}` })
+    assert.ok(statSync(join(dir, 'ide.db-wal')).size > 0)
+    bridge.prune()
+    assert.equal(statSync(join(dir, 'ide.db-wal')).size, 0)
+  })
+
+  test("a write waits for another connection's lock instead of failing", async () => {
+    // Another thread holds the write lock for 300 ms (this one blocks while the bridge waits).
+    const other = new Worker(
+      `const { DatabaseSync } = require('node:sqlite')
+       const { parentPort, workerData } = require('node:worker_threads')
+       const db = new DatabaseSync(workerData)
+       db.exec('begin immediate')
+       parentPort.postMessage('locked')
+       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300)
+       db.exec('commit')
+       db.close()`,
+      { eval: true, workerData: join(dir, 'ide.db') },
+    )
+    const done = new Promise(resolve => other.once('exit', resolve))
+    await new Promise(resolve => other.once('message', resolve))
+    const reply = await call('POST', '/sessions', { id: 'busy-1', cwd: '/w/busy' })
+    await done
+    assert.equal(reply.status, 200)
+  })
+
+  test("a timer's work that fails is logged, not the end of the bridge", () => {
+    const home = mkdtempSync(join(tmpdir(), 'sb-tick-'))
+    const path = join(home, 'ide.db')
+    createBridge(path, 'ko-KR').close()
+    // A routine due now whose schedule cannot be read: tickRoutines throws on it.
+    const raw = new DatabaseSync(path)
+    raw.prepare("insert into routines (project, cwd, name, prompt, schedule, next_at, created_at, updated_at) values ('p', '/w', 'n', 'x', 'not json', 1, 1, 1)").run()
+    raw.close()
+    const logged: string[] = []
+    const log = console.log
+    console.log = (text: unknown) => void logged.push(String(text))
+    try {
+      createBridge(path, 'ko-KR').close()
+    } finally {
+      console.log = log
+    }
+    assert.ok(logged.some(line => /routines failed/.test(line)))
+    rmSync(home, { recursive: true, force: true })
   })
 })
