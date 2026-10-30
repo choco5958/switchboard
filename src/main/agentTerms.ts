@@ -7,7 +7,7 @@ import { CUSTOM_AGENTS_KEY, PRESETS, customAgents, customLaunch, presetLaunch, p
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
-import { detectScript, parseDetect, serverFor } from './agentDetect'
+import { detectScript, mcpNode, parseDetect, serverFor } from './agentDetect'
 import { openTerminal } from './terminals'
 import { nodeRoot } from './appRoot'
 import { nodeLauncher } from './runtime'
@@ -73,10 +73,7 @@ export function registerAgentTerms(ipcMain: IpcMain, call: (method: string, path
     const found = await detect()
     if (preset && !found.found[preset.bin]) return { error: t('agents.notInstalled', { label: preset.label, install: preset.install }) }
     const needsServer = preset ? preset.mcp !== null : custom!.mcp !== 'none'
-    // The installed app runs the MCP server with its own Node (src/main/runtime.ts). On Windows a
-    // .cmd launcher cannot be what a Node-based CLI starts without a shell, so the person's own
-    // Node runs it when there is one.
-    const node = !app.isPackaged ? found.node : process.platform === 'win32' && found.node ? found.node : nodeLauncher(homedir())
+    const node = mcpNode(app.isPackaged, process.platform, found.node, nodeLauncher(homedir()))
     if (needsServer && !node) return { error: t('agents.noNode') }
     const id = preset?.id ?? custom!.id
     return openTerminal({

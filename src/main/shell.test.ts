@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { parseDetect } from './agentDetect'
+import { mcpNode, parseDetect } from './agentDetect'
 import { cliInFront } from './agentInput'
 import { isAbsolutePath, loginShell, whereScript } from './shell'
 
@@ -31,4 +31,13 @@ test('answers go only to the CLI the terminal started, not to ssh or python star
   expect(cliInFront('ssh', '/bin/zsh', ['codex', 'node'])).toBe(false)
   expect(cliInFront('python3', '/bin/zsh', ['codex', 'node'])).toBe(false)
   expect(cliInFront('codex.exe', 'powershell.exe', ['codex', 'node'])).toBe(true)
+})
+
+test("the MCP server's Node: the app's own launcher, but on Windows only the person's Node", () => {
+  const launcher = 'C:\\Users\\me\\.claude-ide\\bin\\switchboard-node.cmd'
+  expect(mcpNode(true, 'darwin', null, '/Users/me/.claude-ide/bin/switchboard-node')).toBe('/Users/me/.claude-ide/bin/switchboard-node')
+  expect(mcpNode(true, 'win32', 'C:\\nodejs\\node.exe', launcher)).toBe('C:\\nodejs\\node.exe')
+  // A .cmd the CLI could not start: no Node means the terminal says so instead of opening.
+  expect(mcpNode(true, 'win32', null, launcher)).toBe(null)
+  expect(mcpNode(false, 'linux', '/usr/bin/node', '/x')).toBe('/usr/bin/node')
 })
