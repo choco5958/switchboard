@@ -48,6 +48,9 @@ const newKey = (): string => randomBytes(16).toString('hex')
 
 const byKey = (key: string) => [...terms.values()].find(one => one.key === key)
 
+// The dock id of the terminal with this key, for the renderer, which never sees the keys.
+export const dockIdOf = (key: string): string | undefined => byKey(key)?.id
+
 // What the answer typing (agentDelivery.ts) sees of the terminal with this key.
 export function typingTarget(key: string): TypingTarget | undefined {
   const term = byKey(key)

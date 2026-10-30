@@ -22,7 +22,7 @@ import { Dock, SHOW_TERMINAL } from './Dock'
 import { AgentBadge, ApprovalItem, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
 import { Badge, Button, Chip, EmptyState, IconButton, Notice, TabList } from './ui'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
-import { waitingIds } from './outbox'
+import { resendLeft, waitingIds } from './outbox'
 import { stalledSessions } from '../../shared/stall'
 import { limitedUntil } from '../../shared/limit'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
@@ -125,6 +125,15 @@ export function App() {
     }
     const timer = setInterval(() => void window.ide.bridgeProblem().then(setProblem), 15_000)
     return () => clearInterval(timer)
+  }, [connected])
+  // Answers an earlier run kept in the outbox but never sent (a forced quit): they go once the
+  // bridge answers. One it already has (409) or no longer knows (404) is done with too.
+  useEffect(() => {
+    if (!connected) return
+    void resendLeft(async (id, draft) => {
+      const reply = await window.ide.answer(id, draft.choice, draft.memo)
+      return reply.ok || reply.status === 409 || reply.status === 404
+    })
   }, [connected])
   const [tabs, setTabs] = useState<Tabs>(loadTabs)
   const [section, setSection] = useState<Section>('home')
@@ -367,10 +376,7 @@ export function App() {
       onClick={() => openTask(task.id)}
     />
   )
-  const stalledTerms = useMemo(
-    () => new Set(state.sessions.filter(s => stalled.has(s.id) && s.terminal).map(s => s.terminal as string)),
-    [state.sessions, stalled],
-  )
+  const stalledRuns = useMemo(() => state.sessions.filter(s => stalled.has(s.id)), [state.sessions, stalled])
   const { pending, held } = useMemo(() => queueOf(view.questions), [view.questions])
   const pendingApprovals = (view.approvals ?? []).filter(a => a.status === 'pending')
   // The one "waiting for me" count (waiting.ts): the rail badge, the top bar, the sidebar and the palette.
@@ -868,7 +874,7 @@ export function App() {
           onExpandLog={() => open({ kind: 'log' })}
           onFolder={cwd => void addProject(cwd)}
           agents={tags}
-          stalledTerms={stalledTerms}
+          stalledSessions={stalledRuns}
           customs={customs}
           showOthers={showOtherAgents(state.settings[SHOW_OTHER_AGENTS_KEY])}
           defaultAgent={typeof state.settings.defaultAgent === 'string' ? state.settings.defaultAgent : undefined}

@@ -12,7 +12,7 @@ export type Session = {
   last_seen: number
   usage: string // JSON of SessionUsage below
   agent?: string // the agent CLI: 'claude', 'codex', 'custom-...' (src/shared/agents.ts)
-  terminal?: string // the app terminal it runs in, '' when outside the app
+  terminal?: string // the app terminal it runs in, '' when outside the app (in the renderer: its dock id, or 'closed')
 }
 
 export type SessionUsage = {

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import type { AgentDetect, BridgeState, Task, TermInfo } from '../../shared/types'
+import type { AgentDetect, BridgeState, Session, Task, TermInfo } from '../../shared/types'
+import { terminalOf } from './taskInfo'
 import { projectOfCwd, type ProjectInfo } from '../../shared/projects'
 import { CLAUDE_MIN, olderThan, PRESETS, type AgentTag, type CustomAgent } from '../../shared/agents'
 import { TerminalView } from './TerminalView'
@@ -98,7 +99,7 @@ export function Dock({
   onExpandLog,
   onFolder,
   agents = {},
-  stalledTerms = new Set<string>(),
+  stalledSessions = [],
   customs = [],
   showOthers = true,
   defaultAgent,
@@ -114,7 +115,7 @@ export function Dock({
   onExpandLog: () => void
   onFolder: (cwd: string) => void
   agents?: Record<string, AgentTag> // session id to its agent badge, for the log
-  stalledTerms?: Set<string> // terminals whose session's turn shows no activity
+  stalledSessions?: Pick<Session, 'cwd' | 'agent' | 'terminal'>[] // sessions whose turn shows no activity
   customs?: CustomAgent[] // the person's own agent CLIs (settings)
   showOthers?: boolean // settings: offer agent CLIs other than Claude
   defaultAgent?: string // the agent the main + button opens (the last one picked)
@@ -187,6 +188,8 @@ export function Dock({
 
   // Terminals belong to a project by folder; the main process names them by folder name only.
   const projectOf = (t: TermInfo) => projectOfCwd(projects, t.cwd) ?? t.project
+  // The tabs of stalled sessions (taskInfo.ts terminalOf).
+  const stalledTerms = new Set(stalledSessions.map(s => terminalOf(s, terms)?.id).filter(id => id !== undefined))
   const shown = terms.filter(t => scope === null || projectOf(t) === scope)
   // A terminal of another project is hidden; fall back to the log.
   const current = active === 'log' || shown.some(t => t.id === active) ? active : 'log'

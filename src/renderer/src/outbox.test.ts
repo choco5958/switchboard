@@ -55,3 +55,48 @@ test('closing the window sends what still waits, and listeners hear each change'
   expect(heard).toHaveBeenCalledTimes(3)
   off()
 })
+
+test('an answer the app never got to send goes at the next start, and only once', async () => {
+  const mem = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => void mem.set(k, v),
+    removeItem: (k: string) => void mem.delete(k),
+  })
+  try {
+    vi.resetModules()
+    const before = await import('./outbox')
+    before.queueAnswer(7, { choice: 'a', memo: '메모' }, async () => undefined, 5000)
+    before.queueAnswer(8, { choice: 'b', memo: '' }, async () => undefined, 5000)
+    before.takeBack(8)
+    // The app is gone before the wait is over: a fresh module, as at the next start.
+    vi.resetModules()
+    const after = await import('./outbox')
+    const post = vi.fn(async () => true)
+    await after.resendLeft(post)
+    expect(post.mock.calls).toEqual([[7, { choice: 'a', memo: '메모' }]])
+    await after.resendLeft(post)
+    expect(post).toHaveBeenCalledTimes(1)
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
+test('an answer the bridge could not take yet stays for the next start', async () => {
+  const mem = new Map<string, string>([['switchboard.outbox', JSON.stringify({ 9: { choice: 'c', memo: '' } })]])
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => void mem.set(k, v),
+    removeItem: (k: string) => void mem.delete(k),
+  })
+  try {
+    vi.resetModules()
+    const { resendLeft } = await import('./outbox')
+    await resendLeft(async () => false)
+    const post = vi.fn(async () => true)
+    await resendLeft(post)
+    expect(post).toHaveBeenCalledWith(9, { choice: 'c', memo: '' })
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})

@@ -12,7 +12,7 @@ import { registerDevServers } from './devservers'
 import { BROWSER_PARTITION, BROWSER_WORLD, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, fromMainFrame, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
 import { anyoneWorking } from './awake'
-import { onTerminalsChange, openClaudeIn, registerTerminals, setCloseTerminalsOnQuit, startTerminalHost, terminalStates, typingTarget } from './terminals'
+import { dockIdOf, onTerminalsChange, openClaudeIn, registerTerminals, setCloseTerminalsOnQuit, startTerminalHost, terminalStates, typingTarget } from './terminals'
 import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
@@ -418,7 +418,12 @@ ipcMain.handle('bridge:state', async (): Promise<BridgeState | null> => {
   if (reply.ok && (reply.json as unknown as BridgeState).settings?.lang === undefined) {
     await call('POST', '/settings', { key: 'lang', value: resolveLang(undefined, app.getLocale()) })
   }
-  return reply.ok ? (reply.json as unknown as BridgeState) : null
+  if (!reply.ok) return null
+  // A session's terminal comes as that terminal's key (SWITCHBOARD_TERMINAL), which can have
+  // answers typed into it. The renderer gets the dock id instead, or 'closed' when no dock
+  // terminal has that key now.
+  const state = reply.json as unknown as BridgeState
+  return { ...state, sessions: state.sessions.map(s => (s.terminal ? { ...s, terminal: dockIdOf(s.terminal) ?? 'closed' } : s)) }
 })
 ipcMain.handle('bridge:answer', (_e, id: number, choice: string, memo: string) =>
   call('POST', `/questions/${Number(id)}/answer`, { choice, memo }),

@@ -53,10 +53,12 @@ export function runningAgents(agents: Agent[]): number {
   return agents.filter(a => a.status === 'running').length
 }
 
-// The dock terminal a session runs in. The app does not learn which terminal a Claude Code
-// session started in, so it goes by what both know: a running terminal in the session's folder
-// with the same agent. Only one such terminal counts; with two, either could be the one.
-export function terminalOf(session: Pick<Session, 'cwd' | 'agent'> | undefined, terms: TermInfo[]): TermInfo | undefined {
+// The dock terminal a session runs in. A CLI the app started names its terminal (session.terminal,
+// the dock id the main process puts there). A Claude Code session does not, so it goes by what
+// both know: a running terminal in the session's folder with the same agent. Only one such
+// terminal counts; with two, either could be the one.
+export function terminalOf(session: Pick<Session, 'cwd' | 'agent' | 'terminal'> | undefined, terms: TermInfo[]): TermInfo | undefined {
+  if (session?.terminal) return terms.find(term => term.alive && term.id === session.terminal)
   if (!session?.cwd) return undefined
   const agent = session.agent && session.agent !== 'claude' ? session.agent : null
   const fits = terms.filter(term => term.alive && term.cwd === session.cwd && (agent ? term.agent === agent : term.claude && !term.agent))

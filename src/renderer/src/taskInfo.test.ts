@@ -93,4 +93,9 @@ describe('the terminal of a session', () => {
     expect(terminalOf({ cwd: '/w/p' }, [term('t1'), term('t2')])).toBeUndefined()
     expect(terminalOf(undefined, [term('t1')])).toBeUndefined()
   })
+  test('a session that names its terminal gets that one, even with two in its folder', () => {
+    const terms = [term('t1', { agent: 'codex', claude: false }), term('t2', { agent: 'codex', claude: false })]
+    expect(terminalOf({ cwd: '/w/p', agent: 'codex', terminal: 't2' }, terms)?.id).toBe('t2')
+    expect(terminalOf({ cwd: '/w/p', agent: 'codex', terminal: 'closed' }, terms)).toBeUndefined()
+  })
 })
