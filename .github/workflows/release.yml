@@ -1,12 +1,13 @@
-# A tag v* builds the installers on macOS, Windows and Linux into one draft GitHub release
-# (electron-builder.yml) and publishes it once all are up. The installed app updates from it.
+# A tag v* builds the installers on macOS, Windows and Linux (electron-builder.yml), signs the
+# update files and publishes them all as one GitHub release. The installed app updates from it,
+# and only to a version whose update files carry the signature (src/main/updateSignature.ts).
 name: Release
 
 on:
   push:
     tags: ['v*']
 
-# Read-only unless a job says otherwise: only the jobs that write the release may.
+# Read-only unless a job says otherwise: only the job that signs and writes the release may.
 permissions:
   contents: read
 
@@ -16,9 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: 11
+          persist-credentials: false
+      # The pnpm version is package.json's packageManager.
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
@@ -38,63 +40,89 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
-  release:
-    needs: preflight
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Create the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # A draft until every build is up: an app checking for updates meanwhile sees nothing half done.
-        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --draft --title "Switchboard $GITHUB_REF_NAME" --generate-notes
-
+  # Runs the dependencies' code (install scripts, electron-builder), so it can write nothing: no
+  # write token, none left in .git/config, nothing published. It hands its files to the release
+  # job as an artifact.
   build:
-    needs: release
-    # electron-builder uploads its own installers and update files (latest*.yml) to the draft
-    # release (--publish always), so each build job writes the release too.
+    needs: preflight
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-latest
+            name: mac
             target: --mac
           - os: windows-latest
+            name: win
             target: --win
           # node-pty has no Linux prebuild, so each architecture builds on its own machine.
           - os: ubuntu-latest
+            name: linux-x64
             target: --linux --x64
           - os: ubuntu-24.04-arm
+            name: linux-arm64
             target: --linux --arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: 11
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Build and upload the installers
+      # electron-builder writes the update files (latest*.yml) beside the installers whenever a
+      # publish provider is set (electron-builder.yml), publishing or not.
+      - name: Build the installers
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: pnpm exec electron-builder ${{ matrix.target }} --publish always
+        run: pnpm exec electron-builder ${{ matrix.target }} --publish never
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist-${{ matrix.name }}
+          path: |
+            dist/latest*.yml
+            dist/*.blockmap
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+          if-no-files-found: error
+          retention-days: 7
 
-  publish:
+  # The only job that sees the signing key or may write the release, and it runs no dependency's
+  # code: Node alone (scripts/sign-update.ts, node:crypto) and gh. A draft until every file is up,
+  # so an app checking for updates meanwhile sees nothing half done, nor an unsigned update file.
+  release:
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Publish the release
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: dist-*
+          path: artifacts
+      - name: Sign the update files
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node scripts/sign-update.ts artifacts release
+      - name: Upload to the draft release and publish it
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "Switchboard $GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest

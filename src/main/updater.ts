@@ -4,6 +4,9 @@
 // a signed update, and this app is signed ad hoc. A Mac app in a folder this user cannot write
 // and a .deb (or any other Linux package, the system package manager's to update, as the README
 // says) get a notification that opens the download page.
+// Only a version whose update file carries the release key's signature counts at all
+// (updateSignature.ts): electron-updater downloads nothing, and the Mac swaps nothing, before
+// that holds and the file electron-updater read is the one signed.
 // An update never stops the app by itself: it installs when the person quits, or when they ask
 // for it from the notification after being told which terminals that closes. On macOS and Linux
 // the terminal host keeps the terminals running through it (src/main/termHost.ts), so it closes
@@ -12,9 +15,10 @@
 import { app, dialog, Notification, powerMonitor, shell } from 'electron'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import updater from 'electron-updater'
+import updater, { type UpdateInfo } from 'electron-updater'
 import { t } from '../shared/i18n'
-import { bundleOf, canReplace, cleanUpdates, download, isNewer, startSwap, unpack, zipFor, zipUrl } from './macUpdate'
+import { bundleOf, canReplace, cleanUpdates, download, isNewer, releaseUrl, startSwap, unpack, zipFor } from './macUpdate'
+import { channelFile, signedUpdate, type SignedUpdate } from './updateSignature'
 
 export const RELEASES_URL = 'https://github.com/choco5958/switchboard/releases/latest'
 const CHECK_MS = 6 * 3600_000
@@ -34,6 +38,29 @@ export function installsUpdates(platform: string = process.platform, env: Record
 // terminalStates leaves out those the host keeps). None: nothing to ask.
 export function terminalsClosing(terminals: readonly { alive: boolean }[]): number {
   return terminals.filter(one => one.alive).length
+}
+
+// Makes electron-updater count a version as available only once `check` returns its signed update
+// file: a version it refuses is not reported, so nothing is downloaded for it. The returned
+// function gives the signed file of a version electron-updater then reports, or undefined for
+// one this did not check (electron-updater reports the very object it checked; a copy is refused).
+export function requireSignature(
+  checker: { isUpdateSupported: (info: UpdateInfo) => boolean | Promise<boolean> },
+  check: (info: UpdateInfo) => Promise<SignedUpdate>,
+): (info: UpdateInfo) => SignedUpdate | undefined {
+  const supported = checker.isUpdateSupported
+  const signed = new WeakMap<UpdateInfo, SignedUpdate>()
+  checker.isUpdateSupported = async info => {
+    if (!(await supported(info))) return false
+    try {
+      signed.set(info, await check(info))
+      return true
+    } catch (error) {
+      console.error('update refused:', error instanceof Error ? error.message : error)
+      return false
+    }
+  }
+  return info => signed.get(info)
 }
 
 function notify(body: string, onClick: () => void): void {
@@ -87,8 +114,10 @@ export function startUpdates(bridgePid: () => Promise<number | null>, terminals:
   const { autoUpdater } = updater
   const installs = installsUpdates()
   const mac = process.platform === 'darwin' ? macUpdates(terminals) : null
-  autoUpdater.autoDownload = installs
+  // Downloaded below, once the signature holds.
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = installs
+  const signed = requireSignature(autoUpdater, info => signedUpdate(info, channelFile()))
   let told = ''
   const tellAvailable = (version: string) => {
     if (told === version) return
@@ -96,9 +125,14 @@ export function startUpdates(bridgePid: () => Promise<number | null>, terminals:
     notify(t('update.available', { version }), () => void shell.openExternal(RELEASES_URL))
   }
   autoUpdater.on('update-available', info => {
-    if (installs) return
-    if (mac) void mac(info).then(done => done || tellAvailable(info.version))
-    else tellAvailable(info.version)
+    const update = signed(info)
+    if (!update) return
+    // Here, within the event: electron-updater downloads what this check found, the file just
+    // compared with the signed one. Its own sha512 check of the download does the rest; a failure
+    // reaches the error handler below.
+    if (installs) void autoUpdater.downloadUpdate().catch(() => undefined)
+    else if (mac) void mac(update).then(done => done || tellAvailable(update.version))
+    else tellAvailable(update.version)
   })
   // Set once an update waits to install; the quit then stops the bridge first, once.
   let downloaded = false
@@ -127,15 +161,14 @@ export function startUpdates(bridgePid: () => Promise<number | null>, terminals:
   setInterval(check, CHECK_MS).unref()
 }
 
-type Found = { version: string; files: readonly { url: string; sha512?: string; size?: number }[] }
-
-// The macOS path: returns what to do with a version electron-updater found, resolving true when
+// The macOS path: returns what to do with a version electron-updater found, given its signed
+// latest-mac.yml (updateSignature.ts), whose sha512 the zip has to match. Resolves true when
 // it is downloaded or on its way, false when the person has to download it themselves.
 // The bridge keeps running through the swap. It runs this app's executable as Node, but macOS
 // keeps a moved or deleted file open for the process using it, and its scripts are a copy under
 // ~/.claude-ide/runtime (runtime.ts). The new version replaces it when it starts (staleBridge).
 // The terminal host does the same and is not replaced: it keeps its terminals until they end.
-function macUpdates(terminals: () => readonly { alive: boolean }[]): (found: Found) => Promise<boolean> {
+function macUpdates(terminals: () => readonly { alive: boolean }[]): (found: SignedUpdate) => Promise<boolean> {
   const bundle = bundleOf(app.getPath('exe'))
   const dir = join(app.getPath('userData'), 'updates')
   const log = join(app.getPath('userData'), 'update.log')
@@ -175,7 +208,7 @@ function macUpdates(terminals: () => readonly { alive: boolean }[]): (found: Fou
       mkdirSync(dir, { recursive: true, mode: 0o700 })
       const zip = join(dir, file.name)
       const stage = join(dir, version)
-      await download(zipUrl(version, file.name), zip, file)
+      await download(releaseUrl(version, file.name), zip, file)
       // A quit while this unpacks installs what was staged before, if anything.
       const fresh = await unpack(zip, stage, version).finally(() => rmSync(zip, { force: true }))
       const before = staged

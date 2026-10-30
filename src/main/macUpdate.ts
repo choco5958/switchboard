@@ -1,9 +1,9 @@
 // Updates of the macOS app without Squirrel.Mac, which installs only an update signed with a
 // developer certificate; this app is signed ad hoc (electron-builder.yml). electron-updater
 // still finds the new version (updater.ts); this file downloads the zip of the release for this
-// Mac's chip, checks it against latest-mac.yml, unpacks it beside the app's data and, once the
-// app has quit, swaps the bundle with a small shell script. Nothing here imports Electron, so
-// the tests run all of it.
+// Mac's chip, checks it against latest-mac.yml once that file's signature holds
+// (updateSignature.ts), unpacks it beside the app's data and, once the app has quit, swaps the
+// bundle with a small shell script. Nothing here imports Electron, so the tests run all of it.
 
 import { execFile, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -49,7 +49,8 @@ export function zipFor(files: readonly { url: string; sha512?: string; size?: nu
   return { name, sha512: file.sha512, size: file.size }
 }
 
-export function zipUrl(version: string, name: string): string {
+// A file of the release of `version`: its zip, or its update file and that file's signature.
+export function releaseUrl(version: string, name: string): string {
   return `${DOWNLOAD_BASE}/v${version}/${encodeURIComponent(name)}`
 }
 
@@ -107,6 +108,38 @@ function fetchTo(url: string, dest: string, size: number, hops = 0): Promise<voi
         if (got > size) request.destroy(new Error('download is larger than expected'))
       })
       pipeline(response, createWriteStream(dest, { mode: 0o600 })).then(resolve, reject)
+    })
+    request.setTimeout(IDLE_MS, () => request.destroy(new Error('download stalled')))
+    request.on('error', reject)
+  })
+}
+
+// A small file whole (an update file, its signature), from the same hosts as a download. More
+// than `max` bytes is not the file asked for.
+export function fetchSmall(url: string, max: number, hops = 0): Promise<Buffer> {
+  if (!allowedUrl(url)) return Promise.reject(new Error(`refused download from ${url}`))
+  return new Promise((resolve, reject) => {
+    const request = get(url, { headers: { 'user-agent': 'Switchboard' } }, response => {
+      const status = response.statusCode ?? 0
+      const location = response.headers.location
+      if (status >= 300 && status < 400 && location) {
+        response.resume()
+        if (hops >= MAX_REDIRECTS) return reject(new Error('too many redirects'))
+        return void fetchSmall(new URL(location, url).href, max, hops + 1).then(resolve, reject)
+      }
+      if (status !== 200) {
+        response.resume()
+        return reject(new Error(`${basename(new URL(url).pathname)} answered ${status}`))
+      }
+      const chunks: Buffer[] = []
+      let got = 0
+      response.on('data', (chunk: Buffer) => {
+        got += chunk.length
+        if (got > max) request.destroy(new Error('download is larger than expected'))
+        else chunks.push(chunk)
+      })
+      response.on('end', () => (got > max ? undefined : resolve(Buffer.concat(chunks))))
+      response.on('error', reject)
     })
     request.setTimeout(IDLE_MS, () => request.destroy(new Error('download stalled')))
     request.on('error', reject)
