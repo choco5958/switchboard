@@ -65,11 +65,13 @@ export function BrowserView({
   sessions,
   visible,
   scope,
+  lan = false,
   onShow,
 }: {
   sessions: Session[]
   visible: boolean
   scope?: string | null
+  lan?: boolean // sessions may drive private network pages too (BROWSER_LAN_KEY)
   onShow?: () => void
 }) {
   const view = useRef<WebviewTag | null>(null)
@@ -299,19 +301,27 @@ export function BrowserView({
 
   // A session drives this browser (browser_* tools, src/renderer/src/agentBrowser.ts). The tab
   // comes to the front, so the person sees what it does, and so the page has a size to act in.
+  // Only these acts are held to local pages; the person's own browsing goes anywhere.
   const revision = useRef(0)
+  const lanRef = useRef(lan)
+  lanRef.current = lan
   const showRef = useRef(onShow)
   showRef.current = onShow
   const loadRef = useRef(load)
   loadRef.current = load
   useEffect(() => {
     const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+    const local = (url: string) => isLocalUrl(url, lanRef.current)
+    const allowed = () =>
+      lanRef.current
+        ? 'this computer (localhost, 127.0.0.1) or the private network'
+        : 'this computer (localhost, 127.0.0.1); private network addresses need the person to allow them in Settings > Agent CLIs'
     const snapshot = async (): Promise<string> => {
       revision.current += 1
       const read = (await run(snapshotScript(revision.current))) as Snapshot | undefined
       if (!read) throw new Error('the page cannot be read yet')
       // Checked again after every move: a redirect or a link may have left the local pages.
-      if (!isLocalUrl(read.url)) throw new Error('the page is no longer local (a redirect or a link left it); open a local page with browser_navigate')
+      if (!local(read.url)) throw new Error(`the page is no longer local (a redirect or a link left it); open a page on ${allowed()} with browser_navigate`)
       return snapshotText(read)
     }
     const element = (ref: unknown) => {
@@ -325,7 +335,7 @@ export function BrowserView({
       if (commentingRef.current) throw new Error('the person is leaving screen comments in this browser now; try again later')
       if (action === 'navigate') {
         const url = String(args.url ?? '')
-        if (!isLocalUrl(url)) throw new Error('only local pages (localhost, 127.0.0.1, the private network) can be opened')
+        if (!local(url)) throw new Error(`only pages on ${allowed()} can be opened`)
         const stopped = new Promise<void>(resolve => {
           const done = () => {
             wv.removeEventListener('did-stop-loading', done)
@@ -338,7 +348,7 @@ export function BrowserView({
         await settle(300)
         return { text: await snapshot() }
       }
-      if (!isLocalUrl(pageRef.current)) throw new Error('the browser shows a page that is not local; open a local page with browser_navigate first')
+      if (!local(pageRef.current)) throw new Error(`the browser shows a page that is not local; open a page on ${allowed()} with browser_navigate first`)
       if (action === 'snapshot') return { text: await snapshot() }
       if (action === 'console') return { text: logText(pageLog.current) || 'no console warnings, errors or failed requests on this page' }
       if (action === 'screenshot') {

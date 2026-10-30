@@ -9,6 +9,7 @@ import { TopBar } from './TopBar'
 import { nextAfter, queueOf, reachOf, taskFacts, tasksByProject, waitingFirst, type Attention } from './model'
 import { ArchivePage } from './pages/ArchivePage'
 import { DebugPage } from './pages/DebugPage'
+import { BROWSER_LAN_KEY } from './agentBrowser'
 import { DebugPanel } from './pages/DebugPanel'
 import { GalleryPage } from './pages/GalleryPage'
 import { HomePage } from './pages/HomePage'
@@ -787,6 +788,7 @@ export function App() {
             sessions={state.sessions}
             visible={active.kind === 'debug'}
             scope={scope}
+            lan={state.settings[BROWSER_LAN_KEY] === true}
             onShow={() => {
               open({ kind: 'debug' })
               setRailPick('debug')

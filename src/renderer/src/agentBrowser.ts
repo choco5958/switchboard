@@ -2,13 +2,18 @@
 // the page as a short list of the things it can act on, each with a ref bound to that
 // reading: a ref from an older reading is refused, so the session never clicks a stale
 // element. Clicks and typing go in as real input events; a click on an element something
-// else covers is refused with what covers it. Only local pages (a dev server on this
-// computer or the private network) can be driven.
+// else covers is refused with what covers it. Only pages on this computer can be driven, and
+// pages on the private network too when the person allows it in Settings (BROWSER_LAN_KEY).
 
 export const ELEMENTS_MAX = 200
 export const TEXT_MAX = 12_000
 
-export function isLocalUrl(raw: string): boolean {
+// Settings: true lets sessions drive private network pages (192.168.x.x, 10.x.x.x, name.local)
+// too. Off unless set: a router's or a NAS's admin page lives there, and this browser keeps
+// its sign-ins.
+export const BROWSER_LAN_KEY = 'agentBrowserLan'
+
+export function isLocalUrl(raw: string, lan = false): boolean {
   let url: URL
   try {
     url = new URL(raw)
@@ -17,11 +22,12 @@ export function isLocalUrl(raw: string): boolean {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
   const host = url.hostname.replace(/^\[|\]$/g, '')
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host === '::1') return true
+  if (host === 'localhost' || host.endsWith('.localhost') || host === '::1') return true
+  if (lan && host.endsWith('.local')) return true
   const parts = host.split('.').map(Number)
   if (parts.length !== 4 || parts.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return false
   const [a, b] = parts as [number, number, number, number]
-  return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31)
+  return a === 127 || (lan && (a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31)))
 }
 
 export type Snapshot = {

@@ -1,11 +1,13 @@
 import { expect, test } from 'vitest'
 import { isLocalUrl, refRevision, snapshotText } from './agentBrowser'
 
-test('only pages on this computer or the private network can be driven', () => {
-  for (const url of ['http://localhost:5173/', 'http://127.0.0.1:8951/x', 'https://app.localhost/', 'http://192.168.0.7:3000', 'http://10.1.2.3', 'http://172.20.0.2', 'http://[::1]:4000', 'http://mac.local:3000'])
-    expect(isLocalUrl(url), url).toBe(true)
-  for (const url of ['https://github.com', 'http://172.32.0.1', 'http://8.8.8.8', 'file:///etc/passwd', 'javascript:alert(1)', 'not a url'])
-    expect(isLocalUrl(url), url).toBe(false)
+test('only pages on this computer can be driven, the private network too when the person allows it', () => {
+  const here = ['http://localhost:5173/', 'http://127.0.0.1:8951/x', 'https://app.localhost/', 'http://[::1]:4000', 'http://127.1.2.3']
+  const lan = ['http://192.168.0.1', 'http://192.168.0.7:3000', 'http://10.1.2.3', 'http://172.20.0.2', 'http://mac.local:3000']
+  const never = ['https://github.com', 'http://172.32.0.1', 'http://8.8.8.8', 'file:///etc/passwd', 'javascript:alert(1)', 'not a url']
+  for (const url of here) expect([isLocalUrl(url), isLocalUrl(url, true)], url).toEqual([true, true])
+  for (const url of lan) expect([isLocalUrl(url), isLocalUrl(url, true)], url).toEqual([false, true])
+  for (const url of never) expect([isLocalUrl(url), isLocalUrl(url, true)], url).toEqual([false, false])
 })
 
 test('a ref names the reading it came from', () => {

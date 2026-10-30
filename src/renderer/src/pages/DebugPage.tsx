@@ -23,11 +23,13 @@ export function DebugPage({
   sessions,
   visible,
   scope,
+  lan,
   onShow,
 }: {
   sessions: Session[]
   visible: boolean
   scope?: string | null
+  lan?: boolean
   onShow?: () => void
 }) {
   const showRef = useRef(onShow)
@@ -81,5 +83,5 @@ export function DebugPage({
     }
   }, [])
 
-  return <BrowserView sessions={sessions} visible={visible} scope={scope} onShow={onShow} />
+  return <BrowserView sessions={sessions} visible={visible} scope={scope} lan={lan} onShow={onShow} />
 }

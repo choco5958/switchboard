@@ -6,6 +6,7 @@ import { useToast } from '../parts'
 import { t } from '../../../shared/i18n'
 import { tx } from '../tx'
 import { saveSetting } from '../settings'
+import { BROWSER_LAN_KEY } from '../agentBrowser'
 
 // Settings for agent CLIs other than Claude Code: which presets are installed, and
 // the person's own entries. Saving an entry runs nothing; its dock button does.
@@ -15,6 +16,7 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
   const showOthers = showOtherAgents(settings[SHOW_OTHER_AGENTS_KEY])
   const trusting = trustFolders(settings[TRUST_FOLDERS_KEY])
   const closeOnQuit = settings[CLOSE_TERMINALS_KEY] === true
+  const browserLan = settings[BROWSER_LAN_KEY] === true
   // null until known: where no terminal host runs (Windows), terminals always close with the app.
   const [keeps, setKeeps] = useState<boolean | null>(null)
   const [found, setFound] = useState<AgentDetect | null>(null)
@@ -51,6 +53,11 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 
+  const toggleBrowserLan = async () => {
+    const reply = await saveSetting(BROWSER_LAN_KEY, browserLan ? null : true)
+    if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
+  }
+
   const toggleCloseOnQuit = async () => {
     const reply = await saveSetting(CLOSE_TERMINALS_KEY, closeOnQuit ? null : true)
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
@@ -79,6 +86,11 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
         <input type="checkbox" checked={trusting} onChange={() => void toggleTrust()} />
         {t('agents.trustFolders')}
         <span className="quiet small">{t('agents.trustFoldersHint')}</span>
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={browserLan} onChange={() => void toggleBrowserLan()} />
+        {t('agents.browserLan')}
+        <span className="quiet small">{t('agents.browserLanHint')}</span>
       </label>
       {keeps === true && (
         <label className="check-row">

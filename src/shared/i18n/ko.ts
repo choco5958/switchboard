@@ -849,6 +849,8 @@ export const ko = {
   'agents.showOthersHint': '기본은 켜짐입니다. 끄면 독에는 Claude와 셸 버튼만 보입니다. 켜면 설치된 CLI와 직접 추가한 CLI 버튼이 나옵니다.',
   'agents.trustFolders': '폴더 신뢰 질문 미리 처리',
   'agents.trustFoldersHint': 'Codex, Copilot, Cursor를 앱에서 처음 여는 폴더에 대해, 그 CLI의 "이 폴더를 신뢰할까요?"에 미리 예라고 기록해 둡니다. 신뢰 질문이 화면에 떠 있으면 앱이 입력하는 답과 예약 프롬프트가 거기서 멈추기 때문입니다. CLI의 승인과 샌드박스 설정은 바꾸지 않습니다.',
+  'agents.browserLan': '내장 브라우저에서 사설망 주소도 허용',
+  'agents.browserLanHint': '기본은 꺼짐입니다. 꺼 두면 세션의 browser_* 도구는 이 컴퓨터의 주소(localhost, 127.0.0.1)만 엽니다. 켜면 192.168.x.x, 10.x.x.x 같은 사설망 주소와 이름.local도 엽니다. 공유기나 NAS의 관리 화면도 사설망에 있고 내장 브라우저는 로그인을 기억하므로, 필요할 때만 켭니다. 직접 주소를 입력해 여는 페이지는 이 설정과 상관없습니다.',
   'agents.closeOnQuit': '앱을 닫을 때 터미널도 닫기',
   'agents.closeOnQuitHint': '기본은 꺼짐입니다. 꺼 두면 앱을 닫거나 다시 시작하거나 업데이트해도 터미널과 그 안의 Claude Code, 다른 CLI가 계속 실행되고, 앱을 다시 열면 그대로 보입니다. 켜면 앱을 닫을 때 모든 터미널이 함께 닫힙니다. 탭의 ×는 언제나 그 터미널을 닫습니다.',
   'agents.closeOnQuitOff': '이 컴퓨터에서는 앱을 닫으면 터미널도 함께 닫힙니다.',

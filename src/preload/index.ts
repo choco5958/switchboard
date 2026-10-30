@@ -18,7 +18,6 @@ const api: IdeApi = {
   linearList: filter => ipcRenderer.invoke('linear:list', filter),
   checkWorktree: (path, branch) => ipcRenderer.invoke('worktree:check', path, branch),
   removeWorktree: (nodeId, path, force) => ipcRenderer.invoke('worktree:remove', nodeId, path, force),
-  devStart: target => ipcRenderer.invoke('dev:start', target),
   devStop: id => ipcRenderer.invoke('dev:stop', id),
   devRestart: target => ipcRenderer.invoke('dev:restart', target),
   devPull: repo => ipcRenderer.invoke('dev:pull', repo),
