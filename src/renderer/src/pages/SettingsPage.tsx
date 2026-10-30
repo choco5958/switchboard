@@ -6,6 +6,7 @@ import { AgentSettings } from './AgentSettings'
 import { RoutinesSection } from './RoutinesSection'
 import { TelegramSection } from './TelegramSection'
 import { MobileSection } from './MobileSection'
+import { UpdateSection } from './UpdateSection'
 import type { Routine, RoutineRun } from '../../../shared/types'
 import type { ProjectInfo } from '../../../shared/projects'
 import { saveSetting } from '../settings'
@@ -18,6 +19,7 @@ const SECTIONS: [string, Key][] = [
   ['settings-routines', 'routines.title'],
   ['settings-telegram', 'telegram.title'],
   ['settings-mobile', 'mobile.title'],
+  ['settings-update', 'updates.title'],
   ['settings-dev', 'settings.dev'],
 ]
 
@@ -162,6 +164,7 @@ export function SettingsPage({
       <RoutinesSection routines={routines} runs={runs} projects={projects} customs={customAgents(settings[CUSTOM_AGENTS_KEY])} />
       <TelegramSection />
       <MobileSection />
+      <UpdateSection />
       <section id="settings-dev" className="settings-row settings-dev">
         <h2>{t('settings.dev')}</h2>
         <label className="check-row">

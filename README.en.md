@@ -177,7 +177,7 @@ Instead of step 4 you can run `xattr -dr com.apple.quarantine /Applications/Swit
 
 </details>
 
-**Updates**: the app checks for new versions, downloads them and installs when you quit. An update never closes the app by itself, and an update with a missing or wrong signature is not installed. On macOS and Linux the app terminals keep running through an update. From macOS 0.3.4 or earlier, download and install once by hand.
+**Updates**: the app checks for new versions, downloads them and installs when you quit. Settings > Updates shows your version and checks right away. An update never closes the app by itself, and an update with a missing or wrong signature is not installed. On macOS and Linux the app terminals keep running through an update. From macOS 0.3.4 or earlier, download and install once by hand.
 
 <details>
 <summary><b>Connecting Claude Code from other terminals</b></summary>

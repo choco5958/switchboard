@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { IdeApi } from '../shared/types'
+import type { IdeApi, UpdateStatus } from '../shared/types'
 
 const api: IdeApi = {
   state: () => ipcRenderer.invoke('bridge:state'),
@@ -66,6 +66,14 @@ const api: IdeApi = {
   },
   accountInfo: () => ipcRenderer.invoke('account:info'),
   measureAccounts: () => ipcRenderer.invoke('account:measure'),
+  updateStatus: () => ipcRenderer.invoke('update:status'),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  onUpdateStatus: listener => {
+    const handler = (_e: unknown, status: UpdateStatus) => listener(status)
+    ipcRenderer.on('update:status', handler)
+    return () => ipcRenderer.off('update:status', handler)
+  },
 }
 
 contextBridge.exposeInMainWorld('ide', api)

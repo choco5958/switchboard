@@ -227,6 +227,22 @@ export type IdeApi = {
   onTermExit: (listener: (event: { id: string; exitCode: number }) => void) => () => void
   accountInfo: () => Promise<AccountInfo | null>
   measureAccounts: () => Promise<AccountInfo | null>
+  // Feature area: the app's own updates (src/main/updater.ts), for the settings page.
+  updateStatus: () => Promise<UpdateStatus>
+  updateCheck: () => Promise<UpdateStatus>
+  updateInstall: () => Promise<void>
+  onUpdateStatus: (listener: (status: UpdateStatus) => void) => () => void
+}
+
+// Where the app's own update stands. `off`: this copy does not update itself (a run from the
+// repo, a capture). `manual`: a newer version is out that the person downloads themselves (a
+// .deb, a Mac app in a folder it cannot write). `refused`: its signature did not hold.
+export type UpdateStatus = {
+  version: string
+  state: 'off' | 'idle' | 'checking' | 'latest' | 'downloading' | 'ready' | 'manual' | 'refused' | 'error'
+  latest?: string
+  checkedAt?: number
+  error?: string
 }
 
 // Feature area: the signed-in Claude account for the top bar (masked email, readable plan).

@@ -17,7 +17,7 @@ import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
 import { buildId, copyRuntime, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
-import { startUpdates } from './updater'
+import { registerUpdates, startUpdates } from './updater'
 import { requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
 import { bridgeClient } from './bridgeClient'
 import { ROUTINE_FAIL_LIMIT } from '../../bridge/schedule.ts'
@@ -502,6 +502,7 @@ ipcMain.handle('bridge:send', (_e, sessionId: string, text: string, kind: string
   call('POST', '/outbox', { sessionId, text, kind, taskTitle }),
 )
 // Element shots for screen comments; the prompt carries the path so the session can read the image.
+registerUpdates(ipcMain, send)
 ipcMain.handle('shots:save', (_e, dataUrl: string): string | null => saveShot(join(DIR, 'shots'), dataUrl))
 ipcMain.handle('bridge:hold', (_e, id: number) => call('POST', `/questions/${Number(id)}/hold`))
 ipcMain.handle('bridge:forward', (_e, id: number, to: string) => call('POST', `/questions/${Number(id)}/forward`, { to: String(to) }))

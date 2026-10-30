@@ -12,13 +12,14 @@
 // the terminal host keeps the terminals running through it (src/main/termHost.ts), so it closes
 // none unless the person set the app to close them at a quit.
 
-import { app, dialog, Notification, powerMonitor, shell } from 'electron'
+import { app, dialog, Notification, powerMonitor, shell, type IpcMain } from 'electron'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import updater, { type UpdateInfo } from 'electron-updater'
 import { t } from '../shared/i18n'
 import { bundleOf, canReplace, cleanUpdates, download, isNewer, releaseUrl, startSwap, unpack, zipFor } from './macUpdate'
 import { channelFile, signedUpdate, type SignedUpdate } from './updateSignature'
+import type { UpdateStatus } from '../shared/types'
 
 export const RELEASES_URL = 'https://github.com/choco5958/switchboard/releases/latest'
 const CHECK_MS = 6 * 3600_000
@@ -44,9 +45,11 @@ export function terminalsClosing(terminals: readonly { alive: boolean }[]): numb
 // file: a version it refuses is not reported, so nothing is downloaded for it. The returned
 // function gives the signed file of a version electron-updater then reports, or undefined for
 // one this did not check (electron-updater reports the very object it checked; a copy is refused).
+// `refused` hears of a version whose signature did not hold.
 export function requireSignature(
   checker: { isUpdateSupported: (info: UpdateInfo) => boolean | Promise<boolean> },
   check: (info: UpdateInfo) => Promise<SignedUpdate>,
+  refused: (info: UpdateInfo) => void = () => undefined,
 ): (info: UpdateInfo) => SignedUpdate | undefined {
   const supported = checker.isUpdateSupported
   const signed = new WeakMap<UpdateInfo, SignedUpdate>()
@@ -57,10 +60,50 @@ export function requireSignature(
       return true
     } catch (error) {
       console.error('update refused:', error instanceof Error ? error.message : error)
+      refused(info)
       return false
     }
   }
   return info => signed.get(info)
+}
+
+// Where the update stands, for the settings page; `watch` hears every change.
+export function updateTracker(version: string) {
+  let status: UpdateStatus = { version, state: 'off' }
+  const listeners = new Set<(status: UpdateStatus) => void>()
+  return {
+    get: () => status,
+    set(next: Partial<UpdateStatus>) {
+      status = { ...status, ...next, version }
+      for (const listener of listeners) listener(status)
+    },
+    watch(listener: (status: UpdateStatus) => void): () => void {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+}
+
+// A check now does nothing while one runs or a version is on its way or waiting to install.
+export const checkable = (state: UpdateStatus['state']): boolean => !['off', 'checking', 'downloading', 'ready'].includes(state)
+
+let tracked: ReturnType<typeof updateTracker> | null = null
+const tracker = () => (tracked ??= updateTracker(app.getVersion()))
+// Set by startUpdates: a check now, and the install of a version waiting for it.
+let checkNow: () => void = () => undefined
+let installReady: () => void = () => undefined
+
+// The settings page's view of it: the status, a check now, and the install of what waits.
+export function registerUpdates(ipc: Pick<IpcMain, 'handle'>, sendTo: (channel: string, payload: unknown) => void): void {
+  tracker().watch(status => sendTo('update:status', status))
+  ipc.handle('update:status', () => tracker().get())
+  ipc.handle('update:check', () => {
+    if (checkable(tracker().get().state)) checkNow()
+    return tracker().get()
+  })
+  ipc.handle('update:install', () => {
+    if (tracker().get().state === 'ready') installReady()
+  })
 }
 
 function notify(body: string, onClick: () => void): void {
@@ -112,26 +155,41 @@ async function installNowAllowed(terminals: () => readonly { alive: boolean }[],
 export function startUpdates(bridgePid: () => Promise<number | null>, terminals: () => readonly { alive: boolean }[]): void {
   if (!app.isPackaged || process.env.CLAUDE_IDE_CAPTURE) return
   const { autoUpdater } = updater
+  const status = tracker()
+  status.set({ state: 'idle' })
   const installs = installsUpdates()
-  const mac = process.platform === 'darwin' ? macUpdates(terminals) : null
+  const mac = process.platform === 'darwin' ? macUpdates(terminals, status) : null
   // Downloaded below, once the signature holds.
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = installs
-  const signed = requireSignature(autoUpdater, info => signedUpdate(info, channelFile()))
+  // A version the last check found but whose signature did not hold.
+  let refused = ''
+  const signed = requireSignature(autoUpdater, info => signedUpdate(info, channelFile()), info => (refused = info.version))
   let told = ''
   const tellAvailable = (version: string) => {
+    status.set({ state: 'manual', latest: version, checkedAt: Date.now() })
     if (told === version) return
     told = version
     notify(t('update.available', { version }), () => void shell.openExternal(RELEASES_URL))
   }
+  autoUpdater.on('checking-for-update', () => {
+    refused = ''
+    if (checkable(status.get().state)) status.set({ state: 'checking', error: undefined })
+  })
+  autoUpdater.on('update-not-available', () => {
+    if (!['checking', 'idle', 'latest', 'error', 'refused'].includes(status.get().state)) return
+    status.set(refused ? { state: 'refused', latest: refused, checkedAt: Date.now() } : { state: 'latest', latest: undefined, checkedAt: Date.now() })
+  })
   autoUpdater.on('update-available', info => {
     const update = signed(info)
     if (!update) return
     // Here, within the event: electron-updater downloads what this check found, the file just
     // compared with the signed one. Its own sha512 check of the download does the rest; a failure
     // reaches the error handler below.
-    if (installs) void autoUpdater.downloadUpdate().catch(() => undefined)
-    else if (mac) void mac(update).then(done => done || tellAvailable(update.version))
+    if (installs) {
+      if (status.get().state !== 'ready') status.set({ state: 'downloading', latest: update.version, checkedAt: Date.now() })
+      void autoUpdater.downloadUpdate().catch(() => undefined)
+    } else if (mac) void mac(update).then(done => done || tellAvailable(update.version))
     else tellAvailable(update.version)
   })
   // Set once an update waits to install; the quit then stops the bridge first, once.
@@ -143,11 +201,13 @@ export function startUpdates(bridgePid: () => Promise<number | null>, terminals:
   }
   autoUpdater.on('update-downloaded', info => {
     downloaded = true
-    notify(t('update.ready', { version: info.version }), () => {
+    const install = () =>
       void installNowAllowed(terminals, info.version).then(now => {
         if (now) void stopBridge().finally(() => autoUpdater.quitAndInstall())
       })
-    })
+    installReady = install
+    status.set({ state: 'ready', latest: info.version })
+    notify(t('update.ready', { version: info.version }), install)
   })
   app.on('before-quit', event => {
     if (!downloaded || stopped || process.platform !== 'win32') return
@@ -155,8 +215,12 @@ export function startUpdates(bridgePid: () => Promise<number | null>, terminals:
     event.preventDefault()
     void stopBridge().finally(() => app.quit())
   })
-  autoUpdater.on('error', error => console.error('update check failed:', error.message))
+  autoUpdater.on('error', error => {
+    console.error('update check failed:', error.message)
+    if (['checking', 'downloading'].includes(status.get().state)) status.set({ state: 'error', error: error.message, checkedAt: Date.now() })
+  })
   const check = () => void autoUpdater.checkForUpdates().catch(() => undefined)
+  checkNow = check
   check()
   setInterval(check, CHECK_MS).unref()
 }
@@ -168,7 +232,7 @@ export function startUpdates(bridgePid: () => Promise<number | null>, terminals:
 // keeps a moved or deleted file open for the process using it, and its scripts are a copy under
 // ~/.claude-ide/runtime (runtime.ts). The new version replaces it when it starts (staleBridge).
 // The terminal host does the same and is not replaced: it keeps its terminals until they end.
-function macUpdates(terminals: () => readonly { alive: boolean }[]): (found: SignedUpdate) => Promise<boolean> {
+function macUpdates(terminals: () => readonly { alive: boolean }[], status: ReturnType<typeof updateTracker>): (found: SignedUpdate) => Promise<boolean> {
   const bundle = bundleOf(app.getPath('exe'))
   const dir = join(app.getPath('userData'), 'updates')
   const log = join(app.getPath('userData'), 'update.log')
@@ -199,11 +263,15 @@ function macUpdates(terminals: () => readonly { alive: boolean }[]): (found: Sig
     })
   return async found => {
     const { version } = found
-    if (!isNewer(version, app.getVersion())) return true
+    if (!isNewer(version, app.getVersion())) {
+      status.set({ state: 'latest', latest: undefined, checkedAt: Date.now() })
+      return true
+    }
     if (staged?.version === version || busy === version) return true
     const file = zipFor(found.files, version, process.arch)
     if (!bundle || !file || failed.has(version) || !canReplace(bundle)) return false
     busy = version
+    status.set({ state: 'downloading', latest: version, checkedAt: Date.now() })
     try {
       mkdirSync(dir, { recursive: true, mode: 0o700 })
       const zip = join(dir, file.name)
@@ -214,11 +282,16 @@ function macUpdates(terminals: () => readonly { alive: boolean }[]): (found: Sig
       const before = staged
       staged = { version, fresh, stage }
       if (before) rmSync(before.stage, { recursive: true, force: true })
+      installReady = () => installNow(version)
+      status.set({ state: 'ready', latest: version })
       notify(t('update.ready', { version }), () => installNow(version))
       return true
     } catch (error) {
       console.error('update download failed:', error instanceof Error ? error.message : error)
-      return false
+      // A version staged before still waits to install; otherwise the person downloads it.
+      if (!staged) return false
+      status.set({ state: 'ready', latest: staged.version })
+      return true
     } finally {
       busy = ''
     }

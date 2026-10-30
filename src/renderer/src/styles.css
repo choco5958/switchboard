@@ -735,3 +735,4 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .agent-none { margin: 4px 8px; }
 .agent-picker .agent-more { justify-content: flex-start; color: var(--quiet); }
 .settings-toc { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 16px; }
+.settings-update .settings-actions { display: flex; align-items: center; gap: 12px; margin: 8px 0; }

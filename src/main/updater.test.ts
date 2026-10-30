@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { UpdateInfo } from 'electron-updater'
-import { installsUpdates, requireSignature, stopBridgeNow, terminalsClosing } from './updater'
+import { checkable, installsUpdates, requireSignature, stopBridgeNow, terminalsClosing, updateTracker } from './updater'
 
 // The real modules would install Electron's binary while the tests run, and two workers doing
 // that at once collide (CI). These tests touch neither.
@@ -68,5 +68,29 @@ describe('updates', () => {
     expect(await checker.isUpdateSupported(info('0.3.8'))).toBe(false)
     expect(checked).toEqual(['0.3.6', '0.3.7'])
     errors.mockRestore()
+  })
+
+  it('keeps where the update stands for the settings page, and checks again only when nothing runs or waits', () => {
+    const tracker = updateTracker('0.3.6')
+    const heard: string[] = []
+    const stop = tracker.watch(status => heard.push(`${status.state}:${status.latest ?? ''}`))
+    expect(tracker.get()).toEqual({ version: '0.3.6', state: 'off' })
+    tracker.set({ state: 'downloading', latest: '0.3.7' })
+    tracker.set({ state: 'ready', version: '9.9.9' } as never)
+    // The version is always the running app's own.
+    expect(tracker.get()).toMatchObject({ version: '0.3.6', state: 'ready', latest: '0.3.7' })
+    stop()
+    tracker.set({ state: 'latest' })
+    expect(heard).toEqual(['downloading:0.3.7', 'ready:0.3.7'])
+    expect(['off', 'checking', 'downloading', 'ready'].map(state => checkable(state as never))).toEqual([false, false, false, false])
+    expect(['idle', 'latest', 'manual', 'refused', 'error'].map(state => checkable(state as never))).toEqual([true, true, true, true, true])
+  })
+
+  it('tells which version a check refused for its signature', async () => {
+    const refused: string[] = []
+    const checker = { isUpdateSupported: () => true }
+    requireSignature(checker, () => Promise.reject(new Error('bad signature')), info => refused.push(info.version))
+    expect(await checker.isUpdateSupported({ version: '0.3.8' } as UpdateInfo)).toBe(false)
+    expect(refused).toEqual(['0.3.8'])
   })
 })
