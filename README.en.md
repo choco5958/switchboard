@@ -63,7 +63,7 @@ Pick an installed CLI from ▾ in the dock. Each CLI's own config files are left
 </td>
 <td width="50%" valign="top">
 <h3>⌘K to anything</h3>
-Jump to any task, question or project. Group projects into folders and fold them away.
+Jump to any task, decision question or project. Gather projects into groups and fold them away.
 </td>
 </tr>
 </table>
@@ -83,7 +83,7 @@ Jump to any task, question or project. Group projects into folders and fold them
 
 #### Decisions and tasks
 - **Decision queue**: a session posts a question with `ask_decision` and goes on working without waiting. The same question is never posted twice.
-- **Waiting on you**: tasks with a pending decision, a turn stalled for over 5 minutes, a usage limit or a dropped session gather at the top of the sidebar. Stalled sessions and lifted limits also come as notifications.
+- **Waiting for you**: tasks with a pending decision, a session stalled mid-reply for over 5 minutes, a usage limit or a dropped session gather at the top of the sidebar. Stalled sessions and lifted limits also come as notifications.
 - **Per project**: pick a project on the left and the sidebar, home, log and dock show only that project.
 
 #### Sessions working together
@@ -109,7 +109,7 @@ Jump to any task, question or project. Group projects into folders and fold them
 - Type `/switchboard` in Claude Code to see that session's flow and decisions in a side pane.
 
 #### Display
-- Group projects in the sidebar with `+ Folder` and fold them. Delete a folder with `Delete folder` in its ⋯ menu or the Delete key; its projects stay in the list. Removing a project from the list keeps its files and history.
+- Gather projects in the sidebar with `+ Group` and fold them. Delete a group with `Delete group` in its ⋯ menu or the Delete key; its projects stay in the list. Removing a project from the list keeps its files and history.
 - 한국어, English, 日本語, 简体中文; it follows the OS language at first.
 - 13 themes: Classic navy, Adventure journal, Phosphor terminal, Pixel dots, Subway map, Circuit board, Modern terminal, Blue DOS window, Dracula, Nord, Solarized Dark and Light, GitHub Light.
 - With Orca installed, each node can get a worktree, and a Linear issue can start a task.
@@ -188,7 +188,7 @@ The app's `+ Claude` terminals load the mod themselves. To connect sessions you 
 /plugin install ide-bridge --marketplace choco5958/switchboard
 ```
 
-Answer `y` to `Add marketplace?` and pick the user scope. Sessions opened after that connect, and the mod starts the bridge if it is not running. Open the app once first so the mod knows how to start the bridge (`~/.claude-ide/start-bridge.json`).
+Answer `y` to `Add marketplace?` and pick the user scope. Sessions opened after that connect, and the mod starts the background server (the bridge) if it is not running. Open the app once first so the mod knows how to start it (`~/.claude-ide/start-bridge.json`).
 
 </details>
 
@@ -226,7 +226,7 @@ Turn on `Get notifications on this phone` in the home screen app to be notified 
 <summary><b>Without Tailscale on the phone, or on the same Wi-Fi only</b></summary>
 
 - **Tailscale Funnel**: turn on `Accept connections from other Wi-Fi and mobile data` under `Turn on Tailscale HTTPS` to open the same HTTPS address to the internet, so the phone works from any network without Tailscale. Allow Funnel for this computer once in the Tailscale admin page (Settings shows the link). Anyone with the address can open the page, but the content is encrypted with a key per phone, so only paired phones can read and answer.
-- **Same Wi-Fi (HTTP address)**: choose `This computer's name` (`name.local`) or an IP to skip Tailscale. Over this connection you can only answer decisions with an option, deny, or send an ask to the terminal. Allowing permission asks, messaging sessions and notes on answers need a phone paired over Tailscale HTTPS, because whoever controls the network can swap a page sent over HTTP. A Tailscale IP (`100.x.y.z`) is HTTP too and has the same limits.
+- **Same Wi-Fi (HTTP address)**: choose `This computer's name` (`name.local`) or an IP to skip Tailscale. Over this connection you can only answer decisions with an option, deny, or answer in the terminal. Allowing permission asks, messaging sessions and notes on answers need a phone paired over Tailscale HTTPS, because whoever controls the network can swap a page sent over HTTP. A Tailscale IP (`100.x.y.z`) is HTTP too and has the same limits.
 - Each phone pairs on its own; `Disconnect` in Settings removes it. Phones paired with 0.3.5 or earlier must pair again with a QR code for the Tailscale HTTPS address to allow permission asks.
 
 </details>
