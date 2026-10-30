@@ -16,6 +16,7 @@ const api: IdeApi = {
   commandResult: id => ipcRenderer.invoke('bridge:call', 'GET', `/commands/${id}`),
   bridge: (method, path, body) => ipcRenderer.invoke('bridge:call', method, path, body),
   linearList: filter => ipcRenderer.invoke('linear:list', filter),
+  linearAvailable: () => ipcRenderer.invoke('linear:available'),
   checkWorktree: (path, branch) => ipcRenderer.invoke('worktree:check', path, branch),
   removeWorktree: (nodeId, path, force) => ipcRenderer.invoke('worktree:remove', nodeId, path, force),
   devStop: id => ipcRenderer.invoke('dev:stop', id),

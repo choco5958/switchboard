@@ -27,8 +27,12 @@ import { limitedUntil } from '../../shared/limit'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
 import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, railPickFor, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
 import { applyTheme } from './theme'
+import { countLabel } from './taskInfo'
 import { installSettingSaver, postSetting, saveSetting, settle, withPending, type Pending } from './settings'
 import { LOCALE_TAG, resolveLang, setLang, stageLabel, t, type Key } from '../../shared/i18n'
+import { waitCount, waitParts } from './waiting'
+import { isHelpKey, isPaletteKey } from './shortcuts'
+import { OPEN_SETTINGS, ShortcutHelp, scrollToSection } from './flows'
 
 const EMPTY: BridgeState = {
   sessions: [],
@@ -261,11 +265,16 @@ export function App() {
     )
   }, [loaded, state.tasks, state.questions])
 
+  // The shortcut list (? or ⌘/); shortcuts.ts names every key the app listens for.
+  const [help, setHelp] = useState(false)
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      if (isPaletteKey(event)) {
         event.preventDefault()
         setPalette(open => !open)
+      } else if (isHelpKey(event) && !event.defaultPrevented) {
+        event.preventDefault()
+        setHelp(open => !open)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -287,6 +296,25 @@ export function App() {
     open({ kind: 'question', id })
   }
   openQuestionRef.current = openQuestion
+  // The settings tab, scrolled to one of its sections (the update chip, the first run's steps).
+  const openSettingsAt = useCallback(
+    (id: string) => {
+      open({ kind: 'settings' })
+      scrollToSection(id)
+    },
+    [open],
+  )
+  useEffect(() => {
+    const go = (event: Event) => openSettingsAt(String((event as CustomEvent<string>).detail))
+    window.addEventListener(OPEN_SETTINGS, go)
+    return () => window.removeEventListener(OPEN_SETTINGS, go)
+  }, [openSettingsAt])
+  // Everything waiting for the person, in one sidebar: permission asks, decisions, tasks to check.
+  const showWaiting = () => {
+    setRailPick('question')
+    setSection('questions')
+    setSidebarOpen(true)
+  }
   // Everything in the sidebar, home, log and dock is seen through the chosen project.
   const view = useMemo(() => scopeState(state, scope), [state, scope])
   const saved = useMemo(() => savedProjects(state.settings.projects), [state.settings.projects])
@@ -339,6 +367,12 @@ export function App() {
   )
   const { pending, held } = useMemo(() => queueOf(view.questions), [view.questions])
   const pendingApprovals = (view.approvals ?? []).filter(a => a.status === 'pending')
+  // The one "waiting for me" count (waiting.ts): the rail badge, the top bar, the sidebar and the palette.
+  const wait = waitCount(state, attentionOfTask)
+  const waitHere = scope === null ? null : waitCount(view, attentionOfTask)
+  const waitShown = waitHere ?? wait
+  // Running tasks that need a look for a reason other than a question (those wait as questions).
+  const checkTasks = waitingTasks.waiting.filter(task => attentionOfTask(task) !== 'question')
   const reachOfQuestion = (q: Question) => reachOf(state.sessions.find(s => s.id === q.session_id), state.live ?? [])
   const inScope = (tab: Tab): boolean => {
     if (scope === null) return true
@@ -357,7 +391,12 @@ export function App() {
   // Reports, syncs and Linear sends go to the newest session of the project in view, or nowhere.
   const latestSession = useMemo(() => pickSession(state.sessions, scope), [state.sessions, scope])
   const showDev = devMenuShown(state.settings)
-  const rail = RAIL.filter(r => !r.dev || showDev)
+  // Linear comes through Orca's CLI; without Orca the screen could only show an error.
+  const [linearOk, setLinearOk] = useState(false)
+  useEffect(() => {
+    void window.ide.linearAvailable?.().then(setLinearOk, () => setLinearOk(false))
+  }, [])
+  const rail = RAIL.filter(r => (!r.dev || showDev) && (r.tab?.kind !== 'linear' || linearOk))
   // The tab on screen, not the stored one: a tab of another project is hidden and home shows instead.
   const railOn = railActive(rail, { picked: railPick, active: tabKey(active), section, sidebarOpen })
 
@@ -451,7 +490,15 @@ export function App() {
       hint: t(q.status === 'pending' ? 'palette.qPending' : q.status === 'held' ? 'palette.qHeld' : 'palette.qAnswered'),
       run: () => openQuestion(q.id),
     })),
+    {
+      id: 'p-waiting',
+      group: t('palette.groupScreen'),
+      label: t('wait.paletteLabel'),
+      hint: [countLabel(t('wait.label'), wait.total, waitHere ? waitHere.total : null), waitParts(waitShown)].filter(Boolean).join(', '),
+      run: showWaiting,
+    },
     ...rail.filter(r => r.tab).map(r => ({ id: `p${r.label}`, group: t('palette.groupScreen'), label: railLabel(r.label), run: () => open(r.tab!) })),
+    { id: 'p-keys', group: t('palette.groupScreen'), label: t('keys.title'), hint: '?', run: () => setHelp(true) },
     {
       id: 'a-archive',
       group: t('palette.groupAction'),
@@ -558,11 +605,10 @@ export function App() {
           connected={connected === true}
           onSearch={() => setPalette(true)}
           onReport={() => void ask('report')}
-          onQuestions={() => {
-            setRailPick('question')
-            setSection('questions')
-            setSidebarOpen(true)
-          }}
+          onQuestions={showWaiting}
+          wait={wait}
+          waitScoped={waitHere}
+          onOpenUpdate={() => openSettingsAt('settings-update')}
         />
 
         <nav className="rail">
@@ -578,9 +624,9 @@ export function App() {
               aria-current={item.icon === railOn ? 'page' : undefined}
               badge={
                 item.section === 'questions' &&
-                pending.length + pendingApprovals.length > 0 && (
-                  <Badge shape="count" tone="warn" className="rail-badge">
-                    {pending.length + pendingApprovals.length}
+                waitShown.total > 0 && (
+                  <Badge shape="count" tone="warn" className="rail-badge" title={waitParts(waitShown)}>
+                    {waitShown.total}
                   </Badge>
                 )
               }
@@ -635,12 +681,18 @@ export function App() {
                     <span title={t('sidebar.noTasksTitle')}>{t('sidebar.noTasks')}</span>
                   </EmptyState>
                 )}
-                {waitingTasks.waiting.length > 0 && (
-                  <div className="project waiting-group">
-                    <h3>{t('sidebar.waiting', { n: waitingTasks.waiting.length })}</h3>
-                    {waitingTasks.waiting.map(task => taskItem(task, scope === null))}
-                  </div>
-                )}
+                {/* Stays at zero too, so the place to look is always in the same spot. */}
+                <div className="project waiting-group">
+                  <h3>{t('sidebar.waiting', { n: waitShown.total })}</h3>
+                  {waitShown.total === 0 ? (
+                    <EmptyState className="small wait-empty">{t('wait.none')}</EmptyState>
+                  ) : (
+                    <Button variant="link" size="sm" className="wait-parts" onClick={showWaiting}>
+                      {waitParts(waitShown)}
+                    </Button>
+                  )}
+                  {waitingTasks.waiting.map(task => taskItem(task, scope === null))}
+                </div>
                 {tasksByProject(waitingTasks.rest).map(([project, list]) => (
                   <div key={project} className="project">
                     <h3>{project}</h3>
@@ -664,6 +716,14 @@ export function App() {
                     }}
                   />
                 ))}
+              </section>
+            )}
+            {section === 'questions' && checkTasks.length > 0 && (
+              <section className="check-tasks">
+                <h2>
+                  {t('wait.tasksHead')} <span className="count warn">{checkTasks.length}</span>
+                </h2>
+                {checkTasks.map(task => taskItem(task, scope === null))}
               </section>
             )}
             {section === 'questions' && (
@@ -799,6 +859,7 @@ export function App() {
         />
 
         {palette && <Palette items={paletteItems()} onClose={() => setPalette(false)} />}
+        {help && <ShortcutHelp keysAnywhere={state.settings[DECISION_KEYS_KEY] === true} onClose={() => setHelp(false)} />}
         <PropsPanel tab={active} state={state} node={pickedNode} />
         <Toast toasts={toasts} onDismiss={dismiss} />
       </div>

@@ -8,6 +8,7 @@ import { t } from '../../../shared/i18n'
 import { tx } from '../tx'
 import { saveSetting } from '../settings'
 import { BROWSER_LAN_KEY } from '../agentBrowser'
+import { RiskyConfirm } from '../flows'
 
 // Settings for agent CLIs other than Claude Code: which presets are installed, and
 // the person's own entries. Saving an entry runs nothing; its dock button does.
@@ -49,12 +50,17 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 
-  const toggleTrust = async () => {
+  // The two settings that let sessions reach past the default (a folder's own MCP servers and
+  // hooks, the local network) turn on only through a second step (flows.tsx RiskyConfirm); off is one click.
+  const [confirming, setConfirming] = useState<'trust' | 'lan' | null>(null)
+  const toggleTrust = async (confirmed = false) => {
+    if (!trusting && !confirmed) return setConfirming('trust')
     const reply = await saveSetting(TRUST_FOLDERS_KEY, trusting ? null : true)
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 
-  const toggleBrowserLan = async () => {
+  const toggleBrowserLan = async (confirmed = false) => {
+    if (!browserLan && !confirmed) return setConfirming('lan')
     const reply = await saveSetting(BROWSER_LAN_KEY, browserLan ? null : true)
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
@@ -93,6 +99,17 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
         {t('agents.browserLan')}
         <span className="quiet small">{t('agents.browserLanHint')}</span>
       </label>
+      {confirming && (
+        <RiskyConfirm
+          title={t(confirming === 'trust' ? 'agents.trustFolders' : 'agents.browserLan')}
+          onClose={() => setConfirming(null)}
+          onConfirm={() => void (confirming === 'trust' ? toggleTrust(true) : toggleBrowserLan(true))}
+        >
+          <p>{t(confirming === 'trust' ? 'risky.trustWhat' : 'risky.lanWhat')}</p>
+          <p className="warn-text">{t(confirming === 'trust' ? 'risky.trustRisk' : 'risky.lanRisk')}</p>
+          <p className="quiet small">{t('risky.undo')}</p>
+        </RiskyConfirm>
+      )}
       {keeps === true && (
         <label className="check-row">
           <input type="checkbox" checked={closeOnQuit} onChange={() => void toggleCloseOnQuit()} />

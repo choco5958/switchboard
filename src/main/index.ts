@@ -463,6 +463,10 @@ ipcMain.handle('worktree:remove', async (_e, nodeId: number, path: string, force
   return call('POST', '/nodes/worktree', { nodeId, worktree: null })
 })
 
+// Whether Linear can be reached at all: Orca's CLI carries the connection, so no Orca, no Linear.
+// The app bundle's copy first; otherwise an `orca` on PATH that runs.
+ipcMain.handle('linear:available', async () => existsSync(ORCA) || (await run('orca', ['--version'])).code === 0)
+
 // Linear issues through Orca's Linear connection (read only here; the session does the rest).
 ipcMain.handle('linear:list', async (_e, filter: string) => {
   const orca = existsSync(ORCA) ? ORCA : 'orca'

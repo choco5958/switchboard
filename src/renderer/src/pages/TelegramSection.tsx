@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { t } from '../../../shared/i18n'
 import { useToast } from '../parts'
-import { Button, Input } from '../ui'
+import { Button, Input, Notice } from '../ui'
 
 // Settings: the person's own Telegram bot for answering decisions away from the desk
 // (bridge/telegram.ts). The token goes to the bridge and never comes back to this screen.
@@ -15,9 +15,18 @@ export function TelegramSection() {
   const [pair, setPair] = useState<{ code: string; link: string } | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // A read that failed shows why and a retry (the bridge is down, or answered with an error).
+  const [loadError, setLoadError] = useState('')
   const load = useCallback(async () => {
-    const reply = await window.ide.bridge('GET', '/telegram')
-    if (reply.ok) setStatus(reply.json as unknown as Status)
+    try {
+      const reply = await window.ide.bridge('GET', '/telegram')
+      if (reply.ok) {
+        setStatus(reply.json as unknown as Status)
+        setLoadError('')
+      } else setLoadError(String(reply.json.error ?? reply.status))
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error))
+    }
   }, [])
   useEffect(() => {
     void load()
@@ -37,7 +46,26 @@ export function TelegramSection() {
     return reply
   }
 
-  if (!status) return null
+  if (!status)
+    return (
+      <section id="settings-telegram" className="settings-row telegram">
+        <h2>{t('telegram.title')}</h2>
+        {loadError ? (
+          <Notice
+            tone="error"
+            action={
+              <Button size="sm" className="load-retry" onClick={() => void load()}>
+                {t('common.retry')}
+              </Button>
+            }
+          >
+            <span className="small">{t('telegram.loadFailed', { error: loadError })}</span>
+          </Notice>
+        ) : (
+          <p className="quiet small">{t('common.loading')}</p>
+        )}
+      </section>
+    )
   return (
     <section id="settings-telegram" className="settings-row telegram">
       <h2>{t('telegram.title')}</h2>

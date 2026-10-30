@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { t, type Key } from '../../../shared/i18n'
 import type { UpdateStatus } from '../../../shared/types'
-import { Button } from '../ui'
+import { Button, Notice } from '../ui'
 
 const RELEASES_URL = 'https://github.com/choco5958/switchboard/releases/latest'
 
@@ -22,11 +22,39 @@ const SAYS: Record<UpdateStatus['state'], Key> = {
 // and every 6 hours.
 export function UpdateSection() {
   const [status, setStatus] = useState<UpdateStatus | null>(null)
-  useEffect(() => {
-    void window.ide.updateStatus().then(setStatus)
-    return window.ide.onUpdateStatus(setStatus)
+  // A first read that failed says so, with a way to try again, instead of leaving no section at all.
+  const [loadError, setLoadError] = useState('')
+  const load = useCallback(() => {
+    setLoadError('')
+    window.ide.updateStatus().then(setStatus, (error: unknown) => setLoadError(error instanceof Error ? error.message : String(error)))
   }, [])
-  if (!status) return null
+  useEffect(() => {
+    load()
+    return window.ide.onUpdateStatus(next => {
+      setLoadError('')
+      setStatus(next)
+    })
+  }, [load])
+  if (!status)
+    return (
+      <section id="settings-update" className="settings-row settings-update">
+        <h2>{t('updates.title')}</h2>
+        {loadError ? (
+          <Notice
+            tone="error"
+            action={
+              <Button size="sm" className="load-retry" onClick={load}>
+                {t('common.retry')}
+              </Button>
+            }
+          >
+            <span className="small">{t('updates.loadFailed', { error: loadError })}</span>
+          </Notice>
+        ) : (
+          <p className="quiet small">{t('common.loading')}</p>
+        )}
+      </section>
+    )
   const { state } = status
   const busy = state === 'checking' || state === 'downloading'
   const checkedAt = status.checkedAt ? new Date(status.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''

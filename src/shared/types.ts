@@ -199,6 +199,8 @@ export type IdeApi = {
   commandResult: (id: number) => Promise<Reply>
   bridge: (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<Reply>
   linearList: (filter: string) => Promise<{ issues: LinearIssue[]; error?: string }>
+  // Whether Orca's CLI, which carries the Linear connection, is on this computer.
+  linearAvailable: () => Promise<boolean>
   checkWorktree: (path: string, branch: string) => Promise<WorktreeCheck>
   removeWorktree: (nodeId: number, path: string, force: boolean) => Promise<Reply>
   devStop: (id: string) => Promise<DevResult>

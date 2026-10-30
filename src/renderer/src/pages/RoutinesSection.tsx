@@ -4,9 +4,9 @@ import type { ProjectInfo } from '../../../shared/projects'
 import { t, type Key } from '../../../shared/i18n'
 import { useToast } from '../parts'
 import { clock } from '../model'
-import { ROUTINE_FAIL_LIMIT } from '../../../../bridge/schedule.ts'
+import { MIN_INTERVAL_MINUTES, ROUTINE_FAIL_LIMIT } from '../../../../bridge/schedule.ts'
 import { agentLabel, routineAgents, type CustomAgent } from '../../../shared/agents'
-import { Button, Card, EmptyState, Input, Select, TextArea, cx } from '../ui'
+import { Button, Card, EmptyState, Input, Notice, Select, TextArea, cx } from '../ui'
 
 // Settings: scheduled prompts (bridge/schedule.ts). Each goes to a connected Claude Code
 // session of its project at its time; with none, the app opens one there.
@@ -41,6 +41,29 @@ export function scheduleLabel(schedule: RoutineSchedule | null): string {
   return t('routines.once', { at: schedule.at.replace('T', ' ') })
 }
 
+// Why a draft cannot be saved yet, the first missing piece; null when it can. The save button
+// stays off until then, and this line says what to fill in, rather than a silent grey button.
+// The bridge checks the same things (bridge/schedule.ts parseSchedule, POST /routines).
+export function whyNotSave(draft: Pick<Draft, 'name' | 'project' | 'prompt' | 'kind' | 'time' | 'every' | 'at'>, now = Date.now()): string | null {
+  if (!draft.name.trim()) return t('routines.needName')
+  if (!draft.project) return t('routines.needProject')
+  if (!draft.prompt.trim()) return t('routines.needPrompt')
+  if ((draft.kind === 'daily' || draft.kind === 'weekdays') && !/^\d{1,2}:\d{2}$/.test(draft.time)) return t('routines.needTime')
+  if (draft.kind === 'interval' && !(Math.floor(Number(draft.every)) >= MIN_INTERVAL_MINUTES)) return t('routines.needInterval', { n: MIN_INTERVAL_MINUTES })
+  if (draft.kind === 'once') {
+    if (!draft.at) return t('routines.needAt')
+    if (new Date(draft.at).getTime() <= now) return t('routines.pastAt')
+  }
+  return null
+}
+
+// Why no routine can be added now: no background server to keep it, or no project folder to run in.
+export function whyNotAdd(connected: boolean, folders: number): string | null {
+  if (!connected) return t('routines.offline')
+  if (folders === 0) return t('routines.noFolders')
+  return null
+}
+
 function draftOf(routine: Routine): Draft {
   const s = parse(routine)
   return {
@@ -64,6 +87,12 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
   useEffect(() => {
     void window.ide.detectAgents?.().then(detected => setFound(detected.found))
   }, [])
+  // Routines live in the background server; without it nothing here can be saved or run.
+  const [connected, setConnected] = useState(true)
+  useEffect(() => {
+    void window.ide.connected?.().then(setConnected, () => undefined)
+    return window.ide.onConnection?.(setConnected)
+  }, [])
   const toast = useToast()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
@@ -73,6 +102,8 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
   const editedProject = draft?.id ? routines.find(r => r.id === draft.id)?.project : undefined
   const own = editedProject && !folders.some(p => p.name === editedProject) ? editedProject : null
   const set = (patch: Partial<Draft>) => setDraft(current => (current ? { ...current, ...patch } : current))
+  const addBlocked = whyNotAdd(connected, folders.length)
+  const saveBlocked = !connected ? t('routines.offline') : draft ? whyNotSave(draft) : null
 
   const call = async (path: string, body?: unknown) => {
     const reply = await window.ide.bridge('POST', path, body)
@@ -107,6 +138,11 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
     <section id="settings-routines" className="settings-row routines">
       <h2>{t('routines.title')}</h2>
       <p className="quiet small">{t('routines.hint')}</p>
+      {!connected && (
+        <Notice tone="warn">
+          <span className="small">{t('routines.offline')}</span>
+        </Notice>
+      )}
       {routines.length === 0 && !draft && <EmptyState>{t('routines.empty')}</EmptyState>}
       {routines.map(r => {
         const last = [...runs].reverse().find(run => run.routine_id === r.id)
@@ -124,7 +160,7 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
                 <input type="checkbox" checked={r.enabled === 1} onChange={() => toggle(r)} />
                 {t('routines.enabled')}
               </label>
-              <Button variant="link" size="sm" onClick={() => void call(`/routines/${r.id}/run`)}>
+              <Button variant="link" size="sm" disabled={!connected} title={connected ? undefined : t('routines.offline')} onClick={() => void call(`/routines/${r.id}/run`)}>
                 {t('routines.runNow')}
               </Button>
               <Button variant="link" size="sm" onClick={() => setDraft(draftOf(r))}>
@@ -198,16 +234,29 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
             </label>
           </div>
           <div className="actions">
-            <Button variant="primary" disabled={!draft.name.trim() || !draft.project || !draft.prompt.trim()} onClick={() => void save()}>
+            <Button variant="primary" disabled={saveBlocked !== null} aria-describedby={saveBlocked ? 'routine-why' : undefined} onClick={() => void save()}>
               {t('routines.save')}
             </Button>
             <Button onClick={() => setDraft(null)}>{t('common.cancel')}</Button>
+            {saveBlocked && (
+              <span id="routine-why" className="quiet small routine-why">
+                {saveBlocked}
+              </span>
+            )}
           </div>
         </Card>
       ) : (
-        <Button variant="link" className="mt-sm" disabled={folders.length === 0} onClick={() => setDraft({ ...EMPTY, project: folders[0]?.name ?? '' })}>
-          {t('routines.add')}
-        </Button>
+        <div className="routine-add">
+          <Button variant="link" className="mt-sm" disabled={addBlocked !== null} aria-describedby={addBlocked ? 'routine-add-why' : undefined} onClick={() => setDraft({ ...EMPTY, project: folders[0]?.name ?? '' })}>
+            {t('routines.add')}
+          </Button>
+          {/* Offline already shows above; a missing project folder is said here, by the button it holds back. */}
+          {addBlocked && connected && (
+            <span id="routine-add-why" className="quiet small routine-why">
+              {addBlocked}
+            </span>
+          )}
+        </div>
       )}
     </section>
   )

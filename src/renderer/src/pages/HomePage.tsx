@@ -7,12 +7,14 @@ import { STAGES, ago } from '../model'
 import { AgentBadge, ApprovalItem, NumberBadge } from '../parts'
 import { Button, VisuallyHidden, cx, surfaceClass } from '../ui'
 import type { AgentTag } from '../../../shared/agents'
+import { ClaudeMissingNotice, ConnectStep } from '../flows'
 
 // What a first start looks like: no tasks yet, so instead of four zeros, how to get going.
 function FirstRun({ sessions, onPickFolder }: { sessions: number; onPickFolder: () => void }) {
   return (
     <div className="card first-run">
       <h1>{t('home.start')}</h1>
+      <ClaudeMissingNotice />
       <ol className="first-run-steps">
         <li>
           <b>{t('home.step1')}</b>
@@ -36,6 +38,7 @@ function FirstRun({ sessions, onPickFolder }: { sessions: number; onPickFolder: 
             {t('home.step3Body')}
           </p>
         </li>
+        <ConnectStep />
       </ol>
     </div>
   )

@@ -853,3 +853,49 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
 .gallery-tokens { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-2); }
 .gallery-token { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); }
 .gallery-token i { display: block; height: 28px; border: var(--bw) solid var(--line); border-radius: var(--r-sm); }
+
+/* flows (wave 2) */
+/* Top bar: three groups. Left (app, account, usage) shrinks and drops items; center is find;
+   right (what waits for you, connection, panel toggles, theme) always stays. A hairline and
+   space set the right group and its view buttons apart. */
+.topbar-group { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.topbar > .topbar-left { flex-shrink: 1; overflow: hidden; }
+.topbar-left .brand { margin-right: 0; }
+.topbar-left .topbar-info:not(:empty) { padding-left: var(--sp-3); border-left: var(--bw) solid var(--line); }
+.topbar > .spacer { min-width: var(--sp-3); }
+.topbar-right { padding-left: var(--sp-3); border-left: var(--bw) solid var(--line); }
+.topbar-sep { align-self: center; width: var(--bw); height: 20px; margin: 0 var(--sp-1); background: var(--line); }
+
+/* The waiting group in the sidebar: always there, quiet at zero. */
+.waiting-group:has(.wait-empty) h3 { color: var(--quiet); }
+.waiting-group .wait-empty { margin: 0 0 var(--sp-2); }
+.waiting-group .wait-parts { display: block; margin: 0 0 var(--sp-1); text-align: left; }
+
+/* ⋯ on project and group rows: always faintly there, full on hover or focus. In the flow of the
+   row (not over it), so it never covers the row's counts. */
+.row-more { position: static; flex: none; margin-left: 2px; background: none; opacity: 0.6; pointer-events: auto; }
+.project-line:hover .row-more, .project-line:focus-within .row-more, .project-line:has(.row-menu) .row-more { opacity: 1; }
+
+/* Shortcut list (? or ⌘/) */
+.shortcut-help { width: min(600px, 92vw); }
+.shortcut-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: var(--bw) solid var(--line); }
+.shortcut-head h2 { margin: 0; }
+.shortcut-body { overflow: auto; padding: 0 var(--sp-4) var(--sp-4); }
+.shortcut-group h3 { margin: var(--sp-4) 0 var(--sp-1); color: var(--text); }
+.shortcut-group > p { margin: 0 0 var(--sp-2); }
+.shortcut-group dl { display: grid; grid-template-columns: minmax(140px, max-content) 1fr; gap: var(--sp-1) var(--sp-4); margin: 0; }
+.shortcut-group dt { white-space: nowrap; }
+.shortcut-group dd { margin: 0; }
+
+/* The second step before a broad allow */
+.risky-confirm { width: min(500px, 92vw); padding: var(--sp-4) var(--sp-5); }
+.risky-confirm h2 { margin: 0 0 var(--sp-3); }
+.risky-body p { margin: 0 0 var(--sp-2); }
+.warn-text { color: var(--warn); }
+.risky-actions { justify-content: flex-end; }
+
+/* First run, load failures, routines */
+.first-run-links { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); }
+.claude-missing .btn, .load-retry { align-self: flex-start; margin-top: var(--sp-1); }
+.claude-install { width: fit-content; margin-top: var(--sp-1); padding: 2px var(--sp-2); border-radius: var(--r-sm); background: var(--bg); font: var(--fs-sm)/var(--lh) var(--mono); user-select: all; }
+.routine-add { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); }

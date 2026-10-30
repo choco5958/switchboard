@@ -8,6 +8,8 @@ import { isClaude } from '../../shared/agents'
 import { LOCALE_TAG, getLang, t } from '../../shared/i18n'
 import { saveSetting } from './settings'
 import { Badge, Chip, IconButton } from './ui'
+import { waitParts, type WaitCount } from './waiting'
+import { UpdateChip } from './flows'
 
 // The search key as this system writes it (App.tsx takes both).
 const SEARCH_KEY = /Mac/.test(navigator.userAgent) ? '⌘K' : 'Ctrl+K'
@@ -174,6 +176,9 @@ export function TopBar({
   onToggleSidebar,
   onToggleDock,
   onToggleLive,
+  wait,
+  waitScoped = null,
+  onOpenUpdate,
 }: {
   state: BridgeState
   // The state seen through the chosen project, when one is chosen.
@@ -186,6 +191,10 @@ export function TopBar({
   onToggleSidebar?: () => void
   onToggleDock?: () => void
   onToggleLive?: () => void
+  // The one "waiting for me" count (waiting.ts), for everything and for the project in view.
+  wait: WaitCount
+  waitScoped?: WaitCount | null
+  onOpenUpdate?: () => void
 }) {
   const [account, setAccount] = useState<AccountInfo | null>(null)
   const [measuring, setMeasuring] = useState(false)
@@ -213,14 +222,12 @@ export function TopBar({
   const week = usage.rateLimits?.find(r => r.kind === 'seven_day')
   const cost = usage.cost?.totalUsd
   const runningOf = (s: BridgeState) => s.agents.filter(a => a.status === 'running').length
-  const pendingOf = (s: BridgeState) => s.questions.filter(q => q.status === 'pending').length
   const running = runningOf(state)
-  const pending = pendingOf(state)
   const scopedRunning = scoped ? runningOf(scoped) : null
-  const scopedPending = scoped ? pendingOf(scoped) : null
-  // A count of nothing says nothing: the agents and decisions chips show once there is one.
+  // A count of nothing says nothing: the agents and waiting chips show once there is one.
   const showAgents = running > 0 || (scopedRunning ?? 0) > 0
-  const showDecisions = pending > 0 || (scopedPending ?? 0) > 0
+  const showWait = wait.total > 0 || (waitScoped?.total ?? 0) > 0
+  const waitHere = waitScoped ?? wait
   const theme = themeOf(state.settings.theme)
   const light = isLight(theme)
 
@@ -230,73 +237,81 @@ export function TopBar({
     await saveSetting('theme', next.theme)
   }
 
+  // Three groups: who and how much (left, drops items as the window narrows), find (center),
+  // what needs you and the view controls (right, always shown).
   return (
     <header className="topbar">
-      <span className="brand">
-        <BrandMark />
-        Switchboard
-      </span>
-      {/* Low priority first to go: a narrow window drops these (styles.css, top bar) before anything on the right. */}
-      <div className="topbar-info">
-        {ccr ? (
-          <CcrSlots ccr={ccr} sessions={state.sessions} onMeasure={measure} measuring={measuring} />
-        ) : (
-          account && (
-            <span className="account" title={t('top.accountTitle', { email: account.email })}>
-              <span className="quiet small account-email">{account.email}</span>
-              {account.plan && <Badge shape="pill">{account.plan}</Badge>}
-            </span>
-          )
-        )}
-        {usage.model && (
-          <Badge shape="pill" className="topbar-model">
-            {usage.model}
-          </Badge>
-        )}
-        {/* With ccr the slots above already carry each account's limits. */}
-        {!ccr && <Meter label={t('top.fiveHour')} percent={five?.percentUsed} reset={resetText(five?.resetsAt)} />}
-        {!ccr && <Meter label={t('top.week')} percent={week?.percentUsed} reset={resetText(week?.resetsAt)} />}
-        <Meter label={t('top.context')} percent={usage.contextPercent} />
-        {cost !== undefined && <span className="quiet small topbar-cost">{t('top.cost', { cost: `$${cost.toFixed(2)}` })}</span>}
-        <Chip className="topbar-report" onClick={onReport} title={t('top.reportTitle')}>
-          {t('top.report')}
-        </Chip>
+      <div className="topbar-group topbar-left" role="group" aria-label={t('top.groupAccount')}>
+        <span className="brand">
+          <BrandMark />
+          Switchboard
+        </span>
+        {/* Low priority first to go: a narrow window drops these (styles.css, top bar) before anything on the right. */}
+        <div className="topbar-info">
+          {ccr ? (
+            <CcrSlots ccr={ccr} sessions={state.sessions} onMeasure={measure} measuring={measuring} />
+          ) : (
+            account && (
+              <span className="account" title={t('top.accountTitle', { email: account.email })}>
+                <span className="quiet small account-email">{account.email}</span>
+                {account.plan && <Badge shape="pill">{account.plan}</Badge>}
+              </span>
+            )
+          )}
+          {usage.model && (
+            <Badge shape="pill" className="topbar-model">
+              {usage.model}
+            </Badge>
+          )}
+          {/* With ccr the slots above already carry each account's limits. */}
+          {!ccr && <Meter label={t('top.fiveHour')} percent={five?.percentUsed} reset={resetText(five?.resetsAt)} />}
+          {!ccr && <Meter label={t('top.week')} percent={week?.percentUsed} reset={resetText(week?.resetsAt)} />}
+          <Meter label={t('top.context')} percent={usage.contextPercent} />
+          {cost !== undefined && <span className="quiet small topbar-cost">{t('top.cost', { cost: `$${cost.toFixed(2)}` })}</span>}
+          <Chip className="topbar-report" onClick={onReport} title={t('top.reportTitle')}>
+            {t('top.report')}
+          </Chip>
+        </div>
       </div>
       <span className="spacer" />
       <button type="button" className="searchbox" onClick={onSearch}>
         <Icon name="search" size="sm" /> {t('top.search')} <kbd>{SEARCH_KEY}</kbd>
       </button>
       <span className="spacer" />
-      {showAgents && (
-        <Badge shape="pill" tone={(scopedRunning ?? running) > 0 ? 'accent' : 'neutral'}>
-          {countLabel(t('top.agents'), running, scopedRunning)}
-        </Badge>
-      )}
-      {showDecisions && (
-        <Chip tone={(scopedPending ?? pending) > 0 ? 'warn' : 'neutral'} onClick={onQuestions}>
-          {countLabel(t('top.decisions'), pending, scopedPending)}
-        </Chip>
-      )}
-      {/* One badge for both facts: a dropped bridge outranks the live toggle, since paused or live means nothing without a link. */}
-      {onToggleLive ? (
-        <Chip
-          tone={!connected ? 'bad' : live ? 'good' : 'warn'}
-          className="live"
-          title={!connected ? t('top.disconnectedTitle') : live ? t('top.liveOnTitle') : t('top.liveOffTitle')}
-          onClick={connected ? onToggleLive : undefined}
-        >
-          {!connected ? t('top.disconnected') : live ? t('top.live') : t('top.paused')}
-        </Chip>
-      ) : (
-        <Badge shape="pill" tone={connected ? 'good' : 'bad'}>
-          {connected ? t('top.connected') : t('top.disconnected')}
-        </Badge>
-      )}
-      <span className="topbar-actions">
-        {onToggleSidebar && <IconButton icon="sidebar" label={t('top.toggleSidebar')} onClick={onToggleSidebar} />}
-        {onToggleDock && <IconButton icon="dock" label={t('top.toggleDock')} onClick={onToggleDock} />}
-        <IconButton icon={light ? 'moon' : 'sun'} label={light ? t('top.toDark') : t('top.toLight')} onClick={() => void flip()} />
-      </span>
+      <div className="topbar-group topbar-right" role="group" aria-label={t('top.groupStatus')}>
+        {showWait && (
+          <Chip tone={waitHere.total > 0 ? 'warn' : 'neutral'} className="wait-chip" title={[t('wait.chipTitle'), waitParts(waitHere)].filter(Boolean).join('\n')} onClick={onQuestions}>
+            {countLabel(t('wait.label'), wait.total, waitScoped ? waitScoped.total : null)}
+          </Chip>
+        )}
+        {showAgents && (
+          <Badge shape="pill" tone={(scopedRunning ?? running) > 0 ? 'accent' : 'neutral'}>
+            {countLabel(t('top.agents'), running, scopedRunning)}
+          </Badge>
+        )}
+        {onOpenUpdate && <UpdateChip onOpen={onOpenUpdate} />}
+        {/* One badge for both facts: a dropped bridge outranks the live toggle, since paused or live means nothing without a link. */}
+        {onToggleLive ? (
+          <Chip
+            tone={!connected ? 'bad' : live ? 'good' : 'warn'}
+            className="live"
+            title={!connected ? t('top.disconnectedTitle') : live ? t('top.liveOnTitle') : t('top.liveOffTitle')}
+            onClick={connected ? onToggleLive : undefined}
+          >
+            {!connected ? t('top.disconnected') : live ? t('top.live') : t('top.paused')}
+          </Chip>
+        ) : (
+          <Badge shape="pill" tone={connected ? 'good' : 'bad'}>
+            {connected ? t('top.connected') : t('top.disconnected')}
+          </Badge>
+        )}
+        <span className="topbar-sep" aria-hidden="true" />
+        <span className="topbar-actions">
+          {onToggleSidebar && <IconButton icon="sidebar" label={t('top.toggleSidebar')} onClick={onToggleSidebar} />}
+          {onToggleDock && <IconButton icon="dock" label={t('top.toggleDock')} onClick={onToggleDock} />}
+          <IconButton icon={light ? 'moon' : 'sun'} label={light ? t('top.toDark') : t('top.toLight')} onClick={() => void flip()} />
+        </span>
+      </div>
     </header>
   )
 }
