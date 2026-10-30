@@ -68,15 +68,15 @@ Jump to any task, question or project. Group projects into folders and fold them
 </tr>
 </table>
 
-|  |  |
-| --- | --- |
-| 🤝 **Sessions working together** | Ask another session and get its answer back. Collect answers from several sessions into one turn, and take back work you handed off. |
-| 📱 **While you are away** | Answer decisions and Claude Code permission asks from your phone or Telegram, on any network. |
-| ⏰ **Scheduled prompts** | Send a prompt to a session daily, on weekdays, at an interval or once. |
-| 🔍 **Fix what you see** | Click an element in the in-app browser to leave a comment with its location, a screenshot and console errors. Sessions click through local pages to check their work. |
-| 🖥️ **Terminals that keep going** | On macOS and Linux, agents in the terminals keep working when you quit or update the app, and come back as they were when you reopen it. |
-| 🔒 **Safe by default** | Only signed updates install. Only the app and phones paired over HTTPS can allow permission asks, and sessions cannot pose as you. |
-| 🎨 **Your look** | 13 themes and 4 languages. Claude usage and context use sit at the top. |
+<table>
+<tr><td width="26%">🤝 <b>Sessions working together</b></td><td>Ask another session and get its answer back. Collect answers from several sessions into one turn, and take back work you handed off.</td></tr>
+<tr><td width="26%">📱 <b>While you are away</b></td><td>Answer decisions and Claude Code permission asks from your phone or Telegram, on any network.</td></tr>
+<tr><td width="26%">⏰ <b>Scheduled prompts</b></td><td>Send a prompt to a session daily, on weekdays, at an interval or once.</td></tr>
+<tr><td width="26%">🔍 <b>Fix what you see</b></td><td>Click an element in the in-app browser to leave a comment with its location, a screenshot and console errors. Sessions click through local pages to check their work.</td></tr>
+<tr><td width="26%">🖥️ <b>Terminals that keep going</b></td><td>On macOS and Linux, agents in the terminals keep working when you quit or update the app, and come back as they were when you reopen it.</td></tr>
+<tr><td width="26%">🔒 <b>Safe by default</b></td><td>Only signed updates install. Only the app and phones paired over HTTPS can allow permission asks, and sessions cannot pose as you.</td></tr>
+<tr><td width="26%">🎨 <b>Your look</b></td><td>13 themes and 4 languages. Claude usage and context use sit at the top.</td></tr>
+</table>
 
 <details>
 <summary><b>More on the features</b></summary>
