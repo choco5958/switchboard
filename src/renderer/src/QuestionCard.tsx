@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Question } from '../../shared/types'
 import { renderMarkdown } from './markdown'
-import { clock, keyAction, optionsOf, type Reach } from './model'
-import { AgentBadge } from './parts'
+import { clock, keyAction, keyWorks, optionKeys, optionsOf, type Reach } from './model'
+import { AgentBadge, useToast } from './parts'
+import { SEND_DELAY_MS, draftOf, isWaiting, queueAnswer, subscribe, takeBack } from './outbox'
 import type { AgentTag } from '../../shared/agents'
 import { t } from '../../shared/i18n'
 import { tx } from './tx'
@@ -23,6 +24,7 @@ export function QuestionCard({
   reach = 'unknown',
   peers = [],
   onDone,
+  onReopen,
   onOpenTask,
   keysAnywhere = false,
 }: {
@@ -32,12 +34,18 @@ export function QuestionCard({
   reach?: Reach // whether the session can take the answer now
   peers?: { id: string; name: string; label: string }[] // connected sessions other than the asker, to hand the question to
   onDone: () => void
+  onReopen?: () => void // opens this question again (after Undo)
   onOpenTask: (() => void) | null
   keysAnywhere?: boolean // settings: DECISION_KEYS_KEY
 }) {
   const options = optionsOf(q)
-  const [choice, setChoice] = useState<string>('')
-  const [memo, setMemo] = useState('')
+  const keys = optionKeys(options)
+  const toast = useToast()
+  // An answer taken back with Undo comes back here as it was.
+  const [choice, setChoice] = useState<string>(() => draftOf(q.id)?.choice ?? '')
+  const [memo, setMemo] = useState(() => draftOf(q.id)?.memo ?? '')
+  // Answered here a moment ago and not gone yet (outbox.ts): no second answer meanwhile.
+  const sending = useSyncExternalStore(subscribe, () => isWaiting(q.id))
   const [error, setError] = useState('')
   // The h key holds only when pressed twice: one stray h (typed where the person thought a
   // terminal had focus) only says what the next one would do.
@@ -50,13 +58,32 @@ export function QuestionCard({
   const forwardedTo = q.forwarded_to ? (peers.find(p => p.id === q.forwarded_to)?.name ?? q.forwarded_to) : ''
   const chosen = options.find(o => o.key === q.choice)
 
-  const submit = async (picked: string, note: string) => {
+  // The answer waits SEND_DELAY_MS in the app (outbox.ts) while the toast offers Undo; the next
+  // question opens at once. Once it has gone the toast says so, or says why it could not.
+  const submit = (picked: string, note: string) => {
     if (!picked && !note.trim()) return setError(t('question.needChoice'))
-    setBusy(true)
-    const reply = await window.ide.answer(q.id, picked, note)
-    setBusy(false)
-    if (!reply.ok) return setError(String(reply.json.error ?? t('question.sendFailed')))
+    setError('')
+    const id = q.id
+    queueAnswer(id, { choice: picked, memo: note }, async () => {
+      const reply = await window.ide.answer(id, picked, note)
+      if (reply.ok) toast(t('question.sent', { id }))
+      else toast(t('question.sendFailedId', { id, error: String(reply.json.error ?? t('question.sendFailed')) }), 'bad')
+    })
+    const undo = () => {
+      if (!takeBack(id)) return
+      toast(t('question.undone', { id }), 'info')
+      onReopen?.()
+    }
+    toast(t('question.sending', { id, s: SEND_DELAY_MS / 1000 }), 'info', { label: t('common.undo'), run: undo }, SEND_DELAY_MS)
     onDone()
+  }
+
+  // Opened again while its answer still waits: Undo here too, and the card takes the answer back.
+  const undoHere = () => {
+    const draft = takeBack(q.id)
+    if (!draft) return
+    setChoice(draft.choice)
+    setMemo(draft.memo)
   }
 
   // Another session answers in the person's place; its reply becomes this question's answer.
@@ -99,12 +126,12 @@ export function QuestionCard({
     const control = target?.closest?.('button, a[href], [role="tab"], [role="menuitem"], [role="button"]')
     const pressing = (event.key === 'Enter' || event.key === ' ') && !!control && !control.classList.contains('option')
     if (event.defaultPrevented || pressing) return
-    if (!isOpen || busy || typing || composing(event) || event.metaKey || event.ctrlKey || event.altKey) return
+    if (!isOpen || busy || sending || typing || composing(event) || event.metaKey || event.ctrlKey || event.altKey) return
     const action = keyAction(event.key, options)
     if (action.type === 'none') return
     event.preventDefault()
     if (action.type === 'choose') setChoice(action.key)
-    if (action.type === 'send') void submit(choice, memo)
+    if (action.type === 'send') submit(choice, memo)
     if (action.type === 'hold') {
       if (Date.now() - holdArmed < HOLD_AGAIN_MS) {
         setHoldArmed(0)
@@ -122,10 +149,16 @@ export function QuestionCard({
   const onMemoKey = (event: React.KeyboardEvent) => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !composing(event)) {
       event.preventDefault()
-      void submit(choice, memo)
+      if (!sending) submit(choice, memo)
     }
     if (event.key === 'Escape') memoBox.current?.blur()
   }
+
+
+  // The keys that really work on this card: each option's own key first, then the numbers.
+  const ownKeys = new Set(options.map(o => o.key))
+  const pickKeys = options.flatMap(o => keys.get(o.key) ?? []).sort((a, b) => Number(!ownKeys.has(a)) - Number(!ownKeys.has(b)))
+  const recommended = options.find(o => o.key === q.recommend)
 
   return (
     <div className="card decision-card" ref={card} tabIndex={-1} aria-label={`Q${q.id} ${q.question}`}>
@@ -147,24 +180,8 @@ export function QuestionCard({
       {/* renderMarkdown escapes every character of the body before adding its own few tags. */}
       {q.body && <div className="body md" dangerouslySetInnerHTML={{ __html: renderMarkdown(q.body) }} />}
 
-      {options.length > 0 && (
-        <>
-          <h3 className="q-section">{t('question.options')}</h3>
-          <ul className="q-list">
-            {options.map(o => (
-              <li key={o.key}>
-                ({o.key}) {o.label}{' '}
-                {q.recommend === o.key && (
-                  <Badge tone="good" fill="solid" className="recommend">
-                    {t('question.recommended')}
-                  </Badge>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {q.reason && (
+      {/* A reason for a key that is not among the options still shows, on its own line. */}
+      {q.reason && !recommended && (
         <p className="md-rec">
           <Icon name="expand" size="sm" />
           <span>
@@ -188,31 +205,29 @@ export function QuestionCard({
         </>
       )}
 
-      <h3 className="q-section">{t('question.source')}</h3>
-      <ul className="small quiet source q-list">
-        <li title={t('question.sourceTitle')}>
-          {agent
-            ? tx('question.fromAgent', { project: sessionProject, agent: <AgentBadge tag={agent} />, session: <span className="mono-inline">{q.session_id}</span> })
-            : tx('question.from', { project: sessionProject, session: <span className="mono-inline">{q.session_id}</span> })}
-        </li>
-        {q.turn_id && <li>{t('question.round', { round: q.turn_id })}</li>}
-        <li>{t('question.askedAt', { time: clock(q.created_at) })}</li>
-      </ul>
-
+      {/* The options, once: each row shows the keys that pick it, the recommended mark and why. */}
       <ul className="options">
-        {options.map((o, i) => {
+        {options.map(o => {
           const picked = isOpen ? choice === o.key : q.choice === o.key
           return (
             <li key={o.key}>
-              <button type="button" className={surfaceClass({ on: picked }, 'option')} aria-pressed={picked} disabled={!isOpen} onClick={() => setChoice(o.key)}>
-                <kbd>{o.key}</kbd>
-                <span>{o.label}</span>
-                {q.recommend === o.key && (
+              <button type="button" className={surfaceClass({ on: picked }, 'option')} aria-pressed={picked} disabled={!isOpen || sending} onClick={() => setChoice(o.key)}>
+                {isOpen && (
+                  <span className="option-keys">
+                    {(keys.get(o.key) ?? []).map(k => (
+                      <kbd key={k}>{k}</kbd>
+                    ))}
+                  </span>
+                )}
+                <span className="option-text">
+                  <span>{o.label}</span>
+                  {o === recommended && q.reason && <span className="option-note quiet small">{q.reason}</span>}
+                </span>
+                {o === recommended && (
                   <Badge tone="good" fill="solid" className="recommend">
                     {t('question.recommended')}
                   </Badge>
                 )}
-                <span className="quiet small num">{i + 1}</span>
               </button>
             </li>
           )
@@ -221,12 +236,26 @@ export function QuestionCard({
 
       {isOpen ? (
         <>
+          {sending && (
+            <Notice
+              tone="info"
+              className="q-sending"
+              action={
+                <Button size="sm" onClick={undoHere}>
+                  {t('common.undo')}
+                </Button>
+              }
+            >
+              {t('question.queued')}
+            </Notice>
+          )}
           <TextArea
             ref={memoBox}
             className="memo"
             aria-label={t('question.memoLabel')}
             placeholder={t('question.memoPlaceholder')}
             value={memo}
+            disabled={sending}
             onChange={event => setMemo(event.target.value)}
             onKeyDown={onMemoKey}
           />
@@ -238,25 +267,43 @@ export function QuestionCard({
           {holdArmed > 0 && Date.now() - holdArmed < HOLD_AGAIN_MS && <p className="quiet small">{t('question.holdAgain')}</p>}
           {forwardedTo && <p className="quiet small">{t('question.forwarded', { session: forwardedTo })}</p>}
           <div className="actions">
-            <Button variant="primary" disabled={busy || !choice} onClick={() => void submit(choice, memo)}>
+            <Button variant="primary" disabled={busy || sending || !choice} onClick={() => submit(choice, memo)}>
               {choice ? t('question.sendChoice', { key: choice }) : t('question.pickFirst')}
             </Button>
-            <Button disabled={busy || !memo.trim()} onClick={() => void submit('', memo)}>
+            <Button disabled={busy || sending || !memo.trim()} onClick={() => submit('', memo)}>
               {t('question.sendMemo')}
             </Button>
             {q.status === 'pending' && (
-              <Button disabled={busy} onClick={() => void hold()}>
+              <Button disabled={busy || sending} onClick={() => void hold()}>
                 {t('palette.qHeld')}
               </Button>
             )}
             <span className="spacer" />
-            <span className="quiet small">
-              {tx('question.keys', { a: <kbd>a</kbd>, b: <kbd>b</kbd>, one: <kbd>1</kbd>, two: <kbd>2</kbd>, enter: <kbd>Enter</kbd>, h: <kbd>H</kbd>, m: <kbd>M</kbd> })}
+            <span className="key-hints quiet small">
+              {pickKeys.length > 0 && (
+                <span>
+                  {tx('question.keysPick', {
+                    keys: (
+                      <>
+                        {pickKeys.map((k, i) => (
+                          <Fragment key={k}>
+                            {i > 0 && ' '}
+                            <kbd>{k}</kbd>
+                          </Fragment>
+                        ))}
+                      </>
+                    ),
+                  })}
+                </span>
+              )}
+              <span>{tx('question.keysSend', { enter: <kbd>Enter</kbd> })}</span>
+              {keyWorks('h', options) && <span>{tx('question.keysHold', { h: <kbd>H</kbd> })}</span>}
+              {keyWorks('m', options) && <span>{tx('question.keysMemo', { m: <kbd>M</kbd> })}</span>}
             </span>
           </div>
           {peers.length > 0 && (
             <div className="forward">
-              <Select compact value={forwardTo} disabled={busy} onChange={event => setForwardTo(event.target.value)} title={t('question.forwardTitle')} aria-label={t('question.forwardTitle')}>
+              <Select compact value={forwardTo} disabled={busy || sending} onChange={event => setForwardTo(event.target.value)} title={t('question.forwardTitle')} aria-label={t('question.forwardTitle')}>
                 <option value="">{t('question.forwardPick')}</option>
                 {peers.map(p => (
                   <option key={p.id} value={p.id}>
@@ -264,7 +311,7 @@ export function QuestionCard({
                   </option>
                 ))}
               </Select>
-              <Button size="sm" disabled={busy || !forwardTo} onClick={() => void forward()}>
+              <Button size="sm" disabled={busy || sending || !forwardTo} onClick={() => void forward()}>
                 {t('question.forward')}
               </Button>
             </div>
@@ -276,6 +323,18 @@ export function QuestionCard({
           {t('question.toTask', { task: q.task_title })}
         </Button>
       )}
+
+      {/* Where it came from: for looking up, not for answering, so last and quiet. */}
+      <footer className="q-source quiet small" title={t('question.sourceTitle')}>
+        <span className="q-source-label">{t('question.source')}</span>
+        <span>
+          {agent
+            ? tx('question.fromAgent', { project: sessionProject, agent: <AgentBadge tag={agent} />, session: <span className="mono-inline">{q.session_id}</span> })
+            : tx('question.from', { project: sessionProject, session: <span className="mono-inline">{q.session_id}</span> })}
+        </span>
+        {q.turn_id && <span>{t('question.round', { round: q.turn_id })}</span>}
+        <span>{t('question.askedAt', { time: clock(q.created_at) })}</span>
+      </footer>
     </div>
   )
 }

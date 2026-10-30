@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { BridgeState, GraphNode } from '../../shared/types'
 import { clock } from './model'
 import type { Tab } from './tabs'
 import { nodeKindLabel, nodeOwnerLabel, nodeStatusLabel, stageLabel, t, taskStatusLabel } from '../../shared/i18n'
 import { Icon } from './Icons'
 import { EmptyState, IconButton } from './ui'
+import { NodeWorktree } from './NodeWorktree'
+import { nodeDetailKey } from './taskInfo'
 
 const OPEN_KEY = 'claude-ide:props-open'
 
@@ -17,10 +19,12 @@ function loadOpen(): boolean {
 }
 
 type Row = [string, string | number | null | undefined]
+// node: the group is the picked node's, and its worktree actions go under the rows.
+type Group = { title: string; rows: Row[]; node?: GraphNode }
 
 // What the active tab is about, in plain rows: the task, the question, the node picked in the graph.
-export function propsOf(tab: Tab, state: BridgeState, node: GraphNode | null): { title: string; rows: Row[] }[] {
-  const groups: { title: string; rows: Row[] }[] = []
+export function propsOf(tab: Tab, state: BridgeState, node: GraphNode | null): Group[] {
+  const groups: Group[] = []
   if (tab.kind === 'task') {
     const task = state.tasks.find(t => t.id === tab.id)
     if (task) {
@@ -42,6 +46,7 @@ export function propsOf(tab: Tab, state: BridgeState, node: GraphNode | null): {
       if (node && node.task_id === task.id) {
         groups.push({
           title: t('props.node'),
+          node,
           rows: [
             ['key', node.key],
             [t('taskView.colTitle'), node.title],
@@ -91,6 +96,13 @@ export function PropsPanel({ tab, state, node }: { tab: Tab; state: BridgeState;
       // per-viewer convenience only
     }
   }, [open])
+  // A node picked in the graph opens the panel: its details live here, not under the graph.
+  const shownKey = useRef<string | null>(null)
+  useEffect(() => {
+    const key = node ? `${node.task_id}:${node.key}` : null
+    if (key && key !== shownKey.current) setOpen(true)
+    shownKey.current = key
+  }, [node])
 
   if (!open) {
     return (
@@ -123,6 +135,7 @@ export function PropsPanel({ tab, state, node }: { tab: Tab; state: BridgeState;
               </div>
             ))}
           </dl>
+          {group.node && <NodeWorktree key={nodeDetailKey(group.node)} node={group.node} />}
         </section>
       ))}
     </aside>

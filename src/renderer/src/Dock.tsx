@@ -22,6 +22,10 @@ function savedHeight(): number {
 }
 
 export const AGENTS_FOUND = 'switchboard:agents-found'
+// Another screen asks for one terminal (detail: its id), such as the task view's "go to terminal";
+// and the dock tells whoever listens which terminals it has (detail: TermInfo[]) as they change.
+export const SHOW_TERMINAL = 'switchboard:show-terminal'
+export const TERMS_CHANGED = 'switchboard:terms-changed'
 const CLOSE_ARMED_MS = 3000
 
 // One row of the agent picker: an agent CLI the dock can open, and how it joins Switchboard.
@@ -154,6 +158,18 @@ export function Dock({
     return window.ide.onTermExit(event =>
       setTerms(list => list.map(t => (t.id === event.id ? { ...t, alive: false, exitCode: event.exitCode } : t))),
     )
+  }, [])
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(TERMS_CHANGED, { detail: terms }))
+  }, [terms])
+  useEffect(() => {
+    const show = (event: Event) => {
+      setActive((event as CustomEvent<string>).detail)
+      setFolded(false)
+    }
+    window.addEventListener(SHOW_TERMINAL, show)
+    return () => window.removeEventListener(SHOW_TERMINAL, show)
   }, [])
 
   useEffect(() => {

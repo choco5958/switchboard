@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Agent, CommandKind, GraphNode, LogEvent, Question, Task, WorktreeCheck } from '../../shared/types'
+import type { Agent, CommandKind, GraphNode, LogEvent, Question, Session, Task, TermInfo } from '../../shared/types'
 import { WorkerLane } from './WorkerLane'
-import { ago, clock, layoutGraph, reviewLoops, stageCounts, stations } from './model'
+import { ago, clock, layoutGraph, reviewLoops, stageCounts } from './model'
 import { AgentBadge, NumberBadge, onPress } from './parts'
 import type { AgentTag } from '../../shared/agents'
-import { eventKindLabel, nodeKindLabel, nodeOwnerLabel, nodeStatusLabel, nodeStatusSlug, stageLabel, t, taskStatusLabel } from '../../shared/i18n'
-import { artifactFromNotes, nodeDetailKey, runningAgents, taskEvents, taskQuestions, testsFromNotes } from './taskInfo'
+import { taskState, taskStateLabel } from '../../shared/projects'
+import { eventKindLabel, nodeKindLabel, nodeOwnerLabel, nodeStatusLabel, nodeStatusSlug, stageLabel, t } from '../../shared/i18n'
+import { artifactFromNotes, runningAgents, taskEvents, taskQuestions, terminalOf, testsFromNotes } from './taskInfo'
 import { Icon } from './Icons'
-import { Badge, Button, Card, VisuallyHidden, cx } from './ui'
+import { SHOW_TERMINAL, TERMS_CHANGED } from './Dock'
+import { Badge, Button, More, VisuallyHidden, cx } from './ui'
 
 const COL_W = 220
 const COL_GAP = 36
@@ -22,6 +24,7 @@ export function TaskView({
   questions,
   events,
   agents,
+  session,
   onQuestion,
   onCommand,
   onSelectNode,
@@ -32,6 +35,7 @@ export function TaskView({
   questions: Question[]
   events: LogEvent[]
   agents: Agent[]
+  session?: Session // the task's session while it is connected
   onQuestion: (id: number) => void
   onCommand: (kind: CommandKind, payload: Record<string, unknown>) => void
   onSelectNode?: (node: GraphNode | null) => void
@@ -47,6 +51,15 @@ export function TaskView({
     onSelectNode?.(latestNode.current ?? null)
   }, [selectedText, onSelectNode])
   useEffect(() => () => onSelectNode?.(null), [onSelectNode])
+  // The dock's terminals, to find the one this task's session runs in (taskInfo.ts terminalOf).
+  const [terms, setTerms] = useState<TermInfo[]>([])
+  useEffect(() => {
+    void window.ide.termList().then(setTerms)
+    const changed = (event: Event) => setTerms((event as CustomEvent<TermInfo[]>).detail)
+    window.addEventListener(TERMS_CHANGED, changed)
+    return () => window.removeEventListener(TERMS_CHANGED, changed)
+  }, [])
+  const terminal = terminalOf(session, terms)
   const layout = layoutGraph(nodes)
   const width = PAD * 2 + layout.cols * COL_W + Math.max(0, layout.cols - 1) * COL_GAP
   const height = PAD * 2 + Math.max(1, layout.rows) * ROW_H + 12
@@ -56,7 +69,7 @@ export function TaskView({
   const open = taskQuestions(questions, task)
   const recent = taskEvents(events, task)
   const loops = reviewLoops(nodes)
-  const station = stations(task.stage)
+  const state = taskState(task)
   // Fields the session left empty are filled from the graph and node notes, marked "자동".
   const nowNodes = nodes.filter(n => n.status === '지금').map(n => n.title)
   const lastDone = [...nodes].filter(n => n.status === '끝' && n.note).sort((a, b) => b.updated_at - a.updated_at)[0]
@@ -76,11 +89,21 @@ export function TaskView({
       <div className="card-head">
         <span className="tag">[{task.project}]</span>
         <AgentBadge tag={agent} />
+        <Badge shape="pill" tone={state === 'run' ? 'accent' : state === 'done' ? 'good' : 'neutral'}>
+          {taskStateLabel(state)}
+        </Badge>
         <span className="spacer" />
         <span className="quiet small">{t('taskView.updated', { ago: ago(task.updated_at) })}</span>
+        {terminal && (
+          <Button size="sm" title={t('taskView.toTerminalTitle')} onClick={() => window.dispatchEvent(new CustomEvent(SHOW_TERMINAL, { detail: terminal.id }))}>
+            <Icon name="dock" size="sm" />
+            {t('taskView.toTerminal')}
+          </Button>
+        )}
       </div>
       <div className="task-summary">
         <h1>
+          <NumberBadge task={task} />
           {task.title}
           {task.branch && (
             <Badge mono className="branch-chip">
@@ -104,27 +127,13 @@ export function TaskView({
         </ul>
       </div>
 
-      <div className="stations">
-        <NumberBadge task={task} />
-        <span className="quiet small">{t('taskView.currentStage')}</span> <b className="station-now">{stageLabel(station.now)}</b>
-        <span className="station-arrow">
-          <Icon name="expand" size="sm" /> {taskStatusLabel(task.status)}
-        </span>
-        {station.next && (
-          <>
-            <span className="station-arrow" aria-hidden="true">
-              <Icon name="panelClose" size="sm" />
-            </span>{' '}
-            <span className="quiet small">{t('taskView.nextStage')}</span> <b className="station-next">{stageLabel(station.next)}</b>
-          </>
-        )}
-      </div>
-
-      <ol className="pipeline">
+      {/* The stage shows here once: the current one is marked, the done ones carry a check. */}
+      <ol className="pipeline" aria-label={t('taskView.stagesLabel')}>
         {stageCounts(nodes).map(({ stage, done, total }, i) => (
-          <li key={stage} className={stage === task.stage ? 'now' : done > 0 && done === total ? 'done' : ''}>
+          <li key={stage} className={stage === task.stage ? 'now' : done > 0 && done === total ? 'done' : ''} aria-current={stage === task.stage ? 'step' : undefined}>
             <span className="stage-num">{String(i + 1).padStart(2, '0')}</span>
             <span className="pipeline-name">{stageLabel(stage)}</span>
+            {stage === task.stage && <VisuallyHidden>{`, ${t('taskView.currentStage')}`}</VisuallyHidden>}
             {done > 0 && done === total && (
               <span className="stage-done">
                 <Icon name="check" size="sm" />
@@ -140,7 +149,10 @@ export function TaskView({
           </li>
         ))}
       </ol>
-      <p className="quiet small">{t('taskView.graphHint')}</p>
+      <p className="quiet small">
+        {t('taskView.graphHint')}
+        <More>{t('taskView.graphHintMore')}</More>
+      </p>
 
       {open.length > 0 && (
         <div className="task-questions">
@@ -231,8 +243,6 @@ export function TaskView({
         </div>
       )}
 
-      {selectedNode && <NodeDetail key={nodeDetailKey(selectedNode)} node={selectedNode} />}
-
       {nodes.length > 0 && <NodeTable nodes={nodes} selectedKey={selectedKey} onSelect={key => setSelectedKey(current => (current === key ? null : key))} />}
 
       <WorkerLane sessionId={task.session_id} agents={agents} nodes={nodes} />
@@ -250,74 +260,6 @@ export function TaskView({
         </>
       )}
     </div>
-  )
-}
-
-function NodeDetail({ node }: { node: GraphNode }) {
-  const [check, setCheck] = useState<WorktreeCheck | null>(null)
-  const [armed, setArmed] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
-  // A fresh check (or none) always needs its own second press.
-  useEffect(() => setArmed(false), [check])
-
-  const inspect = async () => {
-    if (!node.worktree) return
-    setBusy(true)
-    setCheck(await window.ide.checkWorktree(node.worktree, node.branch ?? ''))
-    setBusy(false)
-  }
-
-  const risky = check !== null && check.exists && (check.changed.length > 0 || (!check.merged && check.unpushed > 0))
-
-  const remove = async () => {
-    if (!node.worktree) return
-    // Anything that would be lost needs a second press.
-    if (risky && !armed) return setArmed(true)
-    setBusy(true)
-    const reply = await window.ide.removeWorktree(node.id, node.worktree, check?.changed.length ? true : false)
-    setBusy(false)
-    setMessage(reply.ok ? t('taskView.removed') : t('taskView.removeFailed', { error: String(reply.json.error ?? '') }))
-  }
-
-  return (
-    <Card sunk className="node-detail">
-      <h3>
-        {node.title} <span className="quiet small">({nodeKindLabel(node.kind)}, {nodeOwnerLabel(node.owner)}, {nodeStatusLabel(node.status)}{node.round > 1 ? `, ${t('taskView.round', { n: node.round })}` : ''})</span>
-      </h3>
-      {node.note && <p>{node.note}</p>}
-      {node.worktree ? (
-        <>
-          <div className="small mono">{node.worktree}</div>
-          <div className="small quiet">{t('taskView.branch', { branch: node.branch ?? '' })}</div>
-          {!check && (
-            <Button variant="link" className="mt-sm" disabled={busy} onClick={() => void inspect()}>
-              {t('taskView.checkFirst')}
-            </Button>
-          )}
-          {check && !check.exists && <p className="small quiet">{t('taskView.folderGone')}</p>}
-          {check && check.exists && (
-            <ul className="small check">
-              <li className={check.changed.length > 0 ? 'bad' : 'good'}>
-                {t('taskView.uncommitted', { n: check.changed.length })}{check.changed.length > 0 ? `: ${check.changed.slice(0, 5).join(', ')}` : ''}
-              </li>
-              <li className={check.merged ? 'good' : 'warn'}>{check.merged ? t('taskView.merged', { base: check.base }) : t('taskView.notMerged', { base: check.base })}</li>
-              <li className={check.unpushed > 0 ? 'warn' : 'good'}>{t('taskView.unpushed', { n: check.unpushed })}</li>
-            </ul>
-          )}
-          {check && (
-            <div className="actions">
-              <Button variant={armed ? 'danger' : 'default'} disabled={busy || message !== ''} onClick={() => void remove()}>
-                {armed ? t('taskView.removeAnyway') : t('taskView.remove')}
-              </Button>
-            </div>
-          )}
-          {message && <p className="small">{message}</p>}
-        </>
-      ) : (
-        <p className="small quiet">{t('taskView.noWorktree')}</p>
-      )}
-    </Card>
   )
 }
 
