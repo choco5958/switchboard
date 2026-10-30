@@ -1197,10 +1197,14 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     if (method === 'POST' && path === '/mobile/tailscale') {
       const body = await readJson(req)
       const on = body.on === true
+      // Open to the internet (Tailscale Funnel), so a phone needs no Tailscale of its own.
+      const funnel = on && body.funnel === true
       const status = await mobile.status()
       if (on && !status.listening) return send(res, 409, { error: say('mobile.off') })
       if (on && status.tailscale.busy) return send(res, 409, { error: say('mobile.tailscaleBusy') })
-      const result = await mobile.tailscale(on)
+      // Asked without the tailnet's leave, the command would wait for it instead of failing.
+      if (funnel && !status.tailscale.funnelAllowed) return send(res, 400, { error: say('mobile.funnelPolicy', { link: status.tailscale.funnelLink }) })
+      const result = await mobile.tailscale(on, funnel)
       if (!result.ok) return send(res, 400, { error: say('mobile.tailscaleFailed', { error: result.error }) })
       changed('mobile')
       return send(res, 200, { ...(await mobile.status()), enabled: mobileSetting().enabled })

@@ -9,7 +9,7 @@ import { useToast } from '../parts'
 
 type Address = { address: string; kind: 'name' | 'lan' | 'tailscale' | 'https'; url: string }
 type Device = { id: number; name: string; created_at: number; last_seen: number | null }
-type Tailscale = { installed: boolean; domain: string; served: boolean; busy: boolean }
+type Tailscale = { installed: boolean; domain: string; served: boolean; busy: boolean; funnel: boolean; funnelAllowed: boolean; funnelLink: string }
 type Status = { enabled: boolean; listening: boolean; port: number; error: string; lan: boolean; addresses: Address[]; devices: Device[]; tailscale: Tailscale }
 
 // The link the QR code holds: the key is in the fragment, which the browser never sends.
@@ -135,7 +135,7 @@ export function MobileSection() {
                   {status.addresses.map(a => (
                     <option key={a.url} value={a.address}>
                       {a.address}
-                      {a.kind !== 'lan' ? ` (${t(KIND_LABEL[a.kind])})` : ''}
+                      {a.kind !== 'lan' ? ` (${t(a.kind === 'https' && status.tailscale.funnel ? 'mobile.httpsFunnel' : KIND_LABEL[a.kind])})` : ''}
                     </option>
                   ))}
                 </select>
@@ -195,6 +195,36 @@ export function MobileSection() {
                 </button>
               </div>
               {!status.tailscale.served && status.tailscale.busy && <p className="quiet small">{t('mobile.tailscaleBusy')}</p>}
+              {status.tailscale.served && (
+                <>
+                  <label className="check-row" title={t('mobile.funnelHint')}>
+                    <input
+                      type="checkbox"
+                      checked={status.tailscale.funnel}
+                      disabled={busy}
+                      onChange={async e => {
+                        setBusy(true)
+                        const reply = await window.ide.bridge('POST', '/mobile/tailscale', { on: true, funnel: e.target.checked })
+                        setBusy(false)
+                        if (reply.ok) {
+                          setStatus(reply.json as unknown as Status)
+                          setTailscaleError('')
+                        } else setTailscaleError(String(reply.json.error ?? reply.status))
+                      }}
+                    />
+                    {t('mobile.funnel')}
+                  </label>
+                  <p className="quiet small">{t(status.tailscale.funnel ? 'mobile.funnelOnNote' : 'mobile.funnelHint')}</p>
+                  {!status.tailscale.funnelAllowed && !status.tailscale.funnel && (
+                    <p className="quiet small">
+                      {t('mobile.funnelAllowFirst')}{' '}
+                      <a href={status.tailscale.funnelLink} target="_blank" rel="noreferrer">
+                        {t('mobile.funnelAllow')}
+                      </a>
+                    </p>
+                  )}
+                </>
+              )}
               {tailscaleError && <LinkedText className="error small" text={tailscaleError} />}
             </div>
           ) : status.tailscale.installed ? (

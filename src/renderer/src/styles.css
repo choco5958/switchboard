@@ -669,7 +669,7 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .agent-row-name { min-width: 150px; }
 .agent-row-how { flex: 1; min-width: 200px; }
 .agent-row-install code { user-select: all; }
-.agent-row a { color: var(--accent); }
+.agent-row a, .settings-row a { color: var(--accent); }
 .agent-form { display: grid; gap: 8px; max-width: 640px; }
 .agent-form label { display: grid; gap: 3px; }
 /* Feature area: UI language (settings picker). */

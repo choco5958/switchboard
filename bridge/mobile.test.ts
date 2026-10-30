@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, listen } from './server.ts'
-import { createMobile, mobileAddresses, mobileRouteAllowed, needsStrong, newPairCode, privateAddress, setTailscaleServe, strongTransport, tailscaleState, type Run } from './mobile.ts'
+import { clientOf, createMobile, mobileAddresses, mobileRouteAllowed, needsStrong, newPairCode, privateAddress, setTailscaleServe, strongTransport, tailscaleState, type Run } from './mobile.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { encryptPush, pushAllowed, sendPush, validSubscription, vapidAuth, makeVapidKeys } from './push.ts'
 import { fromB64, fromUtf8, open, seal, toB64, utf8 } from './mobile/aead.js'
@@ -84,15 +84,52 @@ test('Tailscale HTTPS: on only for this port, and never over what 443 already se
     return { run, calls }
   }
   const none = fake({})
-  assert.deepEqual(await tailscaleState(47390, none.run, '/bin/tailscale'), { installed: true, domain: 'mac.tail1.ts.net', served: false, busy: false })
+  const closed = { funnel: false, funnelAllowed: false, funnelLink: 'https://login.tailscale.com/admin/acls' }
+  assert.deepEqual(await tailscaleState(47390, none.run, '/bin/tailscale'), { installed: true, domain: 'mac.tail1.ts.net', served: false, busy: false, ...closed })
   const ours = fake({ TCP: { 443: { HTTPS: true } }, Web: { 'mac.tail1.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:47390' } } } } })
   assert.equal((await tailscaleState(47390, ours.run, '/bin/tailscale')).served, true)
   const other = fake({ TCP: { 443: { HTTPS: true } }, Web: { 'mac.tail1.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:3000' } } } } })
-  assert.deepEqual(await tailscaleState(47390, other.run, '/bin/tailscale'), { installed: true, domain: 'mac.tail1.ts.net', served: false, busy: true })
+  assert.deepEqual(await tailscaleState(47390, other.run, '/bin/tailscale'), { installed: true, domain: 'mac.tail1.ts.net', served: false, busy: true, ...closed })
   assert.equal((await tailscaleState(47390, none.run, null)).installed, false)
   await setTailscaleServe(true, 47390, none.run, '/bin/tailscale')
   await setTailscaleServe(false, 47390, none.run, '/bin/tailscale')
   assert.deepEqual(none.calls.slice(-2), [['serve', '--bg', '--https=443', 'http://127.0.0.1:47390'], ['serve', '--https=443', 'off']])
+})
+
+test('Tailscale Funnel: seen in the serve config, allowed by the tailnet, and turned off through serve', async () => {
+  const calls: string[][] = []
+  const run = (capMap: Record<string, unknown>, allow: Record<string, boolean>): Run => async (_bin, args) => {
+    calls.push(args)
+    if (args[0] === 'status') return { ok: true, out: JSON.stringify({ BackendState: 'Running', CertDomains: ['mac.tail1.ts.net'], Self: { ID: 'nAbc123CNTRL', CapMap: capMap } }) }
+    if (args.join(' ') === 'serve status --json')
+      return { ok: true, out: JSON.stringify({ TCP: { 443: { HTTPS: true } }, Web: { 'mac.tail1.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:47390' } } } }, AllowFunnel: allow }) }
+    return { ok: true, out: '' }
+  }
+  const open = await tailscaleState(47390, run({ funnel: null, https: null }, { 'mac.tail1.ts.net:443': true }), '/bin/tailscale')
+  assert.equal(open.funnel, true)
+  assert.equal(open.funnelAllowed, true)
+  assert.equal(open.funnelLink, 'https://login.tailscale.com/f/funnel?node=nAbc123CNTRL')
+  const notYet = await tailscaleState(47390, run({ https: null }, {}), '/bin/tailscale')
+  assert.equal(notYet.funnel, false)
+  assert.equal(notYet.funnelAllowed, false)
+  // Another port's funnel is not this page's.
+  assert.equal((await tailscaleState(3000, run({ funnel: null }, { 'mac.tail1.ts.net:443': true }), '/bin/tailscale')).funnel, false)
+  const plain = run({}, {})
+  await setTailscaleServe(true, 47390, plain, '/bin/tailscale', true)
+  await setTailscaleServe(true, 47390, plain, '/bin/tailscale', false)
+  assert.deepEqual(calls.slice(-2), [
+    ['funnel', '--bg', '--https=443', 'http://127.0.0.1:47390'],
+    ['serve', '--bg', '--https=443', 'http://127.0.0.1:47390'],
+  ])
+})
+
+test('the sender behind Tailscale HTTPS is the one X-Forwarded-For names, and only then', () => {
+  assert.equal(clientOf('127.0.0.1', '203.0.113.7'), '203.0.113.7')
+  assert.equal(clientOf('::ffff:127.0.0.1', '203.0.113.7, 10.0.0.1'), '203.0.113.7')
+  assert.equal(clientOf('::1', ['198.51.100.2']), '198.51.100.2')
+  assert.equal(clientOf('127.0.0.1', undefined), '127.0.0.1')
+  // A phone on the Wi-Fi cannot pick a name to be counted under.
+  assert.equal(clientOf('192.168.0.5', '203.0.113.7'), '192.168.0.5')
 })
 
 describe('Web Push', () => {
@@ -182,6 +219,20 @@ test('an address that keeps failing waits out the minute, before anything is dec
   const junk = JSON.stringify({ d: 1, n: toB64(randomBytes(12)), c: toB64(randomBytes(40)) })
   for (let i = 0; i < 30; i++) assert.equal(await post(junk), 401)
   assert.equal(await post(junk), 429)
+  // Through Tailscale Funnel every phone comes from 127.0.0.1: a stranger's failures are counted
+  // under the stranger's address, and leave the person's own phone alone.
+  const via = (from: string) =>
+    new Promise<number>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port, method: 'POST', path: '/api', headers: { 'content-type': 'application/json', 'x-forwarded-for': from } }, res => {
+        res.resume()
+        res.on('end', () => resolve(res.statusCode ?? 0))
+      })
+      req.on('error', reject)
+      req.end(junk)
+    })
+  for (let i = 0; i < 30; i++) assert.equal(await via('203.0.113.7'), 401)
+  assert.equal(await via('203.0.113.7'), 429)
+  assert.equal(await via('198.51.100.2'), 401)
   await mobile.stop()
 })
 

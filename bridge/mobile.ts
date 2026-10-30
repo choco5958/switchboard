@@ -118,39 +118,69 @@ export function tailscaleBin(): string | null {
   return candidates.find(path => existsSync(path)) ?? null
 }
 
-export type TailscaleState = { installed: boolean; domain: string; served: boolean; busy: boolean }
+export type TailscaleState = {
+  installed: boolean
+  domain: string
+  served: boolean
+  busy: boolean
+  // Tailscale Funnel: the same HTTPS address open to the whole internet, so a phone without
+  // Tailscale reaches it over any network. `funnelAllowed`: the tailnet lets this computer use
+  // it (an admin turns it on once, at `funnelLink`).
+  funnel: boolean
+  funnelAllowed: boolean
+  funnelLink: string
+}
+
+const NO_TAILSCALE = { domain: '', served: false, busy: false, funnel: false, funnelAllowed: false, funnelLink: '' }
 
 // `served`: tailscale serve sends https://<domain>/ to this port. `busy`: port 443 already goes
 // somewhere else, which turning it on would replace, so the app leaves it alone.
 export async function tailscaleState(port: number, run: Run = runFile, bin = tailscaleBin()): Promise<TailscaleState> {
-  if (!bin) return { installed: false, domain: '', served: false, busy: false }
+  if (!bin) return { installed: false, ...NO_TAILSCALE }
   const status = await run(bin, ['status', '--json'])
   let domain = ''
+  let funnelAllowed = false
+  let node = ''
   try {
-    const parsed = JSON.parse(status.out) as { BackendState?: string; CertDomains?: string[] }
+    const parsed = JSON.parse(status.out) as { BackendState?: string; CertDomains?: string[]; Self?: { ID?: string; CapMap?: Record<string, unknown> } }
     if (parsed.BackendState === 'Running') domain = parsed.CertDomains?.[0] ?? ''
+    funnelAllowed = Object.hasOwn(parsed.Self?.CapMap ?? {}, 'funnel')
+    node = typeof parsed.Self?.ID === 'string' ? parsed.Self.ID : ''
   } catch {
     // Not logged in, or not running.
   }
-  if (!domain) return { installed: true, domain: '', served: false, busy: false }
+  if (!domain) return { installed: true, ...NO_TAILSCALE }
+  const funnelLink = node ? `https://login.tailscale.com/f/funnel?node=${encodeURIComponent(node)}` : 'https://login.tailscale.com/admin/acls'
   const serve = await run(bin, ['serve', 'status', '--json'])
   let handlers: Record<string, { Proxy?: string }> = {}
   let any443 = false
+  let funnel = false
   try {
-    const parsed = JSON.parse(serve.out || '{}') as { TCP?: Record<string, unknown>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> }
+    const parsed = JSON.parse(serve.out || '{}') as {
+      TCP?: Record<string, unknown>
+      Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }>
+      AllowFunnel?: Record<string, boolean>
+    }
     any443 = Boolean(parsed.TCP?.['443'])
     handlers = parsed.Web?.[`${domain}:443`]?.Handlers ?? {}
+    funnel = parsed.AllowFunnel?.[`${domain}:443`] === true
   } catch {
     // No serve config.
   }
   const mine = new RegExp(`^http://(127\\.0\\.0\\.1|localhost):${port}/?$`)
   const served = port > 0 && mine.test(handlers['/']?.Proxy ?? '')
-  return { installed: true, domain, served, busy: any443 && !served }
+  return { installed: true, domain, served, busy: any443 && !served, funnel: served && funnel, funnelAllowed, funnelLink }
 }
 
-export async function setTailscaleServe(on: boolean, port: number, run: Run = runFile, bin = tailscaleBin()): Promise<{ ok: boolean; error: string }> {
+// `funnel` true opens the address to the internet; false keeps it on the tailnet (serve turns a
+// funnel on that port off). Off goes through serve too: `tailscale funnel ... off` waits forever
+// on a tailnet that does not allow Funnel.
+export async function setTailscaleServe(on: boolean, port: number, run: Run = runFile, bin = tailscaleBin(), funnel = false): Promise<{ ok: boolean; error: string }> {
   if (!bin) return { ok: false, error: 'tailscale' }
-  const result = on ? await run(bin, ['serve', '--bg', '--https=443', `http://127.0.0.1:${port}`]) : await run(bin, ['serve', '--https=443', 'off'])
+  const target = `http://127.0.0.1:${port}`
+  const result = !on
+    ? await run(bin, ['serve', '--https=443', 'off'])
+    : await run(bin, [funnel ? 'funnel' : 'serve', '--bg', '--https=443', target])
   return { ok: result.ok, error: result.ok ? '' : result.out.trim().split('\n').slice(-3).join(' ').slice(0, 300) }
 }
 
@@ -198,6 +228,15 @@ export function needsStrong(method: string, path: string, body: unknown): boolea
   if (method !== 'POST') return false
   if (path === '/outbox') return true
   return /^\/approvals\/\d+\/answer$/.test(path) && (body as { decision?: unknown } | null)?.decision === 'allow'
+}
+
+// Who sent a request, for the failure count. Tailscale HTTPS and Funnel forward every phone from
+// this computer and name the real sender in X-Forwarded-For; counting by 127.0.0.1 would let one
+// stranger's bad requests shut every phone out.
+export function clientOf(address: string, forwarded: string | string[] | undefined): string {
+  const loopback = /^(::ffff:)?127\./.test(address) || address === '::1'
+  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim()
+  return loopback && first ? first : address
 }
 
 export function newPairCode(): string {
@@ -320,18 +359,18 @@ export function createMobile(options: {
     return { status: 200, json: { on: subscription !== null } }
   }
 
-  async function api(req: IncomingMessage, res: ServerResponse, address: string): Promise<void> {
+  async function api(req: IncomingMessage, res: ServerResponse, address: string, who: string): Promise<void> {
     let outer: { d?: unknown; n?: unknown; c?: unknown }
     try {
       outer = JSON.parse(await readBody(req)) as typeof outer
     } catch {
-      failed(address)
+      failed(who)
       return reply(res, 400, { error: 'bad request' })
     }
     const opened = unseal(outer.d, outer.n, outer.c, reqAad)
     const inner = opened ? parsed<{ t?: unknown; method?: unknown; path?: unknown; body?: unknown }>(opened.plain) : null
     if (!opened || !inner) {
-      failed(address)
+      failed(who)
       return reply(res, 401, { error: 'unknown device' })
     }
     const { device, key } = opened
@@ -366,12 +405,13 @@ export function createMobile(options: {
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const address = req.socket.remoteAddress ?? ''
     if (!privateAddress(address)) return reply(res, 403, { error: 'forbidden' })
+    const who = clientOf(address, req.headers['x-forwarded-for'])
     if (!hostAllowed(req.headers.host)) {
       // The Tailscale name may be new since the last look.
       if ((req.headers.host ?? '').endsWith('.ts.net')) httpsDomain = (await tailscaleState(port, run, tailscaleAt)).domain
       if (!hostAllowed(req.headers.host)) return reply(res, 403, { error: 'forbidden' })
     }
-    if (blocked(address)) return reply(res, 429, { error: 'too many failed requests' })
+    if (blocked(who)) return reply(res, 429, { error: 'too many failed requests' })
     const url = new URL(req.url ?? '/', 'http://phone')
     const method = req.method ?? 'GET'
     const file = FILES[url.pathname]
@@ -388,7 +428,7 @@ export function createMobile(options: {
       const opened = unseal(url.searchParams.get('d'), url.searchParams.get('n'), url.searchParams.get('c'), eventsAad)
       const at = opened ? Number(parsed<{ t?: unknown }>(opened.plain)?.t) : NaN
       if (!opened || !fresh(opened.device, String(url.searchParams.get('n')), at)) {
-        failed(address)
+        failed(who)
         return reply(res, 401, { error: 'unknown device' })
       }
       const mine = [...streams].filter(s => s.device === opened.device)
@@ -416,7 +456,7 @@ export function createMobile(options: {
       prune()
       const entry = codes.get(code)
       if (!entry) {
-        failed(address)
+        failed(who)
         // Too many wrong codes: every open code goes, and the app shows a new one.
         if (++codeMisses >= CODE_TRIES) {
           codes.clear()
@@ -429,7 +469,7 @@ export function createMobile(options: {
       if (!row) return reply(res, 404, { error: 'no such code' })
       return reply(res, 200, { id: entry.device, key: row.key })
     }
-    if (method === 'POST' && url.pathname === '/api') return api(req, res, address)
+    if (method === 'POST' && url.pathname === '/api') return api(req, res, address, who)
     return reply(res, 404, { error: 'not found' })
   }
 
@@ -487,7 +527,7 @@ export function createMobile(options: {
       const addresses = server ? mobileAddresses(port, { name: bonjourName(), https: tailscale.served ? tailscale.domain : null, lan }) : []
       return { listening: server !== null, port, error, lan, addresses, devices: devices(), tailscale }
     },
-    tailscale: (on: boolean) => setTailscaleServe(on, port, run, tailscaleAt),
+    tailscale: (on: boolean, funnel = false) => setTailscaleServe(on, port, run, tailscaleAt, funnel),
     // A new phone: its id and key go into the QR code the app shows once, and a code for a
     // phone that types it instead.
     pair: (name: string): { id: number; key: string; code: string } => {

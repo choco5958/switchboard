@@ -893,7 +893,7 @@ export const ko = {
   'mobile.never': '아직 접속하지 않음',
   'mobile.revoke': '연결 해제',
   'mobile.firewall': '운영체제가 들어오는 연결을 허용할지 물으면(macOS 방화벽, Windows Defender 방화벽) 허용을 누르세요. 업데이트한 뒤 한 번 더 물을 수 있습니다.',
-  'mobile.outside': '집이나 회사 밖에서도 쓰려면 PC와 휴대폰에 Tailscale을 설치하고, Tailscale 주소로 QR 코드를 띄웁니다.',
+  'mobile.outside': '집이나 회사 밖에서도 쓰려면 이 컴퓨터에 Tailscale을 설치하고 로그인합니다. 그러면 여기에 Tailscale HTTPS와 Funnel이 나오고, Funnel을 켜면 휴대폰에는 설치할 것 없이 어느 네트워크에서나 접속합니다.',
   'mobile.name': '이 컴퓨터 이름 (주소가 바뀌어도 그대로)',
   'mobile.https': 'Tailscale HTTPS (알림 가능)',
   'mobile.lan': '같은 Wi-Fi에서 바로 접속 받기',
@@ -956,6 +956,13 @@ export const ko = {
   'mobile.strongNote': '같은 Wi-Fi(HTTP)로 연 화면은 권한 허용과 세션 메시지를 할 수 없습니다. 그 네트워크를 장악한 사람이 화면을 바꿔치기할 수 있어서입니다. 둘 다 Tailscale HTTPS로 연 화면에서 합니다.',
   'mobile.tailscaleLogin': 'Tailscale은 설치되어 있지만 HTTPS 주소가 없습니다. Tailscale에 로그인하고, 관리 페이지에서 MagicDNS와 HTTPS 인증서를 켜세요.',
   'mobile.tailscaleAdmin': 'Tailscale DNS 설정 열기',
+  'mobile.httpsFunnel': 'Tailscale Funnel, 어디서나 접속 (알림 가능)',
+  'mobile.funnel': '다른 Wi-Fi와 LTE에서도 접속 받기 (Tailscale Funnel)',
+  'mobile.funnelHint': '켜면 휴대폰에 Tailscale을 설치하지 않아도 어느 네트워크에서나 이 HTTPS 주소로 엽니다. 주소를 아는 사람은 누구나 페이지를 열 수 있지만, 연결한 휴대폰만 내용을 보고 답할 수 있습니다.',
+  'mobile.funnelOnNote': '인터넷 어디서나 이 HTTPS 주소로 열립니다. 이 주소로 QR 코드를 띄워 연결하세요. 연결한 휴대폰만 내용을 보고 답할 수 있습니다.',
+  'mobile.funnelAllowFirst': '처음 한 번은 Tailscale 관리 페이지에서 이 컴퓨터의 Funnel을 허용해야 합니다.',
+  'mobile.funnelAllow': 'Funnel 허용하기',
+  'mobile.funnelPolicy': '이 tailnet은 아직 Funnel을 허용하지 않았습니다. {link} 에서 허용한 뒤 다시 켜세요.',
   'mobile.loadFailed': '휴대폰 연결 상태를 읽지 못했습니다: {error}',
 } satisfies Record<string, string>
 

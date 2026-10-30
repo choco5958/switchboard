@@ -245,6 +245,8 @@ A page opened over the Wi-Fi (an HTTP address) can answer decisions, deny, and s
 
 **Notifications, and away from home**: with [Tailscale](https://tailscale.com) installed and signed in on the computer and the phone, Settings offers `Turn on Tailscale HTTPS`. It has Tailscale make an HTTPS address under this computer's name, open on your tailnet only. Pair through that address to use the page anywhere, and press `Get notifications on this phone` at the bottom to hear about new decisions and permission asks while you are away. On iPhone, add the page to the home screen and open it from there before turning notifications on. A page opened over plain HTTP announces new items only while it is open, with a buzz and a count in its title.
 
+**Off your Wi-Fi (Tailscale Funnel)**: to use the phone over mobile data or another Wi-Fi without installing Tailscale on it, turn on `Accept connections from other Wi-Fi and mobile data` under `Turn on Tailscale HTTPS`. The same HTTPS address opens to the internet, and the phone reaches it from any network. The first time, allow Funnel for this computer on the Tailscale admin page; Settings shows the link. Anyone who knows the address can load the page, but everything sent is encrypted with each phone's own key, so only paired phones can see or answer anything. The address stays the same, so the home screen app and notifications keep working.
+
 Turn off `Accept phones on the same Wi-Fi` to listen on this computer only, for Tailscale HTTPS alone. macOS then does not ask about the firewall either.
 
 ### Scheduled prompts
