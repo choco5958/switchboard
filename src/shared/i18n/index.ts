@@ -139,6 +139,18 @@ export const nodeOwnerLabel = (value: string, lang = current): string => labelOf
 export const eventKindLabel = (value: string, lang = current): string => labelOf(EVENT_KIND_KEYS, value, lang)
 export const commentStatusLabel = (value: string, lang = current): string => labelOf(COMMENT_STATUS_KEYS, value, lang)
 
+// An English word for a stored value, for markup (data-status, data-kind) and CSS, so styles do
+// not depend on the Korean stored words: the last part of the value's key ('nodeStatus.now' -> 'now').
+// A value with no entry gives 'other'.
+function slugOf(keys: Record<string, Key>, value: string): string {
+  const key = Object.hasOwn(keys, value) ? keys[value] : undefined
+  return key ? key.slice(key.indexOf('.') + 1) : 'other'
+}
+
+export const nodeStatusSlug = (value: string): string => slugOf(NODE_STATUS_KEYS, value)
+export const eventKindSlug = (value: string): string => slugOf(EVENT_KIND_KEYS, value)
+export const commentStatusSlug = (value: string): string => slugOf(COMMENT_STATUS_KEYS, value)
+
 // "37초 전" and its kin.
 export function agoText(ms: number, lang = current): string {
   const seconds = Math.max(0, Math.round(ms / 1000))

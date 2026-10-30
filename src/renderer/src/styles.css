@@ -570,8 +570,8 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
 .worklog-body.full { max-height: calc(100vh - 260px); overflow: auto; border: var(--bw) solid var(--line); border-radius: var(--r-md); padding: var(--sp-2); }
 .worklog-body .empty-state { font-family: var(--sans); }
 .log .kind { color: var(--accent); }
-.log.kind-결정\ 대기 .kind { color: var(--warn); }
-.log.kind-답함 .kind, .log.kind-전달 .kind { color: var(--good); }
+.log[data-kind="question"] .kind { color: var(--warn); }
+.log[data-kind="answered"] .kind, .log[data-kind="delivered"] .kind { color: var(--good); }
 .log .badge-count { min-width: 16px; height: 16px; line-height: 16px; cursor: default; }
 .log-filter { margin: var(--sp-2) 0; }
 
@@ -618,9 +618,9 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
   display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: var(--r-sm); font-size: var(--fs-xs);
   background: var(--panel-2); color: var(--quiet); font-weight: 400;
 }
-.node-지금 { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.node-끝 { border-color: var(--good); }
-.node-실패 { border-color: var(--bad); }
+.node[data-status="now"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.node[data-status="done"] { border-color: var(--good); }
+.node[data-status="failed"] { border-color: var(--bad); }
 .node-selected { outline: 2px solid var(--warn); outline-offset: 2px; }
 .node-detail { margin-top: var(--sp-3); }
 .node-detail h3 { margin-top: 0; color: var(--text); }
@@ -630,9 +630,9 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
 .check .bad { color: var(--bad); }
 .node-table td { font-size: var(--fs-sm); }
 .node-table .nowrap { white-space: nowrap; }
-.node-status-지금 { color: var(--accent); }
-.node-status-끝 { color: var(--good); }
-.node-status-실패 { color: var(--bad); }
+.node-table td[data-status="now"] { color: var(--accent); }
+.node-table td[data-status="done"] { color: var(--good); }
+.node-table td[data-status="failed"] { color: var(--bad); }
 .task-log { font: var(--fs-sm)/var(--lh-loose) var(--mono); }
 .task-log .kind { color: var(--accent); }
 
@@ -695,8 +695,8 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
 .kept-text { white-space: pre-wrap; word-break: break-word; }
 .kept-meta { display: flex; flex-wrap: wrap; gap: var(--sp-1) 10px; margin-top: var(--sp-1); }
 .kept-actions { display: flex; gap: var(--sp-3); margin-top: var(--sp-1); }
-.kept-보냄 { border-style: dashed; border-color: var(--line); }
-.kept-해결 { opacity: 0.6; }
+.kept[data-status="sent"] { border-style: dashed; border-color: var(--line); }
+.kept[data-status="resolved"] { opacity: 0.6; }
 .comment-target { margin-top: 14px; word-break: keep-all; }
 .browser-status {
   display: flex; align-items: center; gap: 14px; min-width: 0; padding: 3px 10px; border-top: var(--bw) solid var(--line);

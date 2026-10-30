@@ -264,7 +264,7 @@ test('a message from the IDE reaches its session and is acknowledged once', asyn
   await call('POST', `/deliveries/${got.id}/ack`)
   await call('POST', `/deliveries/${got.id}/ack`)
   const { json: state } = await call('GET', '/state')
-  assert.equal(state.events.filter((e: { kind: string; text: string }) => e.kind === '전달' && e.text.startsWith('화면 코멘트')).length, 1)
+  assert.equal(state.events.filter((e: { kind: string; text: string }) => e.kind === '전달' && e.text === '세션에 넣음: 화면 코멘트').length, 1)
 })
 
 test('an older mod acknowledging a bare number still marks the answer', async () => {
@@ -329,7 +329,7 @@ test('agents tie to nodes by their description and log when they end', async () 
   const state = (await call('GET', '/state')).json
   const agent = state.agents.find((a: { id: string }) => a.id === 'ag1')
   assert.deepEqual([agent.task_title, agent.node_key, agent.status], ['정산 화면', 'build', 'completed'])
-  assert.ok(state.events.some((e: { kind: string; text: string }) => e.kind === '작업자' && e.text.startsWith('끝')))
+  assert.ok(state.events.some((e: { kind: string; text: string }) => e.kind === '작업자' && e.text.startsWith('완료')))
 })
 
 test('a command reaches the mod at once and records its result', async () => {
@@ -425,12 +425,12 @@ test('a later plan may put a node after one an earlier plan made', async () => {
 })
 
 test('node status events name the owner and mark a restart', async () => {
-  assert.equal(nodeEventText('끝', '작업자', '화면 구현', 1, false), '끝, 작업자: 화면 구현')
+  assert.equal(nodeEventText('끝', '작업자', '화면 구현', 1, false), '완료, 서브에이전트: 화면 구현')
   assert.equal(nodeEventText('지금', '검토자', '독립 검토', 2, true), '다시 시작, 검토자: 독립 검토 (2회차)')
   await call('POST', '/nodes/status', { sessionId: 's1', taskTitle: '정산 화면', key: 'review', status: '끝' })
   await call('POST', '/nodes/status', { sessionId: 's1', taskTitle: '정산 화면', key: 'review', status: '지금' })
   const texts = (await call('GET', '/state')).json.events.map((e: { text: string }) => e.text)
-  assert.ok(texts.includes('끝, 검토자: 독립 검토'))
+  assert.ok(texts.includes('완료, 검토자: 독립 검토'))
   assert.ok(texts.includes('다시 시작, 검토자: 독립 검토 (2회차)'))
 })
 
@@ -698,7 +698,7 @@ describe('messages between sessions', () => {
     assert.deepEqual((await call('POST', '/messages', { sessionId: 'pa', to: ['pb'], text: '주문 API 응답 형식을 알려줘', requestKey: 'toolu_p1' })).json, { ids: sent.ids, duplicate: true })
     const [got] = await take('pb')
     assert.equal(got?.id, sent.ids[0])
-    assert.match(got!.text, /front \(pa\)이\(가\) 보낸 메시지/)
+    assert.match(got!.text, /front \(pa\)에서 온 메시지/)
     assert.match(got!.text, /협업자 입력/)
     assert.match(got!.text, new RegExp(`replyTo "${sent.ids[0]}"`))
     assert.match(got!.text, /마지막 답변이 그대로 결과로/)
@@ -866,7 +866,7 @@ describe('messages between sessions', () => {
     await call('POST', '/outbox', { sessionId: 'cb', text: '다음 일' })
     const items = await take('cb')
     assert.equal(items.length, 2)
-    assert.match(items[0]!.text, new RegExp(`요청 ${working.ids[0]}를 취소했습니다.\n취소 이유: 방향이 바뀜`))
+    assert.match(items[0]!.text, new RegExp(`요청 취소: .*요청 ${working.ids[0]}\n취소 이유: 방향이 바뀜`))
   })
 
   test("a Claude Code recipient's mod is asked to stop, and its answer decides 'stopped'", async () => {
@@ -891,7 +891,7 @@ describe('messages between sessions', () => {
     assert.deepEqual((await call('POST', '/messages/cancel', { sessionId: 'ca', ids: typing.ids })).json.results, { [typing.ids[0]]: 'noted' })
     await call('POST', `/deliveries/${typing.ids[0]}/ack`)
     await call('POST', '/outbox', { sessionId: 'ch', text: '다음 일' })
-    assert.match((await take('ch'))[0]!.text, new RegExp(`요청 ${typing.ids[0]}를 취소했습니다`))
+    assert.match((await take('ch'))[0]!.text, new RegExp(`요청 취소: .*요청 ${typing.ids[0]}`))
 
     // Taken to type, but the terminal closed first: released, it is still waiting when cancelled.
     const untyped = (await call('POST', '/messages', { sessionId: 'ca', to: ['ch'], text: '못 친 일' })).json
@@ -1085,7 +1085,7 @@ describe('scheduled prompts and waits', () => {
     const last = await runs(r.id)
     assert.deepEqual(last.map(run => run.status), ['quiet', 'skipped', 'failed', 'failed'])
     assert.equal(last[2]!.failure, '레지스트리에 닿지 못함')
-    assert.equal(last[3]!.failure, '턴이 중단됨')
+    assert.equal(last[3]!.failure, '세션의 응답이 중단됨')
     stream.destroy()
     await call('POST', `/routines/${r.id}/delete`)
     assert.equal((await runs(r.id)).length, 0)

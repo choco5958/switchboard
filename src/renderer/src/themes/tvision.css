@@ -65,9 +65,9 @@
 [data-theme='tvision'] .stat,
 [data-theme='tvision'] .home-card { border: 3px double #ffffff; box-shadow: 8px 8px 0 #000000; }
 [data-theme='tvision'] .node { border: 3px double var(--line); box-shadow: 6px 6px 0 #000000; overflow: visible; }
-[data-theme='tvision'] .node-지금 { border-color: var(--accent); box-shadow: 6px 6px 0 #000000; }
-[data-theme='tvision'] .node-끝 { border-color: var(--good); }
-[data-theme='tvision'] .node-실패 { border-color: var(--bad); }
+[data-theme='tvision'] .node[data-status="now"] { border-color: var(--accent); box-shadow: 6px 6px 0 #000000; }
+[data-theme='tvision'] .node[data-status="done"] { border-color: var(--good); }
+[data-theme='tvision'] .node[data-status="failed"] { border-color: var(--bad); }
 [data-theme='tvision'] .graph-scroll { background: #000080; }
 
 /* Cyan selection with black text: everything in a selected row turns black. */

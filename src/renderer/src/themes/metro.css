@@ -35,7 +35,7 @@
 [data-theme='metro'] .btn { border-radius: var(--r-pill); border-width: 2px; font-weight: 600; }
 [data-theme='metro'] .option { border-width: 2px; border-radius: var(--r-pill); }
 [data-theme='metro'] .node { border-width: 3px; border-radius: 16px; }
-[data-theme='metro'] .node-지금 { box-shadow: 0 0 0 3px var(--accent-soft); }
+[data-theme='metro'] .node[data-status="now"] { box-shadow: 0 0 0 3px var(--accent-soft); }
 [data-theme='metro'] .edge { stroke-width: 2.5; stroke: var(--track); }
 [data-theme='metro'] .edge.done { stroke: var(--good); }
 

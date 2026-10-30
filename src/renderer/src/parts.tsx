@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react'
 import type { Approval, BridgeState, Question, Task } from '../../shared/types'
 import { taskStateLabel, taskState } from '../../shared/projects'
-import { eventKindLabel, stageLabel, t } from '../../shared/i18n'
+import { eventKindLabel, eventKindSlug, stageLabel, t } from '../../shared/i18n'
 import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent, type Attention } from './model'
 import type { AgentTag } from '../../shared/agents'
 import { Icon } from './Icons'
@@ -186,7 +186,7 @@ export function LogLines({
       {events.map(e => {
         const task = taskOfEvent(tasks, e)
         return (
-          <div key={e.id} className={`log kind-${e.kind}`}>
+          <div key={e.id} className="log" data-kind={eventKindSlug(e.kind)}>
             <span className="quiet">{clock(e.ts)}</span>{' '}
             {agents[e.session_id] && (
               <>

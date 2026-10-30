@@ -4,7 +4,7 @@ import { WorkerLane } from './WorkerLane'
 import { ago, clock, layoutGraph, reviewLoops, stageCounts, stations } from './model'
 import { AgentBadge, NumberBadge, onPress } from './parts'
 import type { AgentTag } from '../../shared/agents'
-import { eventKindLabel, nodeKindLabel, nodeOwnerLabel, nodeStatusLabel, stageLabel, t, taskStatusLabel } from '../../shared/i18n'
+import { eventKindLabel, nodeKindLabel, nodeOwnerLabel, nodeStatusLabel, nodeStatusSlug, stageLabel, t, taskStatusLabel } from '../../shared/i18n'
 import { artifactFromNotes, nodeDetailKey, runningAgents, taskEvents, taskQuestions, testsFromNotes } from './taskInfo'
 import { Icon } from './Icons'
 import { Badge, Button, Card, VisuallyHidden, cx } from './ui'
@@ -205,7 +205,8 @@ export function TaskView({
             {layout.placed.map(({ node, col, row }) => (
               <div
                 key={node.key}
-                className={`node node-${node.status} ${node.key === selectedKey ? 'node-selected' : ''}`}
+                className={`node ${node.key === selectedKey ? 'node-selected' : ''}`}
+                data-status={nodeStatusSlug(node.status)}
                 role="button"
                 tabIndex={0}
                 aria-pressed={node.key === selectedKey}
@@ -349,7 +350,7 @@ function NodeTable({ nodes, selectedKey, onSelect }: { nodes: GraphNode[]; selec
               </td>
               <td>{node.title}</td>
               <td className="nowrap">{nodeOwnerLabel(node.owner)}</td>
-              <td className={`nowrap node-status-${node.status}`}>{nodeStatusLabel(node.status)}</td>
+              <td className="nowrap" data-status={nodeStatusSlug(node.status)}>{nodeStatusLabel(node.status)}</td>
               <td className="nowrap">{node.round}</td>
               <td className="quiet">{node.note}</td>
             </tr>

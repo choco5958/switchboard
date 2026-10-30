@@ -15,7 +15,7 @@ import {
 } from './comments'
 import { debugStore, failureReason, sessionFor, useDebugStore, waitUntilAnswering, whereTo } from './debugStore'
 import { CaptureLimiter, makeNonce, parseMessage, pickerSource, type PickMessage } from './picker'
-import { commentStatusLabel, t, type Key } from '../../shared/i18n'
+import { commentStatusLabel, commentStatusSlug, t, type Key } from '../../shared/i18n'
 import { composing } from './ime'
 import { Badge, Button, Card, Chip, EmptyState, IconButton, Input, Select, cx } from './ui'
 import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
@@ -550,7 +550,7 @@ export function BrowserView({
           {shown.map(c => {
             const n = openComments.indexOf(c)
             return (
-              <Card key={c.id} sunk pad="sm" className={`kept kept-${c.status}`}>
+              <Card key={c.id} sunk pad="sm" className="kept" data-status={commentStatusSlug(c.status)}>
                 <div className="kept-head">
                   {n >= 0 ? (
                     <Badge shape="count" tone="warn" className="mark-num">

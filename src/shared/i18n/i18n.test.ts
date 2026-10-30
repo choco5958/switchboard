@@ -1,16 +1,20 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, test } from 'vitest'
 import {
   DICTS,
   LANGS,
   agoText,
   commentStatusLabel,
+  commentStatusSlug,
   eventKindLabel,
+  eventKindSlug,
   format,
   getLang,
   langFromLocale,
   nodeKindLabel,
   nodeOwnerLabel,
   nodeStatusLabel,
+  nodeStatusSlug,
   placeholders,
   resolveLang,
   setLang,
@@ -106,7 +110,7 @@ describe('t() with values', () => {
   test('picks the English plural by the count', () => {
     expect(tIn('en', 'app.archivedDone', { n: 1 })).toBe('Moved 1 finished task to the archive.')
     expect(tIn('en', 'app.archivedDone', { n: 3 })).toBe('Moved 3 finished tasks to the archive.')
-    expect(tIn('ko', 'app.archivedDone', { n: 3 })).toBe('끝난 작업 3개를 보관함으로 옮겼습니다.')
+    expect(tIn('ko', 'app.archivedDone', { n: 3 })).toBe('완료된 작업 3개를 보관함으로 옮겼습니다.')
   })
 
   test('tOr falls back for ids that have no key', () => {
@@ -127,22 +131,22 @@ describe('t() with values', () => {
 describe('labels of stored values', () => {
   const cases: [string, (value: string, lang?: Lang) => string, string[], Record<Lang, string[]>][] = [
     ['stage', stageLabel, ['요구', '설계', '작업', '완료'], {
-      ko: ['요구', '설계', '작업', '완료'],
+      ko: ['요구', '설계', '구현', '완료'],
       en: ['Requirements', 'Design', 'Work', 'Done'],
       ja: ['要件', '設計', '作業', '完了'],
       'zh-CN': ['需求', '设计', '开发', '完成'],
     }],
     ['task status', taskStatusLabel, ['하는 중', '대기', '보관'], {
-      ko: ['하는 중', '대기', '보관'],
+      ko: ['진행 중', '대기 중', '보관'],
       en: ['In progress', 'Waiting', 'Archived'],
-      ja: ['進行中', '待機', 'アーカイブ'],
-      'zh-CN': ['进行中', '等待', '已归档'],
+      ja: ['進行中', '待機中', 'アーカイブ'],
+      'zh-CN': ['进行中', '等待中', '已归档'],
     }],
     ['node status', nodeStatusLabel, ['대기', '지금', '끝', '실패'], {
-      ko: ['대기', '지금', '끝', '실패'],
-      en: ['Waiting', 'Now', 'Done', 'Failed'],
-      ja: ['待機', '進行中', '完了', '失敗'],
-      'zh-CN': ['等待', '进行中', '完成', '失败'],
+      ko: ['대기 중', '진행 중', '완료', '실패'],
+      en: ['Waiting', 'In progress', 'Done', 'Failed'],
+      ja: ['待機中', '進行中', '完了', '失敗'],
+      'zh-CN': ['等待中', '进行中', '完成', '失败'],
     }],
     ['node kind', nodeKindLabel, ['시험', '확인', '구현', '검토', '기타'], {
       ko: ['시험', '확인', '구현', '검토', '기타'],
@@ -151,10 +155,10 @@ describe('labels of stored values', () => {
       'zh-CN': ['测试', '确认', '实现', '评审', '其他'],
     }],
     ['node owner', nodeOwnerLabel, ['작업자', '검토자', '사용자', '오케스트레이터'], {
-      ko: ['작업자', '검토자', '사용자', '오케스트레이터'],
-      en: ['Worker', 'Reviewer', 'User', 'Orchestrator'],
-      ja: ['作業者', 'レビュアー', 'ユーザー', 'オーケストレーター'],
-      'zh-CN': ['执行者', '评审者', '用户', '编排者'],
+      ko: ['서브에이전트', '검토자', '사용자', '오케스트레이터'],
+      en: ['Subagent', 'Reviewer', 'User', 'Orchestrator'],
+      ja: ['サブエージェント', 'レビュアー', 'ユーザー', 'オーケストレーター'],
+      'zh-CN': ['子代理', '评审者', '用户', '编排者'],
     }],
     ['comment status', commentStatusLabel, ['열림', '보냄', '해결', '전체'], {
       ko: ['열림', '보냄', '해결', '전체'],
@@ -170,12 +174,61 @@ describe('labels of stored values', () => {
   }
 
   test('event kinds, including the ones sessions and the app write', () => {
-    const kinds = ['작업', '결정 대기', '보류', '답함', '전달', '계획', '단계', '되살림', '보관', '워크트리', '작업자', '시작', '끝', '실패', '대기', '메시지', '로그', '에이전트', '화면 코멘트', '직접 입력']
-    for (const kind of kinds) {
-      expect(eventKindLabel(kind, 'ko')).toBe(kind)
+    // The stored kind and its Korean label, which may be another word.
+    const kinds: Record<string, string> = {
+      작업: '작업', '결정 대기': '결정 질문', 보류: '보류', 답함: '답함', 전달: '전달', 계획: '계획', 단계: '단계',
+      되살림: '되살림', 보관: '보관', 워크트리: '워크트리', 작업자: '서브에이전트', 시작: '시작', 끝: '완료', 실패: '실패',
+      대기: '대기', 메시지: '메시지', 로그: '로그', 에이전트: '에이전트', '화면 코멘트': '화면 코멘트', '직접 입력': '직접 입력',
+    }
+    for (const [kind, label] of Object.entries(kinds)) {
+      expect(eventKindLabel(kind, 'ko')).toBe(label)
       expect(eventKindLabel(kind, 'en')).not.toBe(kind)
     }
     expect(eventKindLabel('결정 대기', 'en')).toBe('Decision needed')
+  })
+
+  // The stored words live in the bridge, the mod and the app. Reading them from their sources
+  // keeps this check from going stale when one of them adds a value.
+  test('every value the bridge, the mod and the app store has a label in every language', () => {
+    const read = (file: string) => readFileSync(new URL(`../../../${file}`, import.meta.url), 'utf8')
+    const quoted = (text: string | undefined) => [...(text ?? '').matchAll(/'([^']+)'/g)].map(m => m[1]!)
+    const server = read('bridge/server.ts')
+    const list = (name: string) => quoted(server.match(new RegExp(`export const ${name} = \\[([^\\]]*)\\]`))?.[1])
+    const stages = list('STAGES')
+    const kinds = list('NODE_KINDS')
+    const owners = list('NODE_OWNERS')
+    const nodeStatuses = list('NODE_STATUSES')
+    const taskStatuses = quoted(read('mod/hooks/tools.ts').match(/status: \{ type: 'string', enum: \[([^\]]*)\]/)?.[1])
+    const commentStatuses = quoted(read('bridge/debug.ts').match(/COMMENT_STATUSES = \[([^\]]*)\]/)?.[1])
+    const events = new Set<string>([
+      ...[...server.matchAll(/logEvent\(\s*[\w.]+,\s*'([^']+)'/g)].map(m => m[1]!),
+      ...[...server.matchAll(/into outbox \([^)]*\)\s*values \(\?, '([^']+)'/g)].map(m => m[1]!),
+      ...[...read('mod/hooks/register.ts').matchAll(/post\(\$, '([^']+)'/g)].map(m => m[1]!),
+      ...['src/renderer/src/BrowserView.tsx', 'src/renderer/src/pages/DebugPanel.tsx'].flatMap(f =>
+        [...read(f).matchAll(/window\.ide\.send\([^)]*'([^']+)', ''\)/g)].map(m => m[1]!),
+      ),
+      // Written from a variable: a node's status (지금 is logged as 시작) and the log default.
+      ...nodeStatuses.filter(s => s !== '지금'),
+      '시작',
+      '로그',
+    ])
+    expect(stages).toEqual(['요구', '설계', '작업', '완료'])
+    expect([kinds.length, owners.length, nodeStatuses.length]).toEqual([5, 4, 4])
+    expect(taskStatuses).toEqual(['하는 중', '대기', '보관'])
+    expect(commentStatuses).toEqual(['열림', '보냄', '해결'])
+    expect(events.size).toBeGreaterThan(15)
+    const missing: string[] = []
+    const check = (what: string, label: (value: string, lang?: Lang) => string, values: Iterable<string>) => {
+      for (const value of values) for (const lang of OTHERS) if (label(value, lang) === value) missing.push(`${what} ${value} ${lang}`)
+    }
+    check('stage', stageLabel, stages)
+    check('node kind', nodeKindLabel, kinds)
+    check('node owner', nodeOwnerLabel, owners)
+    check('node status', nodeStatusLabel, nodeStatuses)
+    check('task status', taskStatusLabel, taskStatuses)
+    check('comment status', commentStatusLabel, commentStatuses)
+    check('event kind', eventKindLabel, events)
+    expect(missing).toEqual([])
   })
 
   test('a value without a label shows as it is, whatever the language', () => {
@@ -183,6 +236,12 @@ describe('labels of stored values', () => {
       expect(label('Linear', 'en')).toBe('Linear')
       expect(label('toString', 'ja')).toBe('toString')
     }
+  })
+
+  test('markup slugs are English words for the stored values', () => {
+    expect(['대기', '지금', '끝', '실패', '새것'].map(nodeStatusSlug)).toEqual(['waiting', 'now', 'done', 'failed', 'other'])
+    expect(['열림', '보냄', '해결'].map(commentStatusSlug)).toEqual(['open', 'sent', 'resolved'])
+    expect(['결정 대기', '답함', '전달', 'toString'].map(eventKindSlug)).toEqual(['question', 'answered', 'delivered', 'other'])
   })
 
   test('labels follow the current language by default', () => {

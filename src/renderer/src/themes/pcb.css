@@ -49,8 +49,8 @@
 [data-theme='pcb'] .node,
 [data-theme='pcb'] .dialog { box-shadow: var(--shadow-surface); }
 [data-theme='pcb'] .node { border-width: 2px; }
-[data-theme='pcb'] .node-지금 { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 10px rgba(227, 179, 79, 0.35); }
-[data-theme='pcb'] .node-끝 { border-color: var(--good); }
-[data-theme='pcb'] .node-실패 { border-color: var(--bad); }
+[data-theme='pcb'] .node[data-status="now"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 10px rgba(227, 179, 79, 0.35); }
+[data-theme='pcb'] .node[data-status="done"] { border-color: var(--good); }
+[data-theme='pcb'] .node[data-status="failed"] { border-color: var(--bad); }
 [data-theme='pcb'] .edge { stroke: var(--copper); stroke-width: 2; }
 [data-theme='pcb'] .stages li { border-top-width: 2px; }
