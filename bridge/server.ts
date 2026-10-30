@@ -2303,13 +2303,15 @@ if (import.meta.main) {
     else where = `127.0.0.1:${await listenTcp(bridge.server, token)}`
     console.log(`claude-ide bridge listening on ${where}`)
     const serving = servingCheck(token === undefined ? { socketPath: where } : { home: homedir() })
+    // Tests that start a bridge name themselves here, so one they leave behind goes with them.
+    const parent = Number(process.env.CLAUDE_IDE_PARENT_PID) || 0
     const watch = setInterval(() => {
-      if (serving()) return
-      console.log('claude-ide bridge: another bridge took over; leaving')
+      if (serving() && !(parent && !alive(parent))) return
+      console.log('claude-ide bridge: another bridge took over, or the process that started it is gone; leaving')
       clearInterval(watch)
       bridge.close()
       process.exit(0)
-    }, 30_000)
+    }, parent ? 2000 : 30_000)
   } catch (error) {
     console.log(`claude-ide bridge not started: ${error instanceof Error ? error.message : String(error)}`)
     bridge.close()

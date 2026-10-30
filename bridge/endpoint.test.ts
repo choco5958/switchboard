@@ -86,11 +86,13 @@ test('over TCP only the token opens the bridge, never a web page, and a second b
 
 test('start.ts brings a bridge up over TCP, and the shell command and the MCP server reach it', async () => {
   const home = tempHome()
-  const env = { HOME: home, USERPROFILE: home, CLAUDE_IDE_TCP: '1', CLAUDE_IDE_DB: join(home, 'ide.db') }
+  // start.ts leaves the bridge running detached: it leaves by itself once this test process is
+  // gone (CLAUDE_IDE_PARENT_PID), and the finally below stops it whatever failed first.
+  const env = { HOME: home, USERPROFILE: home, CLAUDE_IDE_TCP: '1', CLAUDE_IDE_DB: join(home, 'ide.db'), CLAUDE_IDE_PARENT_PID: String(process.pid) }
   const start = join(import.meta.dirname, 'start.ts')
-  assert.equal((await run([process.execPath, start], env)).code, 0)
-  const saved = JSON.parse(readFileSync(endpointFile(home), 'utf8')) as { port: number; pid: number }
   try {
+    assert.equal((await run([process.execPath, start], env)).code, 0)
+    const saved = JSON.parse(readFileSync(endpointFile(home), 'utf8')) as { port: number; pid: number }
     // A second start finds it answering and leaves it be.
     assert.equal((await run([process.execPath, start], env)).code, 0)
     assert.equal((JSON.parse(readFileSync(endpointFile(home), 'utf8')) as { pid: number }).pid, saved.pid)
@@ -104,6 +106,46 @@ test('start.ts brings a bridge up over TCP, and the shell command and the MCP se
     const state = await get(resolveEndpoint({ CLAUDE_IDE_TCP: '1' }, home), '/state')
     assert.ok(state.json.tasks.some((task: { title: string }) => task.title === 'TCP 작업'))
   } finally {
-    process.kill(saved.pid)
+    stopBridgeOf(home)
+  }
+})
+
+// The bridge a test started, by the pid it wrote to its bridge.json; none written, none started.
+function stopBridgeOf(home: string): void {
+  let pid: unknown
+  try {
+    pid = (JSON.parse(readFileSync(endpointFile(home), 'utf8')) as { pid?: unknown }).pid
+  } catch {
+    return
+  }
+  if (typeof pid !== 'number' || pid === process.pid) return
+  try {
+    process.kill(pid)
+  } catch {
+    // Gone already.
+  }
+}
+
+test('a bridge whose starter is gone leaves by itself', async () => {
+  const home = tempHome()
+  // A parent pid no process has: the bridge's check (every 2 s with a parent named) sees it gone.
+  const env = { HOME: home, USERPROFILE: home, CLAUDE_IDE_TCP: '1', CLAUDE_IDE_DB: join(home, 'ide.db'), CLAUDE_IDE_PARENT_PID: '2147483646' }
+  try {
+    assert.equal((await run([process.execPath, join(import.meta.dirname, 'start.ts')], env)).code, 0)
+    const { pid } = JSON.parse(readFileSync(endpointFile(home), 'utf8')) as { pid: number }
+    const gone = async () => {
+      for (let i = 0; i < 400; i++) {
+        try {
+          process.kill(pid, 0)
+        } catch {
+          return true
+        }
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      return false
+    }
+    assert.ok(await gone())
+  } finally {
+    stopBridgeOf(home)
   }
 })

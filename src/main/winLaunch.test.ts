@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import { afterAll, expect, test } from 'vitest'
+import { afterAll, beforeAll, expect, test } from 'vitest'
 import { PRESETS, presetLaunch } from '../shared/agents'
 import { claudeLine } from './termAccount'
 import { commandWord } from '../shared/agents'
@@ -16,6 +16,12 @@ const dir = windows ? mkdtempSync(join(tmpdir(), 'sb-ps-')) : ''
 afterAll(() => {
   if (dir) rmSync(dir, { recursive: true, force: true })
 })
+// Each test starts powershell.exe; the first start on a fresh CI machine alone can pass the
+// 5 s default, so it is paid once here, and each test gets room of its own.
+const PS_MS = 30_000
+beforeAll(() => {
+  if (windows) execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-Command', 'exit 0'])
+}, 120_000)
 if (windows) {
   writeFileSync(join(dir, 'echoargs.js'), 'process.stdout.write(JSON.stringify(process.argv.slice(2)))')
   writeFileSync(join(dir, 'fakecli.cmd'), '@node "%~dp0echoargs.js" %*\r\n')
@@ -40,11 +46,11 @@ for (const preset of PRESETS.filter(p => p.mcp)) {
     const meant = preset.mcp!(server, file).args ?? []
     const line = presetLaunch({ ...preset, bin: 'fakecli' }, server, file, 'win32').line
     expect(argsSeen(line)).toEqual(meant)
-  })
+  }, PS_MS)
 }
 
 test.runIf(windows)('the Claude line finds the .cmd beside a .ps1 and keeps a folder with spaces as one word', () => {
   writeFileSync(join(dir, 'fakecli.ps1'), 'Write-Output "the ps1 ran"')
   const line = claudeLine(commandWord('fakecli', 'win32'), "'C:\\Users\\Jane Doe\\mod'", undefined, 4, false)
   expect(argsSeen(line)).toEqual(['--plugin-dir', 'C:\\Users\\Jane Doe\\mod'])
-})
+}, PS_MS)

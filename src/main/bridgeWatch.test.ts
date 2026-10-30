@@ -13,7 +13,8 @@ const APP_KEY = 'c'.repeat(64)
 function startBridge(socketPath: string, db: string): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [SERVER], {
-      env: { ...process.env, CLAUDE_IDE_SOCKET: socketPath, CLAUDE_IDE_DB: db, SWITCHBOARD_APP_KEY_STDIN: '1' },
+      // CLAUDE_IDE_PARENT_PID: a bridge this run leaves behind leaves once the test process is gone.
+      env: { ...process.env, CLAUDE_IDE_SOCKET: socketPath, CLAUDE_IDE_DB: db, SWITCHBOARD_APP_KEY_STDIN: '1', CLAUDE_IDE_PARENT_PID: String(process.pid) },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     child.stdin?.end(`${APP_KEY}\n`)
