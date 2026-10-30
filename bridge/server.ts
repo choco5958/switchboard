@@ -1058,6 +1058,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     vapid,
     fetch: options.fetch,
     tailscale: options.tailscale,
+    changed: () => changed('mobile'),
     strings: () => {
       const lang = langNow()
       return { lang, ...Object.fromEntries(Object.entries(DICTS[lang]).filter(([key]) => key.startsWith('mobile.page.'))) }
@@ -1211,7 +1212,9 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     }
     if (method === 'POST' && path === '/mobile/pair') {
       const body = await readJson(req)
-      const paired = mobile.pair(str(body.name).trim())
+      // The address the QR code is for: a key that goes out over plain HTTP may not allow later.
+      const kind = (['https', 'tailscale', 'name', 'lan'] as const).find(k => k === body.kind) ?? 'lan'
+      const paired = mobile.pair(str(body.name).trim(), kind)
       changed('mobile')
       return send(res, 200, paired)
     }
