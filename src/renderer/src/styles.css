@@ -23,6 +23,7 @@
   --sp-5: 20px;
   --sp-6: 24px;
   --main-pad: var(--sp-5);
+  --sidebar-w: 316px; /* wider in the monospace themes, whose names run longer */
   /* Corners and borders. A theme with square corners sets the radii to 0. */
   --r-sm: 4px;
   --r-md: 6px;
@@ -310,12 +311,12 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
   display: grid; height: 100%;
   grid-template-areas: 'top top top' 'rail side tabs' 'rail side main' 'rail side log';
   grid-template-rows: 40px 34px 1fr auto;
-  grid-template-columns: 48px 316px 1fr;
+  grid-template-columns: 48px var(--sidebar-w) 1fr;
 }
 .shell.sidebar-closed { grid-template-columns: 48px 0 1fr; }
 .shell:has(> .props-panel) {
   grid-template-areas: 'top top top top' 'rail side tabs props' 'rail side main props' 'rail side log props';
-  grid-template-columns: 48px 316px minmax(0, 1fr) auto;
+  grid-template-columns: 48px var(--sidebar-w) minmax(0, 1fr) auto;
 }
 .shell.sidebar-closed:has(> .props-panel) { grid-template-columns: 48px 0 minmax(0, 1fr) auto; }
 .shell.dock-closed .dock { display: none; }

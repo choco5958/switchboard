@@ -1,5 +1,6 @@
 /* 요즘 터미널 (tuimod, htop, btop, lazygit): a dark terminal with box borders, cyan focus and magenta titles, monospace. */
 [data-theme='tuimod'] {
+  --sidebar-w: 344px;
   --task-0: #22d3ee; --task-1: #a3e635; --task-2: #fbbf24; --task-3: #e879f9; --task-4: #60a5fa; --task-5: #fb7185;
   --bg: #0e0e14;
   --panel: #13131b;
@@ -67,3 +68,5 @@
 [data-theme='tuimod'] .meter-track { height: 8px; background: repeating-linear-gradient(to right, var(--line) 0 3px, transparent 3px 4px); }
 [data-theme='tuimod'] .meter-fill { -webkit-mask: repeating-linear-gradient(to right, #000 0 3px, transparent 3px 4px); }
 [data-theme='tuimod'] .tab-item.on { color: var(--accent); }
+/* A count on the solid bar takes the bar's ink, or it vanishes into the cyan. */
+[data-theme='tuimod'] :is(.row, .surface).on .count { color: inherit; font-weight: 700; }

@@ -1,6 +1,7 @@
 /* 파란 도스 창 (tvision, Turbo Vision): a blue desktop, grey menu and status bars, white double-line windows with black shadows,
    green buttons drawn as < 버튼 >, cyan selection, monospace and square corners. */
 [data-theme='tvision'] {
+  --sidebar-w: 344px;
   --task-0: #55ffff; --task-1: #55ff55; --task-2: #ffff55; --task-3: #ff55ff; --task-4: #aaaaaa; --task-5: #ff5555;
   --bg: #0000aa;
   --panel: #0000aa;
