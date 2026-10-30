@@ -1,354 +1,349 @@
 <div align="center">
 
-<img src="resources/icon.png" width="112" alt="Switchboard 图标">
+<img src="resources/icon.png" width="104" alt="Switchboard 图标">
 
 # Switchboard
 
-**在一个界面上指挥多个编码智能体的桌面应用**
+### 在一个界面上指挥多个编码代理
 
-Claude Code、Codex、Gemini CLI 会话会向你请求决定、彼此委派工作，你不在电脑前时通过 Telegram 联系你。
+同时运行多个 Claude Code、Codex、Gemini CLI 会话，把工作交给它们。<br>
+代理不停地工作，只有需要人来决定的问题会集中到一处。
 
 <a href="https://github.com/choco5958/switchboard/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/choco5958/switchboard?style=flat-square&color=6366f1"></a>
 <a href="https://github.com/choco5958/switchboard/actions/workflows/test.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/choco5958/switchboard/test.yml?branch=main&style=flat-square&label=tests"></a>
 <img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0f1424?style=flat-square&logo=electron&logoColor=9feaf9">
 <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/github/license/choco5958/switchboard?style=flat-square&color=22c55e"></a>
 
-<p><b>下载</b> &nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">macOS</a> &nbsp;|&nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">Windows</a> &nbsp;|&nbsp; <a href="https://github.com/choco5958/switchboard/releases/latest">Linux</a></p>
+**[下载](https://github.com/choco5958/switchboard/releases/latest)** &nbsp;|&nbsp; [安装](#安装) &nbsp;|&nbsp; [功能](#功能) &nbsp;|&nbsp; [安全](#数据与安全)
 
 [한국어](README.md) | [English](README.en.md) | [日本語](README.ja.md) | **简体中文**
+
+<br>
+
+<a href="https://cdn.jsdelivr.net/gh/choco5958/switchboard@main/docs/intro-en.mp4"><img src="docs/intro-en-preview.gif" width="760" alt="介绍视频 (58 秒，英文)"></a><br>
+<sub><a href="https://cdn.jsdelivr.net/gh/choco5958/switchboard@main/docs/intro-en.mp4">▶ 点击观看带声音的完整视频 (58 秒，英文)</a></sub>
 
 </div>
 
 <br>
 
-<p align="center"><a href="https://cdn.jsdelivr.net/gh/choco5958/switchboard@main/docs/intro-en.mp4"><img src="docs/intro-en-preview.gif" width="720" alt="介绍视频 (58 秒，英文)"></a><br>
-<a href="https://cdn.jsdelivr.net/gh/choco5958/switchboard@main/docs/intro-en.mp4">▶ 点击观看带声音的完整视频 (58 秒，英文)</a></p>
+## 适合谁
 
-![主页: 按项目分组的任务、待决定、工作日志](docs/screenshot-home.png)
+- 在多个终端里运行代理时，很容易搞不清**谁在等什么**。
+- 代理卡在一个问题上时，**什么都没有推进**。
+- 一离开座位，**一个权限确认**就能让工作停几个小时。
 
-会话需要人来做决定时，会把问题放进待决定队列，然后不等回答继续做别的事。你按一个键回答，答案就作为提示词回到该会话。会话之间也可以互相委派工作；你不在电脑前时，决定问题和权限确认会发到你自己的 Telegram。
+在 Switchboard 里，会话把需要决定的问题放进队列，然后继续做别的事。按一个键回答，答案就作为提示词回到该会话。你不在电脑前时，问题和权限确认会发到手机和 Telegram。
 
-## 一览
+## 功能
 
 <table>
 <tr>
 <td width="50%" valign="top">
-<h3>🗳️ 待决定队列</h3>
-<p>会话把问题放进队列后继续做别的事。按一个键回答，答案就作为提示词进入该会话。</p>
+<img src="docs/decision-en.jpg" alt="待决定">
+<h3>🗳️ 一个键做决定</h3>
+会话提交选项、推荐以及推荐理由。用 <code>a</code>、<code>b</code> 选择，用 <code>Enter</code> 发送。也可以暂缓，或附上备注回答。
 </td>
 <td width="50%" valign="top">
-<h3>🤝 会话之间协作</h3>
-<p>会话可以向其他会话提问并拿到回答。多个会话的回答会合并后一次送达，委派的工作也能中途取消。</p>
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<h3>📱 不在电脑前时</h3>
-<p>通过 Telegram 或手机浏览器回答决定问题和 Claude Code 的权限确认。定时提示会在设定的时间运行。</p>
-</td>
-<td width="50%" valign="top">
-<h3>🔍 边看边改</h3>
-<p>在内置浏览器中点击元素留下批注，位置、截图和控制台错误会一并发送。会话也会亲自点击本地页面来确认。</p>
+<img src="docs/task-en.jpg" alt="任务与进度图">
+<h3>📊 工作阶段与进度图</h3>
+画出需求、设计、实现、完成各阶段以及每个节点的进度。实时查看子代理进行到哪一步。
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<h3>🧩 多种编码 CLI</h3>
-<p>Codex、Gemini CLI、Qwen Code、Copilot CLI、OpenCode、Goose、Amp 也接入同一个待决定队列和任务报告。</p>
+<img src="docs/picker-en.jpg" alt="代理选择">
+<h3>🧩 沿用你习惯的代理</h3>
+在停靠栏的 ▾ 中选择已安装的 CLI 打开。不改动各 CLI 的配置文件，最后选择的代理会成为默认。
 </td>
 <td width="50%" valign="top">
-<h3>🎨 可选的界面</h3>
-<p>支持 13 种主题和 4 种语言。顶部显示 Claude 用量和上下文使用率。</p>
+<img src="docs/palette-en.jpg" alt="查找">
+<h3>⌘K 随处直达</h3>
+直接查找并打开任务、问题和项目。项目可以归入文件夹并折叠。
 </td>
 </tr>
 </table>
+
+|  |  |
+| --- | --- |
+| 🤝 **会话之间协作** | 向其他会话提问并收到回答。把多个会话的回答汇总到一轮里，委派出去的工作可以中途收回。 |
+| 📱 **不在电脑前时** | 用手机或 Telegram 回答决定问题和 Claude Code 的权限确认，不在同一 Wi-Fi 也可以。 |
+| ⏰ **定时提示** | 从每天、工作日、间隔、一次中选择，在设定时间向会话发送提示词。 |
+| 🔍 **边看边改** | 在内置浏览器中点击元素留下评论，位置、截图和控制台错误会一起发送。会话会自己点击本地页面来确认。 |
+| 🖥️ **持续运行的终端** | 在 macOS 和 Linux 上，退出或更新应用后终端里的代理仍在工作，重新打开时界面原样回来。 |
+| 🔒 **默认安全** | 只安装带签名的更新。只有应用和通过 HTTPS 连接的手机可以允许权限，会话无法冒充你。 |
+| 🎨 **可选外观** | 13 种主题，4 种语言。顶部显示 Claude 用量和上下文使用率。 |
+
+<details>
+<summary><b>功能详情</b></summary>
+
+#### 决定与任务
+- **待决定队列**: 会话用 `ask_decision` 提交问题，不等待就继续工作。同一个问题不会提交两次。
+- **等你处理**: 有待决定、一轮停滞超过 5 分钟、达到用量上限或会话断开的任务会集中在侧栏最上方。停滞的会话和解除上限的会话也会发通知。
+- **按项目查看**: 在左侧列表选中项目后，侧栏、主页、日志和停靠栏只显示该项目的内容。
+
+#### 会话之间协作
+- 会话用 `list_sessions` 查找其他会话，用 `send_to_session` 发送请求。接收方没有单独回复就结束本轮时，最后的回答会作为结果返回。
+- 发给多个会话的问题，回答会汇总后放进一轮。超过 15 分钟则先交付已到的回答。
+- 接收方断开或本轮被中断时，会通知发送方。
+- 用 `cancel_request` 收回委派的请求。从一个请求开始、会话之间互相委派的请求合计最多 8 次。
+- 可以把决定问题交给其他会话代为回答。发给已达用量上限的会话的回答会保留到重置后再交付。
+
+#### 不在电脑前时
+- 应用关闭、屏幕锁定或 5 分钟以上没有输入时，决定问题和权限确认会发到 Telegram 和手机。在电脑前时，仍像以前一样由终端询问。
+- 每个定时提示可以选择接收的代理；该代理没有会话时，应用会打开它的终端。没有需要通知的运行不会发通知。
+
+#### 边看边改
+- 注册并启动开发服务器，用内置浏览器打开。应用终端里 CLI 打开的本地地址也会在内置浏览器中打开。
+- 会话用 `browser_*` 工具读取、点击和输入本地页面。默认只处理本机地址，在 设置 > 代理 CLI 中允许后也能处理私有网络地址。
+
+#### 终端
+- 停靠栏的 `+` 打开上次打开的代理，▾ 列出已安装的代理，`+ 终端` 打开普通 Shell。
+- 代理工作期间 Mac 不会睡眠。
+- 如果希望退出应用时关闭终端，在 设置 > 代理 CLI 中开启 `退出应用时关闭终端`。在 Windows 上终端会随应用一起关闭。
+- 在设置中开启后，首次打开 Codex、Copilot、Cursor 的文件夹会预先在该 CLI 的文件夹信任确认中记录"是"。默认关闭，自带代理配置 (.codex、.cursor、.mcp.json 等) 的文件夹会跳过。
+- 在 Claude Code 中输入 `/switchboard`，可以在侧边窗格查看该会话的工作流程和待决定。
+
+#### 界面
+- 侧栏的项目可以用 `+ 文件夹` 归类并折叠。从列表中移除项目后，文件和记录仍然保留。
+- 한국어、English、日本語、简体中文。初次使用时跟随系统语言。
+- 13 种主题: 经典藏青、冒险日志、荧光终端、像素点阵、地铁线路图、电路板、现代终端、蓝色 DOS 窗口、Dracula、Nord、Solarized 深色与浅色、GitHub 浅色。
+- 安装了 Orca 时，可以为每个节点创建工作树，并从 Linear 议题开始任务。
+
+</details>
+
+## 支持的代理
+
+Claude Code 通过 mod 连接，其他 CLI 通过应用只为该次运行附加的连接服务器 (MCP) 连接。两者使用相同的工具，所以大部分功能与代理无关。
+
+| 功能 | Claude Code | Codex、Gemini CLI、Qwen Code、<br>Copilot CLI、OpenCode、Goose、Amp | Cursor CLI、Grok、<br>Kimi、Crush |
+| --- | :---: | :---: | :---: |
+| 任务汇报、决定问题、会话间提问、浏览器工具 | ✅ | ✅ | 仅终端 |
+| 接收回答和消息 | ✅ | ✅ 输入到应用终端 | |
+| 定时提示 | ✅ | ✅ | |
+| 不在电脑前时转发权限确认 | ✅ | 尚未支持 | |
+| 用量条、`/switchboard` 窗格 | ✅ | | |
+
+列表之外的 CLI 可以在 设置 > 代理 CLI 中填写命令和连接方式来添加。停靠栏只显示已安装的 CLI。
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/choco5958/switchboard/releases/latest) 下载适合你系统的安装包并打开。详见[安装](#安装)。
-2. 在底部停靠栏点击 `+ Claude` 打开会话，或从旁边的 ▾ 选择 Codex、Gemini 等其他代理，像平时一样交代工作。
-3. 有决定问题时按键回答，其余的交给会话继续。
+1. 从 [Releases](https://github.com/choco5958/switchboard/releases/latest) 下载安装包并安装。各系统的步骤见下方 [安装](#安装)。
+2. 用左上角的 `+ 项目` 选择工作文件夹，再从下方停靠栏的 `+ Claude` 或 ▾ 打开代理。
+3. 像平时一样交代工作。左侧问号图标出现数字时，打开问题用按键回答。
 
-## 主要功能
-
-### 决定与任务
-
-- **待决定队列**: 会话用 `ask_decision` 提交选项、推荐项和推荐理由。用 `a`、`b` 等键选择，按 `Enter` 发送。也可以暂缓，或附上备注回答。同一个问题不会重复进入队列。
-- **任务与进度图**: 任务阶段 (需求、设计、开发、完成) 和节点 (确认、实现、测试、评审) 会画在界面上，每个节点负责的子智能体是在运行还是已结束都一目了然。
-- **等你处理**: 有待决定、回合停滞超过 5 分钟、达到用量上限或会话断开的任务，会集中到侧边栏最上方。停滞的会话和上限已恢复的会话还会发出 macOS 通知。
-- **按项目查看**: 在左侧列表选中项目后，侧栏、主页、日志和底栏只显示该项目的会话、任务、决定和权限确认。顶部的用量条按整个账号计算，顶部的计数会在该项目的数量旁边同时显示总数。
-
-### 会话之间协作
-
-- **提问与回复**: 会话用 `list_sessions` 查找其他会话，用 `send_to_session` 发送请求。收到请求的会话如果没有单独回复就结束了回合，它的最后一条回答会作为结果返回。
-- **同时问多个会话**: 发给多个会话的问题，会把回复收齐后放进同一个回合。期间如果有人在应用或终端里给提问的会话发消息，已收到的回复会随那个回合一起送入；超过 15 分钟则先送入已到的回复。
-- **收不到回复时**: 接收方会话断开连接或回合被中断时，会通知发送方不会有回复，发送方不必等待，继续工作。
-- **取消委派与委派上限**: 会话可以用 `cancel_request` 收回自己交出的请求。尚未送达的不会再送入；如果接收方的回合只在处理这个请求，就停止该回合。由一个请求开始、在会话之间转交的请求合计最多 8 次。
-- **转交决定**: 可以把决定问题转给另一个会话，由它代为回答。
-- **用量上限**: 发给已达用量上限的会话的回答和消息会先保存，等上限恢复后再送达。
-
-### 不在电脑前时
-
-- **在 Telegram 上回答**: 应用关闭、屏幕锁定或超过 5 分钟没有输入时，决定问题会发到你自己的 Telegram 机器人。用按钮或回复来回答。
-- **权限确认转发**: 同样的情况下，Claude Code 的权限确认也会发到应用和 Telegram。在 Telegram 上允许需要再点一次确认。人在电脑前时，仍像以前一样由终端询问。
-- **手机浏览器**: 在同一 Wi-Fi(或 Tailscale)下的手机上回答决定问题、允许或拒绝权限确认、查看任务并给会话发消息。无需安装应用，添加到主屏幕后就能像应用一样打开。通过 Tailscale HTTPS 打开时，还能收到新问题的通知。
-- **定时提示**: 可选每天、工作日、间隔或一次，把提示词发给项目的会话。每个计划可以选择接收的代理；没有该代理的会话时，应用会打开该代理的终端。没有需要汇报内容的运行不会发通知。
-
-### 边看边改 (实时调试)
-
-- 登记并启动开发服务器，用内置浏览器打开。
-- 点击页面元素留下评论，会话会同时收到位置、CSS、截图，以及当时页面的控制台错误和失败的请求。
-- 会话用 `browser_*` 工具直接读取、点击本地页面并输入内容，亲自确认修改结果。只能操作本机地址；在 设置 > 代理 CLI 中开启 `允许内置浏览器打开私有网络地址` 后，也能操作私有网络地址 (192.168.x.x、名称.local 等)。
-- 在应用终端里由 CLI 打开的本地地址会在内置浏览器中打开。
-
-### 终端与 Shell
-
-- **内置终端**: 停靠栏的 `+` 按钮会打开上次使用的代理。点旁边的 ▾ 会列出已安装的代理及其连接方式 (mod、连接服务器、仅终端)，可以输入名称查找。`+ 终端` 打开普通 Shell。
-- **不中断**: 代理工作期间 Mac 不会睡眠。在设置中开启后，首次打开 Codex、Copilot、Cursor 的文件夹，会预先在该 CLI 的文件夹信任确认中记录"是"，应用输入的回答和定时提示不会卡在信任确认上。CLI 会直接运行受信任文件夹的 MCP 服务器和钩子设置，因此默认关闭，并且不记录自带代理配置 (.codex、.cursor、.mcp.json、.vscode/mcp.json、.github/copilot*) 的文件夹。
-- **退出应用后继续运行的终端**: 在 macOS 和 Linux 上，终端运行在应用之外的终端主机中。退出、重启或更新应用后，终端及其中的 Claude Code 和其他 CLI 会继续运行，下次打开应用时会连同屏幕内容一起回到停靠栏，向其他 CLI 输入回答也会继续。标签上的 `×` 仍会结束该终端。如果希望退出应用时关闭所有终端，请在 设置 > 代理 CLI 中开启 `退出应用时关闭终端`。在 Windows 上，主机运行期间安装程序无法替换应用，因此终端会随应用一起关闭。
-- **其他编码 CLI**: Codex、Gemini CLI、Qwen Code、GitHub Copilot CLI、OpenCode、Goose、Amp 也能接入待决定队列和任务汇报。应用通过启动参数挂上 MCP 服务器，不会改动各 CLI 的配置文件。Cursor CLI、Grok、Kimi、Crush 仅作为终端打开，其他 CLI 可在设置中登记命令。停靠栏只显示已安装的 CLI。
-- **`switchboard` 命令**: 在 Shell 或脚本中把工作交给会话并取回结果，结果也可以通过退出码区分。
-- **会话侧面板**: 在 Claude Code 中输入 `/switchboard`，即可在侧边面板查看该会话的工作流程和待决定。
-
-### 界面
-
-- 顶部显示 Claude 的 5 小时和每周用量，以及上下文使用率。
-- 侧边栏的项目可以归入用 `+ 文件夹` 新建的文件夹，每个文件夹都能收起和展开。把项目拖到文件夹上或用 ⋯ 菜单移动，不再使用的项目可以从列表中移除。文件和工作记录都会保留，随时可以重新显示。
-- 支持 한국어、English、日本語、简体中文。初次启动跟随系统语言，可在设置中切换。
-- 13 款主题: 经典藏青、冒险日志、荧光终端、像素点阵、地铁线路图、电路板、现代终端、蓝色 DOS 窗口、Dracula、Nord、Solarized 深色和浅色、GitHub 浅色。
-- 安装了 Orca 时，可以为每个节点创建工作树，也可以从 Linear 议题开始任务。
-
-
-
-## 各代理支持的功能
-
-Claude Code 通过 mod 连接，其他 CLI 通过应用仅在该次运行中挂上的连接服务器 (MCP) 连接。两边使用相同的工具，所以大部分功能与代理无关。
-
-| 功能 | Claude Code | 使用连接服务器的 CLI | 仅作为终端打开的 CLI |
-| --- | --- | --- | --- |
-| 任务和计划汇报、决定问题、会话之间提问、等待、浏览器工具 | 支持 | 支持 | 不支持 |
-| 接收回答和消息 | 由 mod 放入会话 | 输入到应用终端；在应用外打开的会话用 `check_answers` 获取 | 不支持 |
-| 定时提示 | 支持 | 支持 (没有会话时应用会打开该 CLI) | 不支持 |
-| 离开时中转权限确认 | 支持 | 暂不支持 | 不支持 |
-| 用量条、会话侧面板 (`/switchboard`)、压缩后重新放入状态 | 支持 | 不支持 | 不支持 |
-
-- 使用连接服务器的 CLI: Codex、Gemini CLI、Qwen Code、GitHub Copilot CLI、OpenCode、Goose、Amp，以及在设置中写好连接方式后添加的 CLI
-- 仅作为终端打开的 CLI: Cursor CLI、Grok、Kimi、Crush
-
-## 截图
-
-<table>
-<tr>
-<td width="50%"><img src="docs/screenshot-decision.png" alt="待决定: 蓝色 DOS 窗口主题"><p align="center"><sub>待决定: 蓝色 DOS 窗口主题</sub></p></td>
-<td width="50%"><img src="docs/screenshot-task.png" alt="任务界面: 阶段与进度图"><p align="center"><sub>任务界面: 阶段与进度图</sub></p></td>
-</tr>
-</table>
-
-## 架构
-
-```mermaid
-flowchart LR
-  cc["Claude Code<br/>会话"] -- "mod: ide-bridge" --> bridge
-  cli["Codex、Gemini 等"] -- "MCP: mcp/server.ts" --> bridge
-  cmd["switchboard<br/>命令"] --> bridge
-  tg["Telegram 机器人"] <-->|"long polling"| bridge
-  bridge[("桥接服务<br/>本地套接字 + SQLite")] <--> app["Switchboard 应用<br/>Electron"]
-```
-
-| 文件夹 | 作用 |
+| 按键 | 作用 |
 | --- | --- |
-| `bridge/` | 本地中转服务，使用 `~/.claude-ide/bridge.sock` 套接字和 `~/.claude-ide/ide.db` SQLite。不开放任何网络端口。定时运行和 Telegram 连接也在这里进行。 |
-| `mod/` | Claude Code mod `ide-bridge`。注册工具，把应用传来的回答送进会话，并绘制 `/switchboard` 面板。 |
-| `mcp/` | 面向其他编码 CLI 的 MCP 服务器 (stdio)。在 mod 的工具之外再加上 `check_answers`。 |
-| `scripts/` | 安装脚本和 `switchboard` 命令。 |
-| `src/` | Electron 应用 (React)。 |
-
-## 环境要求
-
-- macOS、Windows、Linux。已在 macOS (Apple Silicon) 上验证；Windows 和 Linux 通过了自动测试，但尚未在真机上运行过。
-- Claude Code 2.1.309 及以上 (需要 mod 功能)
-- 可选: Codex、Gemini CLI 等其他编码 CLI，Orca (工作树、Linear)，Telegram 账号
-- 仅从源码运行时需要: Node.js 24 及以上、pnpm
+| `a`、`b`、`1`、`2` | 选择选项 |
+| `Enter` | 发送 |
+| 按两次 `H` | 暂缓 |
+| `M` | 输入备注 (`Cmd+Enter` 发送，`Esc` 退出) |
+| `Cmd+K` (Windows 和 Linux 为 `Ctrl+K`) | 查找 |
 
 ## 安装
 
-### 安装包
+需要 Claude Code 2.1.309 或更高版本。应用内置 Node，无需另外安装。应用尚未获得 Apple 和 Microsoft 的代码签名，首次打开时会出现一次警告。
 
-从 [Releases](https://github.com/choco5958/switchboard/releases/latest) 下载适合你系统的文件。应用自带 Node，无需另外安装。
+<details open>
+<summary><b>macOS</b></summary>
 
-#### macOS
+1. Apple Silicon (M1 及以后) 下载 `Switchboard-<版本>-mac-arm64.dmg`，Intel 下载 `-mac-x64.dmg`。芯片类型可在 苹果菜单 > 关于本机 中查看。
+2. 打开 dmg，把 Switchboard 拖到"应用程序"文件夹。
+3. 打开 Switchboard。出现无法验证是否含有恶意软件的提示时，点"完成"。
+4. 在 系统设置 > 隐私与安全性 中，点击 Switchboard 项的"仍要打开"，输入密码后点"打开"。macOS 14 之前也可以右键点击应用 > 打开。
 
-1. 下载适合芯片的文件：Apple Silicon (M1 及以后) 用 `Switchboard-<版本>-mac-arm64.dmg`，Intel 用 `-mac-x64.dmg`。在苹果菜单 > 关于本机的"芯片"一栏可以看到是哪一种。
-2. 打开 dmg，把 Switchboard 拖到"应用程序"文件夹。如果从其他位置打开，应用会先询问是否移动过去。
-3. 在"应用程序"文件夹中打开 Switchboard。应用还没有 Apple 签名，第一次会提示无法检查是否含有恶意软件。点"完成"。
-4. 打开系统设置 > 隐私与安全性，在下方的 Switchboard 一项中点"仍要打开"。输入密码，在接着出现的窗口中点"打开"。macOS 14 及更早版本也可以右键点击应用并选择"打开"。
+也可以不做第 4 步，改在终端运行 `xattr -dr com.apple.quarantine /Applications/Switchboard.app`。更新后询问钥匙串使用时，点"始终允许"。
 
-如果习惯用终端，也可以不做第 4 步，运行 `xattr -dr com.apple.quarantine /Applications/Switchboard.app` 后再打开应用。更新后第一次启动时如果询问钥匙串，点"始终允许"。
+</details>
 
-#### Windows
+<details>
+<summary><b>Windows</b></summary>
 
-1. 下载 `Switchboard-<版本>-win.exe`，同时支持 x64 和 ARM。想要更小的文件，x64 下载 `-win-x64.exe`，ARM 下载 `-win-arm64.exe`。
-2. 运行下载的文件。出现"Windows 已保护你的电脑"窗口时，点"更多信息"，再点"仍要运行"。
-3. 在安装程序中选择安装文件夹并点"安装"。从开始菜单打开 Switchboard。
+1. 下载 `Switchboard-<版本>-win.exe` (x64 与 ARM 通用)，或适合设备的 `-win-x64.exe` / `-win-arm64.exe`。
+2. 运行后，在"Windows 已保护你的电脑"窗口点 更多信息 > 仍要运行。
+3. 选择安装文件夹并点安装，然后从开始菜单打开 Switchboard。
 
-#### Linux
+</details>
 
-- AppImage：x64 下载 `Switchboard-<版本>-linux-x86_64.AppImage`，ARM 下载 `-linux-arm64.AppImage`。用 `chmod +x Switchboard-*.AppImage` 加上执行权限后运行。在 Ubuntu 22.04 及以后版本出现 FUSE 错误时，安装 `libfuse2` (24.04 为 `libfuse2t64`)。
-- deb：下载 `-linux-amd64.deb` 或 `-linux-arm64.deb`，用 `sudo apt install ./Switchboard-*.deb` 安装。只有 AppImage 能自动更新。
+<details>
+<summary><b>Linux</b></summary>
 
-应用每次启动时，都会按当前位置重写 `~/.claude-ide` 中的桥接启动文件和 `switchboard` 命令。`switchboard` 命令在 macOS 和 Linux 上位于 `~/.local/bin`，在 Windows 上位于 `%USERPROFILE%\.claude-ide\bin`，请把该文件夹加入 PATH。
+- AppImage: 下载 `Switchboard-<版本>-linux-x86_64.AppImage` (ARM 为 `-linux-arm64.AppImage`)，用 `chmod +x` 赋予执行权限后运行。出现 FUSE 错误时安装 `libfuse2` (Ubuntu 24.04 为 `libfuse2t64`)。
+- deb: 下载 `-linux-amd64.deb` 或 `-linux-arm64.deb`，用 `sudo apt install ./Switchboard-*.deb` 安装。只有 AppImage 会自动更新。
 
-应用会自行检查新版本。Windows、macOS 和 Linux (AppImage) 会先下载新版本，在关闭应用时安装。在 macOS 和 Linux 上，更新期间应用的终端会继续运行。点击“已就绪”的通知会立即重启并安装；如果有终端会因此关闭（Windows，或开启了上述设置时），会先询问将关闭几个终端。应用不会因为更新而自行关闭。更新带有签名，缺少签名或签名不符的更新，应用不会安装。
+</details>
 
-macOS 的自动安装从 0.3.4 之后的版本开始提供，因此从 0.3.4 及更早版本升级到该版本时，需要手动下载安装一次。如果应用位于没有权限替换它的位置（例如非管理员账户下的“应用程序”文件夹），macOS 上点击通知也会打开下载页面。更新后如果询问钥匙串，按上文所说点“始终允许”。
+**更新**: 应用会检查并下载新版本，在退出应用时安装。应用不会因为更新而自行关闭，没有签名或签名不符的更新不会安装。在 macOS 和 Linux 上，更新期间应用终端也会继续运行。从 macOS 0.3.4 或更早版本升级时，需要手动安装一次。
 
-### 从源码运行
+<details>
+<summary><b>连接在其他终端中打开的 Claude Code</b></summary>
+
+应用的 `+ Claude` 终端会自动加载 mod。要连接在其他终端中打开的会话，在 Claude Code 输入框中安装 mod:
+
+```
+/plugin install ide-bridge --marketplace choco5958/switchboard
+```
+
+在 `Add marketplace?` 处按 `y`，范围选择 user。之后新打开的会话会连接，桥接未运行时由 mod 启动。请先打开一次应用，让 mod 知道如何启动桥接 (`~/.claude-ide/start-bridge.json`)。
+
+</details>
+
+<details>
+<summary><b>从源码运行</b></summary>
+
+需要 Node.js 24 或更高版本和 pnpm。
 
 ```sh
 git clone https://github.com/choco5958/switchboard.git
 cd switchboard
 pnpm install
 pnpm run setup  # 生成 ~/.claude-ide/start-bridge.json 和 ~/.local/bin/switchboard
-pnpm dev        # 启动应用
+pnpm dev
 ```
 
-移动仓库文件夹后需要重新运行 `pnpm run setup`。安装包用 `pnpm dist` 生成。
+移动仓库文件夹后，重新运行 `pnpm run setup`。安装包用 `pnpm dist` 生成。
 
-### 连接其他终端中的 Claude Code
+</details>
 
-应用的 `+ Claude` 终端会自动加载 mod。如果要让其他终端里打开的 Claude Code 会话也连接上，请在 Claude Code 输入框中安装 mod:
-
-```
-/plugin install ide-bridge --marketplace choco5958/switchboard
-```
-
-`Add marketplace?` 处按 `y`，范围选择第一项 user。也可以在 Shell 中用 `claude plugin install ide-bridge --marketplace choco5958/switchboard` 安装。
-
-安装后新打开的会话会连接到桥接服务。桥接服务未运行时，mod 或应用会先启动它。mod 通过应用或 `pnpm run setup` 生成的 `~/.claude-ide/start-bridge.json` 启动桥接服务，所以请先启动一次应用或运行 setup。
-
-## 使用方法
-
-1. 启动应用，点击底部停靠栏的 `+ Claude`，或从旁边的 ▾ 选择其他代理。第一次使用时，先用左上角的 `+ 项目` 选择要工作的项目文件夹。
-2. 像平常一样把工作交给代理。工具说明里写明了何时使用，会话会自行提交任务，需要决定时会提问。
-3. 左侧问号图标出现数字，表示有待决定的问题或权限确认；权限确认也会显示在主页上。打开问题，用按键回答。
-
-### 按键
-
-| 按键 | 作用 |
-| --- | --- |
-| `a`、`b`、`1`、`2` | 选择选项 |
-| `Enter` | 发送 |
-| 按两次 `H` | 暂缓(按一次只显示提示) |
-| `M` | 输入备注 (`Cmd+Enter` 发送，`Esc` 退出) |
-| `Cmd+K`(Windows、Linux 为 `Ctrl+K`) | 查找 (打开任务、获取进度汇报等操作) |
-
-### 连接 Telegram
-
-1. 在 Telegram 中向 `@BotFather` 发送 `/newbot`，设定机器人的名称和 ID。
-2. 在 Switchboard 的 设置 > 在 Telegram 上回答 中粘贴 BotFather 给的令牌 (形如 `123456:ABC...`)，点击「连接机器人」。
-3. 点击「获取连接码」，在 10 分钟内用手机打开链接并点开始。只有这个聊天会被连接，其他人发来的回答一律不接受。
-
-桥接服务主动向 Telegram 服务器查询新消息，因此不需要开放任何端口。
+## 不在电脑前时
 
 ### 手机连接
 
-1. 在 设置 > 手机连接 中打开“开启手机连接”。如果 macOS 询问是否接受传入连接，请选择“允许”。
-2. 选择手机要打开的地址，填写手机名称，然后点击“显示二维码”。在 macOS 上默认是“这台电脑的名称”(`名称.local`)。路由器更换电脑地址后它也不变，手机不用重新连接。
-3. 用手机相机扫描二维码并打开。在浏览器中就能直接使用。
+无需安装应用，用手机浏览器回答决定问题、允许或拒绝权限确认、查看任务、给会话发消息。
 
-手机应用不需要从应用商店下载。把打开的页面添加到主屏幕后会出现图标，可以像应用一样打开，没有地址栏。
+1. 在电脑和手机上安装 [Tailscale](https://tailscale.com) 并登录。
+2. 在 设置 > 手机连接 中开启 `开启手机连接` 和 `开启 Tailscale HTTPS`。
+3. 地址选择 Tailscale HTTPS，点 `显示二维码`，用手机相机扫描。
+4. 添加到主屏幕。iPhone 为 Safari 的分享按钮 > 添加到主屏幕，Android 为 Chrome 菜单 (⋮) > 添加到主屏幕。首次打开 iPhone 主屏幕应用时，在电脑应用中重新显示二维码，输入旁边的 8 位代码。
 
-- **iPhone**：在 Safari 打开的页面中点分享按钮 > 添加到主屏幕 > 添加。主屏幕应用与 Safari 的存储是分开的，第一次打开时会要求输入连接码：请在电脑应用中显示新的二维码，这次不要扫码，而是把旁边显示的 8 位连接码输入主屏幕应用。连接码 10 分钟内只能用一次，手机用该二维码连接后立即失效。连接码只能通过 Tailscale HTTPS 地址获取，所以如果只在同一 Wi-Fi (HTTP) 下使用，请不要添加到主屏幕，直接在 Safari 中打开。
-- **Android**：在 Chrome 菜单（⋮）中点“添加到主屏幕”（或“安装应用”）。它与 Chrome 共用存储，不需要重新连接。
+在主屏幕应用中开启通知后，不在电脑前时也能收到新问题和权限确认的通知。
 
-每部手机单独连接，随时可以用设置里的“断开连接”断开。10 分钟内没有使用的二维码会失效。
+<details>
+<summary><b>手机不装 Tailscale 使用、只在同一 Wi-Fi 使用</b></summary>
 
-通过同一 Wi-Fi(HTTP 地址)打开的页面只能用选项回答决定、拒绝和交给终端询问。允许权限、给会话发消息和在回答中添加备注，需要用 Tailscale HTTPS 地址的二维码配对的手机，在该地址打开的页面中进行，因为控制手机所在网络的人可以替换通过 HTTP 传输的页面并读取链接中的密钥。Tailscale IP 地址(`100.x.y.z`)也是 HTTP：手机的 Tailscale 关闭且连着陌生 Wi-Fi 时，该网络可以冒充这个地址应答。因此用 HTTP 地址(包括 Tailscale IP)的二维码配对的手机三项都不能进行，通过 Tailscale HTTPS 或 Funnel 打开时则完全不被接受，设置的列表中会显示“通过 HTTP 配对”。用旧版本配对的手机也全部如此，请用 Tailscale HTTPS 地址的二维码重新配对。含有不可见或会改变文字顺序的字符的命令会显示为 `[U+202E]` 这样的标记，在手机和 Telegram 上无法允许。
+- **Tailscale Funnel**: 开启 `开启 Tailscale HTTPS` 下方的 `接受来自其他 Wi-Fi 和移动网络的连接`，同一个 HTTPS 地址会对互联网开放，手机不装 Tailscale 也能在任何网络使用。首次需要在 Tailscale 管理页面允许这台电脑的 Funnel (设置中会显示链接)。知道地址的人可以打开页面，但内容用每部手机不同的密钥加密，只有已连接的手机能查看和回答。
+- **同一 Wi-Fi (HTTP 地址)**: 地址选择 `这台电脑的名称` (`名称.local`) 或 IP，即可不用 Tailscale。但这种连接只能用选项回答决定、拒绝、转到终端询问。允许权限、给会话发消息、决定回答的备注，只有通过 Tailscale HTTPS 连接的手机才能做。因为通过 HTTP 传输的页面可能被控制该网络的人替换。Tailscale IP (`100.x.y.z`) 也是 HTTP，受同样限制。
+- 每部手机分别连接，用设置中的 `断开连接` 断开。在 0.3.5 及更早版本连接的手机，要允许权限需要用 Tailscale HTTPS 地址的二维码重新连接。
 
-**接收通知与在外使用**: 在电脑和手机上安装并登录 [Tailscale](https://tailscale.com) 后，设置中会出现“开启 Tailscale HTTPS”。这个按钮会让 Tailscale 用这台电脑的名称创建 HTTPS 地址，只在你的 tailnet 中开放。用这个地址显示二维码并连接后，在外面也能使用；点击页面底部的“在这部手机上接收通知”，你不在电脑前时就会收到新的决定问题和权限确认的通知。在 iPhone 上，需要先添加到主屏幕并从主屏幕打开，才能开启通知。用 HTTP 地址打开的页面只在打开期间用振动和标题中的数字提示新内容。
+</details>
 
-**不在同一 Wi-Fi 时 (Tailscale Funnel)**: 如果想在手机不安装 Tailscale 的情况下通过移动网络或其他 Wi-Fi 使用，请开启“开启 Tailscale HTTPS”下方的“接受来自其他 Wi-Fi 和移动网络的连接”。同一个 HTTPS 地址会对互联网开放，手机在任何网络下都能用这个地址打开。第一次需要在 Tailscale 管理页面中允许这台电脑使用 Funnel，设置中会显示该链接。知道地址的人可以打开页面，但收发的内容用每部手机各自的密钥加密，只有已连接的手机才能查看和作答。地址不会改变，所以主屏幕应用和通知也能照常使用。
+### 连接 Telegram
 
-关闭“接受同一 Wi-Fi 下的直接连接”后，只在本机监听，只能通过 Tailscale HTTPS 连接。这时 macOS 也不会询问防火墙。
+1. 在 Telegram 中向 `@BotFather` 发送 `/newbot` 创建机器人。
+2. 把收到的令牌粘贴到 设置 > 在 Telegram 上回答，连接机器人。
+3. 点 `获取连接码`，10 分钟内在手机上打开链接并点开始。只会连接这个聊天。
+
+在 Telegram 上允许需要再点一次，隐藏了秘密值的请求不能在 Telegram 上允许。
 
 ### 定时提示
 
-在 设置 > 定时提示 中设定名称、项目、提示词和计划。间隔至少 5 分钟。上一次运行尚未结束时，本次运行会跳过。应用或桥接服务关闭期间错过的运行，可以选择是否在启动时补跑一次。已送入会话的运行连续失败 5 次时，该定时任务会自动关闭并发出通知。没有找到会话或被跳过的运行不计入。修改或重新打开后会重新计数。
+在 设置 > 定时提示 中设定名称、项目、接收的代理、提示词和日程。间隔至少 5 分钟。上一次运行未结束时跳过本次，关闭期间错过的运行可以选择在启动时运行一次。进入会话的运行连续失败 5 次时，会关闭该定时并通知你。
 
-### Shell 命令
+## 在 Shell 中使用
 
 | 命令 | 作用 |
 | --- | --- |
 | `switchboard sessions` | 会话列表 (● 已连接) |
-| `switchboard send <会话或项目> <工作内容 或 -> [--wait] [--timeout 30m] [--info] [--json]` | 把工作交给会话，并输出 `m7` 这样的编号。加 `--wait` 会等到结果再输出；`--info` 作为不需要回复的通知发送。`-` 表示从标准输入读取。 |
-| `switchboard status m7` | 已交付工作的状态和结果 |
-| `switchboard decisions`、`switchboard answer Q12 a [备注]` | 查看并回答待决定。 |
-| `switchboard waits`、`switchboard fire w3 [内容]` | 查看会话开启的等待，并唤醒它。 |
-
-退出码: 0 完成，1 失败，2 命令行错误，3 会话正在等待决定，4 超时 (会话仍在继续工作)，5 桥接服务未运行或会话不存在。
-
-`switchboard` 命令没有应用的密钥，其他会话也能运行同样的命令。因此用它发送的消息和等待内容，会以来自 shell 命令的文字显示给会话，并放在边界线之间，不会写成是用户发送的。用 `switchboard answer` 给出的回答也会标为来自 shell。`switchboard answer` 在智能体会话中 (设置了 `CLAUDECODE` 或 `SWITCHBOARD_AGENT` 的 shell) 不会运行，请在应用或自己打开的终端中回答决定。
+| `switchboard send <会话或项目> <工作或 -> [--wait] [--timeout 30m] [--info] [--json]` | 把工作交给会话，并输出类似 `m7` 的编号。`--wait` 等待结果，`--info` 作为无需回复的通知发送。`-` 读取标准输入。 |
+| `switchboard status m7` | 交付工作的状态和结果 |
+| `switchboard decisions`、`switchboard answer Q12 a [备注]` | 查看并回答待决定 |
+| `switchboard waits`、`switchboard fire w3 [内容]` | 查看并唤醒会话开启的等待 |
 
 ```sh
-# 测试结束后，唤醒正在等待测试结果的会话
+# 测试结束后，唤醒等待该结果的会话
 pnpm test; switchboard fire w3 "测试结束: 退出码 $?"
 ```
 
-## 会话使用的工具
+退出码: 0 完成，1 失败，2 命令行错误，3 会话在等待决定，4 超时 (会话继续工作)，5 桥接未运行或没有该会话。命令在 macOS 和 Linux 上位于 `~/.local/bin`，在 Windows 上位于 `%USERPROFILE%\.claude-ide\bin`。
+
+用这个命令发送的内容会以"来自 Shell 的输入"标注后进入会话，不会被当作你的指示。`switchboard answer` 在代理会话内不会执行。
+
+<details>
+<summary><b>会话使用的工具</b></summary>
 
 | 工具 | 作用 |
 | --- | --- |
-| `ask_decision` | 把问题放进待决定队列。不等待，立即返回。 |
-| `set_task` | 创建任务，或更新阶段、当前工作和测试结果。 |
-| `plan_nodes`、`update_node` | 把任务拆成节点放到进度图上，并更改状态 (等待、进行中、完成、失败)。 |
-| `node_worktree` | 为节点创建 Orca 工作树。需要 Orca。 |
-| `open_in_ide` | 在实时调试标签页中打开页面或开发服务器。 |
-| `list_sessions`、`send_to_session` | 查看其他会话，向其发送请求或信息。回复会在之后的回合送达。 |
-| `cancel_request` | 取消自己交出的请求。如果接收方的回合只在处理这个请求，就停止该回合。 |
-| `await_event`、`close_wait` | 开启和关闭一个等待，用于等候构建、部署等外部工作。 |
-| `routine_no_update`、`routine_report_failure` | 记录定时运行没有需要汇报的内容，或运行失败。 |
-| `browser_snapshot`、`browser_click`、`browser_type`、`browser_navigate`、`browser_console`、`browser_screenshot` | 读取并操作内置浏览器中的本地页面。用过期的 ref 点击会被拒绝。 |
-| `check_answers` | 面向其他编码 CLI。在应用之外运行的会话用它取回尚未收到的回答。 |
+| `ask_decision` | 把问题放进待决定队列，立即返回。 |
+| `set_task` | 创建任务，或更新阶段、当前步骤和测试结果。 |
+| `plan_nodes`、`update_node` | 把任务拆成节点放进进度图，并更新状态。 |
+| `node_worktree` | 为节点创建 Orca 工作树，只在会话文件夹内工作。 |
+| `open_in_ide` | 在内置浏览器中打开页面或开发服务器；新命令需要在应用中确认。 |
+| `list_sessions`、`send_to_session` | 查看其他会话，发送请求或信息。 |
+| `cancel_request` | 取消自己委派的请求。 |
+| `await_event`、`close_wait` | 开启和关闭等待构建、部署等外部工作的等待。 |
+| `routine_no_update`、`routine_report_failure` | 记录定时运行没有需要通知的内容或运行失败。 |
+| `browser_snapshot`、`browser_click`、`browser_type`、`browser_navigate`、`browser_console`、`browser_screenshot` | 读取并操作内置浏览器中的本地页面。 |
+| `check_answers` | 供其他编码 CLI 使用。在应用外运行的会话取回尚未收到的回答。 |
+
+</details>
 
 ## 数据与安全
 
-- 所有数据只保存在本机的 `~/.claude-ide/` 下。文件夹仅本人可读 (0700)，套接字和数据库也仅限本人 (0600)。
-- 连接 Telegram 后，决定问题和权限确认的内容会经过 Telegram 服务器。看起来像令牌的值会在发送前遮盖。机器人令牌不放进界面状态，只保存在数据库中。
-- 附在界面评论上的控制台和请求记录，也会在收集时遮盖看起来像令牌的值。
-- 会话的浏览器工具只打开本机地址。私有网络地址只有在设置中允许后才会打开，因为路由器或 NAS 的管理页面就在其中，而内置浏览器会记住登录状态。你自己输入地址打开的页面不受限制。
-- 浏览器工具和屏幕批注的脚本在与页面隔离的环境中运行。页面脚本无法伪造点击位置或读取到的内容，也无法代替用户保存批注。
-- 向其他 CLI 的终端输入消息之前会先检查屏幕。CLI 正在显示“要运行这条命令吗？”之类的确认菜单时会等待，以免输入选中其中的选项。
-- 回答权限确认、设置离开状态、配置 Telegram、定时提示、修改设置和控制会话，只能由应用完成。应用把用系统钥匙串加密保存的密钥通过标准输入交给桥接服务，这些接口只响应带有该密钥的请求。因此，即使有 Shell 权限的会话直接请求桥接服务，也无法允许自己的权限请求。mod 先启动的桥接服务没有密钥，应用启动时会重新启动它一次。
-- 回答待决定问题、给会话发消息、唤醒等待是 `switchboard` 命令使用的接口，同一用户的程序都可以执行。没有应用密钥传来的文字，会作为来自 shell 命令的协作输入显示给会话，并放在边界线之间，不会被当作用户的指令。给智能体 Shell 权限时，建议用 Claude Code 沙箱禁止访问 `~/.claude-ide`。
-- 会话首次注册时会从桥接服务拿到一个令牌。接收该会话的回答和消息、确认送达、报告命令结果以及它的权限确认，都需要这个令牌或应用的密钥。因此知道会话 ID 的其他程序无法抢先取走它的回答，也无法关闭它的权限确认。更新前就在运行的会话没有令牌，仍照常工作。
-- 没有应用密钥读取的界面状态 (`/state`) 会遮住权限确认内容中的密钥类值，并去掉终端键和会话令牌。
-- 权限允许的回答会连同用应用密钥生成的签名一起保存。其他程序直接往数据库写入允许时，签名对不上就不算允许，会回到终端重新询问。
-- 会话通过 `open_in_ide` 指定的开发服务器命令，首次运行 (以及每次变更) 时，应用会显示命令和文件夹并请你确认。
-- 远程审批会把命令放在最前面，并一起显示关闭沙箱、后台运行、全部替换 (replace_all) 等设置。无法完整显示的请求 (被截断、含隐藏字符、多处修改) 以及要在沙箱外运行的命令只在终端中询问，含被遮盖值的请求不能在 Telegram 上允许。
-- 在 Windows 上，桥接服务只在 127.0.0.1 上开放端口，并且只响应带有每次启动时生成的令牌的请求。来自网页的请求会被拒绝。
-- 手机连接在开启之前不会监听。开启后只接受来自本机、私有网络和 Tailscale 地址的连接。每部手机用二维码中拿到的密钥加密所有请求和响应(ChaCha20-Poly1305)，每个请求都带有时间和只用一次的值，无法被重新发送。同一 Wi-Fi 下的其他人既看不到内容，也无法代你回答。手机只能回答决定和权限确认、给会话发消息以及读取界面，而允许权限、给会话发消息和在回答中添加备注只接受来自 Tailscale HTTPS 的请求。这时会检查 tailscale serve 添加的 `X-Forwarded-Proto: https` 和本机的 Tailscale HTTPS 名称，所以通过 cloudflared、ngrok 等其他隧道来的请求按 HTTP 处理。关闭手机连接或桥接停止时，Tailscale HTTPS 也会关闭，重新开启后按原来的设置恢复，这样即使其他程序在此期间占用了该端口，HTTPS 地址也不会指向它。失败请求过多的地址会被暂时阻止，Host 不是本服务器地址或名称的请求会被拒绝。
-- 手机通知会经过手机浏览器的推送服务器(Apple、Google 等)。内容用该浏览器的密钥加密(RFC 8291)，推送服务器无法读取；通知里只包含项目名称和问题第一行，若是权限确认则只有工具名称和遮盖后的命令第一行。
-- 工作日志 7 天后删除。账号邮箱在界面上遮盖显示，不会发送到任何地方。
+- **所有数据只保存在这台电脑上** (`~/.claude-ide/`，仅本人可读)。只有开启手机连接时才会有可从外部访问的端口。
+- **只安装带签名的更新。** 每次发布都会给更新信息签名，应用用固定的公钥验证。
+- **只有人能允许权限。** 允许需要应用的密钥 (用系统钥匙串加密)，每次允许都用该密钥签名。有 Shell 权限的会话直接请求桥接或修改数据库，也无法允许自己的请求。应用只把密钥发给已证明持有该密钥的桥接和终端主机。
+- **会话无法冒充你。** 来自 Shell 命令的内容会标明来源并放在边界内，必须有会话注册时获得的令牌才能处理该会话的回答和请求。
+- **手机**: 每部手机用不同的密钥加密全部请求和响应 (ChaCha20-Poly1305)，同一请求不能重放。只有通过 Tailscale HTTPS 连接的手机可以允许权限。
+- **远程批准**会显示命令原文以及关闭沙箱等设置。无法完整显示的请求和要在沙箱外运行的命令，只在终端询问。
+- **会离开电脑的内容**: 连接 Telegram 后，问题和权限确认的内容会经过 Telegram 服务器；手机通知会经过推送服务器。两者都会隐藏看起来像令牌的值，通知内容经过加密，推送服务器无法读取。账号邮箱在界面上隐藏，不会发送到任何地方。
 
-## 开发
+<details>
+<summary><b>安全详情</b></summary>
+
+- 套接字和数据库为 0600，文件夹为 0700。在 Windows 上，桥接只在 127.0.0.1 上开放端口，只回应带有每次启动生成的令牌的请求。
+- 权限确认回答、离开状态、Telegram 设置、定时提示、设置变更和会话控制只能由应用执行。mod 先启动的桥接没有密钥，应用启动时会重新启动一次。
+- 不带应用密钥读取的界面状态会隐藏权限请求中的秘密值，并去掉终端键和会话令牌。
+- 只向应用为该代理打开的终端输入回答，CLI 显示确认菜单时会等待，按 Enter 之前也会再检查一次。
+- 会话的浏览器工具默认只打开本机地址。浏览器工具和界面评论的脚本在与页面隔离的环境中运行。
+- 会话用 `open_in_ide` 添加的开发服务器命令，在首次运行 (以及每次变化) 时由应用显示原文和文件夹并请求确认。含有隐藏字符的命令会被拒绝。
+- 手机连接在开启前不会开放。开启后只接受来自本机、私有网络和 Tailscale 的连接，并检查 Tailscale serve 添加的 `X-Forwarded-Proto: https` 和这台电脑的 HTTPS 名称。关闭手机连接或桥接停止时，Tailscale HTTPS 也会关闭。失败请求较多的地址会被暂时封锁。
+- 含有隐藏字符或改变文字顺序字符的命令会显示为 `[U+202E]` 这样的标记，不能在手机和 Telegram 上允许。
+- 应用可执行文件禁用了 `NODE_OPTIONS` 和 `--inspect`。
+- 给代理 Shell 权限时，建议用 Claude Code 沙箱阻止访问 `~/.claude-ide`。
+- 工作日志 7 天后删除。
+
+</details>
+
+## 架构与开发
+
+```mermaid
+flowchart LR
+  cc["Claude Code"] -- "mod" --> bridge
+  cli["Codex、Gemini 等"] -- "MCP" --> bridge
+  cmd["switchboard 命令"] --> bridge
+  phone["手机、Telegram"] <--> bridge
+  bridge[("桥接<br/>本地套接字 + SQLite")] <--> app["Switchboard 应用"]
+  app <--> host["终端主机"]
+```
+
+<details>
+<summary><b>目录结构与开发命令</b></summary>
+
+| 目录 | 作用 |
+| --- | --- |
+| `bridge/` | 本地中继服务器，使用 `~/.claude-ide/bridge.sock` 和 SQLite。定时运行、Telegram 和手机连接也在这里运行。 |
+| `mod/` | Claude Code mod `ide-bridge`。注册工具，把回答送进会话，绘制 `/switchboard` 窗格。 |
+| `mcp/` | 供其他编码 CLI 使用的 MCP 服务器 (stdio)。 |
+| `scripts/` | 安装脚本、`switchboard` 命令和发布签名脚本。 |
+| `src/` | Electron 应用 (React) 和终端主机。 |
 
 ```sh
-pnpm test        # 桥接服务、mod、脚本 (node:test) 和界面逻辑 (vitest)
+pnpm test        # 桥接、mod、脚本 (node:test) 和界面逻辑 (vitest)
 pnpm typecheck
 pnpm build && pnpm start
 claude plugin test mod
 ```
 
-测试会清除真实账号的环境变量，并在临时主目录中运行 (`scripts/test-env.ts`)。
-
-界面检查使用与真实数据隔离的桥接服务。macOS 把套接字路径限制在约 104 字节，所以路径要短。
+测试会清除真实账号的环境变量，并在临时主目录中运行。界面检查使用与真实数据隔离的桥接:
 
 ```sh
 CLAUDE_IDE_SOCKET=/tmp/sb/b.sock CLAUDE_IDE_DB=/tmp/sb/ide.db node bridge/server.ts &
 CLAUDE_IDE_SOCKET=/tmp/sb/b.sock CLAUDE_IDE_CAPTURE=/tmp/sb/shot.png pnpm exec electron .
 ```
 
-设置 `CLAUDE_IDE_CAPTURE` 后，应用不显示窗口，把界面保存为 PNG 后退出。添加主题的方法见 [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md)。应用图标用 `node scripts/icon.mjs` 重新绘制。
+设置 `CLAUDE_IDE_CAPTURE` 后，应用不显示窗口，把界面保存为 PNG 后退出。添加主题的方法见 [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md)。
+
+</details>
 
 ## 许可证
 
