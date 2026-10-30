@@ -849,7 +849,7 @@ export const zhCN: Dict = {
   'agents.showOthers': '显示其他代理按钮',
   'agents.showOthersHint': '默认开启。关闭时，停靠栏只显示 Claude 和 shell 按钮。开启后，会显示已安装和自行添加的 CLI 按钮。',
   'agents.trustFolders': '预先处理文件夹信任确认',
-  'agents.trustFoldersHint': '对于应用首次打开 Codex、Copilot、Cursor 的文件夹，预先在该 CLI 中记录"信任此文件夹"。屏幕上停着信任确认时，应用输入的回答和定时提示会停在那里。不会更改 CLI 的批准和沙箱设置。',
+  'agents.trustFoldersHint': '对于应用首次打开 Codex、Copilot、Cursor 的文件夹，预先在该 CLI 中记录"信任此文件夹"。屏幕上停着信任确认时，应用输入的回答和定时提示会停在那里。CLI 会直接运行受信任文件夹自带的 MCP 服务器和钩子设置，因此默认关闭；即使开启，也不会记录自带代理配置 (.codex、.cursor、.mcp.json、.vscode/mcp.json、.github/copilot*) 的文件夹。不会更改 CLI 的批准和沙箱设置。',
   'agents.closeOnQuit': '退出应用时关闭终端',
   'agents.closeOnQuitHint': '默认关闭。关闭时，退出、重启或更新应用后，终端及其中运行的 Claude Code 和其他 CLI 会继续运行，重新打开应用后照常显示。开启后，退出应用会关闭所有终端。标签上的 × 始终会关闭该终端。',
   'agents.closeOnQuitOff': '在这台电脑上，退出应用时终端也会关闭。',

@@ -849,7 +849,7 @@ export const en: Dict = {
   'agents.showOthers': 'Show other agent buttons',
   'agents.showOthersHint': 'On by default. Off: the dock shows only Claude and shell buttons. On: buttons for installed CLIs and the ones you added appear.',
   'agents.trustFolders': 'Answer folder trust ahead',
-  'agents.trustFoldersHint': 'For a folder where the app first opens Codex, Copilot or Cursor, records yes to that CLI\'s "trust this folder?" question ahead of time. A trust question on screen would stop the answers and scheduled prompts the app types in. The CLI\'s approval and sandbox settings stay as they are.',
+  'agents.trustFoldersHint': 'For a folder where the app first opens Codex, Copilot or Cursor, records yes to that CLI\'s "trust this folder?" question ahead of time. A trust question on screen would stop the answers and scheduled prompts the app types in. A CLI runs the MCP servers and hooks a trusted folder brings, so this is off by default, and even when on it skips a folder with agent config of its own (.codex, .cursor, .mcp.json, .vscode/mcp.json, .github/copilot*). The CLI\'s approval and sandbox settings stay as they are.',
   'agents.closeOnQuit': 'Close terminals when the app quits',
   'agents.closeOnQuitHint': "Off by default. Off: quitting, restarting or updating the app leaves the terminals running, with Claude Code or any other CLI in them, and they show again when the app opens. On: quitting the app closes every terminal. A tab's × always closes its terminal.",
   'agents.closeOnQuitOff': 'On this computer the terminals close when the app quits.',

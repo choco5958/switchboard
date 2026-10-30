@@ -2,12 +2,14 @@
 // and scheduled prompts into Codex, Copilot and Cursor terminals, and a trust menu on screen
 // would hold them back until someone answers it, so the app records the trust before it opens
 // one, for the folders the person opened it in. The same as answering yes in the CLI's own
-// menu; the CLI's approval and sandbox settings stay as they are.
+// menu; the CLI's approval and sandbox settings stay as they are. Only when the person turned
+// it on (agents.ts trustFolders), and never for a folder that brings agent config of its own
+// (agentConfigIn): trusting it is what lets that config run, and that stays the person's call.
 // Claude Code is left alone: answers reach it through the mod, not its input, and it rewrites
 // its own .claude.json all the time, so a write from here could lose one of its changes.
 // The approach follows Orca's agent-trust-presets.ts (MIT, github.com/stablyai/orca).
 
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 // Each CLI compares the real path of the folder, so a symlink (macOS /tmp) is followed.
@@ -28,7 +30,9 @@ function replaceFile(file: string, content: string, mode = 0o600): void {
   renameSync(temp, file)
 }
 
-const tomlString = (text: string) => `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+// A basic string: a control character (a folder name may hold one) is written as \uXXXX.
+const tomlString = (text: string) =>
+  `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\u0000-\u001f\u007f]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)}"`
 
 // Codex: [projects."<folder>"] trust_level = "trusted" in config.toml. A folder the file names
 // already, trusted or not, is the person's choice and is left as it is.
@@ -63,11 +67,31 @@ export function cursorTrustFile(home: string, folder: string): string | null {
   return slug ? join(home, '.cursor', 'projects', slug, '.workspace-trusted') : null
 }
 
+// Config an agent CLI reads from the folder itself once it trusts it: MCP servers, hooks,
+// instructions. The first one found, or null.
+const AGENT_CONFIG = ['.codex', '.cursor', '.mcp.json', '.vscode/mcp.json']
+export function agentConfigIn(folder: string): string | null {
+  for (const name of AGENT_CONFIG) if (existsSync(join(folder, name))) return name
+  try {
+    const copilot = readdirSync(join(folder, '.github')).find(name => name.toLowerCase().startsWith('copilot'))
+    if (copilot) return `.github/${copilot}`
+  } catch {
+    // No .github folder.
+  }
+  return null
+}
+
 // Records the trust for `agent` (an agents.ts id) in `folder`; quietly does nothing for the
-// other CLIs or when the CLI's file cannot be read. Never throws: opening the terminal matters more.
+// other CLIs, a folder with agent config of its own, or when the CLI's file cannot be read.
+// Never throws: opening the terminal matters more.
 export function trustFolder(agent: string, folder: string, home: string, env: Record<string, string | undefined> = process.env): void {
   try {
     const path = realFolder(folder)
+    const config = agentConfigIn(path)
+    if (config) {
+      console.error(`not recording folder trust for ${agent} in ${path}: it has ${config}`)
+      return
+    }
     if (agent === 'codex') {
       const file = join(env.CODEX_HOME || join(home, '.codex'), 'config.toml')
       const next = codexTrustText(existsSync(file) ? readFileSync(file, 'utf8') : '', path)

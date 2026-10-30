@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { codexTrustText, copilotTrustText, cursorTrustFile, trustFolder } from './agentTrust'
+import { agentConfigIn, codexTrustText, copilotTrustText, cursorTrustFile, trustFolder } from './agentTrust'
 
 const home = mkdtempSync(join(tmpdir(), 'sb-trust-'))
 afterAll(() => rmSync(home, { recursive: true, force: true }))
@@ -16,6 +16,8 @@ describe('folder trust written before a CLI opens', () => {
     expect(codexTrustText(after, '/work/app')).toBeNull()
     expect(codexTrustText('[projects."/work/app"]\ntrust_level = "untrusted"\n', '/work/app')).toBeNull()
     expect(codexTrustText('', 'C:\\work\\"x"')).toBe('[projects."C:\\\\work\\\\\\"x\\""]\ntrust_level = "trusted"\n')
+    // A line break in a folder name cannot start a table of its own.
+    expect(codexTrustText('', '/w/a\n[mcp_servers.x]\u007f')).toBe('[projects."/w/a\\u000a[mcp_servers.x]\\u007f"]\ntrust_level = "trusted"\n')
   })
 
   it('Copilot: appends to trustedFolders, keeps other settings, refuses a file it cannot read', () => {
@@ -42,5 +44,26 @@ describe('folder trust written before a CLI opens', () => {
     expect(readFileSync(join(home, '.copilot', 'config.json'), 'utf8')).toContain('trustedFolders')
     expect(existsSync(join(home, '.claude.json'))).toBe(false)
     rmSync(folder, { recursive: true, force: true })
+  })
+
+  it('leaves alone a folder that brings agent config of its own', () => {
+    const own = mkdtempSync(join(tmpdir(), 'sb-trust-own-'))
+    const fresh = mkdtempSync(join(home, 'h-'))
+    expect(agentConfigIn(own)).toBeNull()
+    for (const [path, isDir] of [['.codex', true], ['.cursor', true], ['.mcp.json', false], ['.vscode/mcp.json', false], ['.github/copilot-instructions.md', false]] as const) {
+      const folder = mkdtempSync(join(tmpdir(), 'sb-trust-cfg-'))
+      const at = join(folder, path)
+      mkdirSync(isDir ? at : join(at, '..'), { recursive: true })
+      if (!isDir) writeFileSync(at, '{}')
+      expect(agentConfigIn(folder)).toBe(path)
+      trustFolder('codex', folder, fresh, {})
+      trustFolder('copilot', folder, fresh, {})
+      trustFolder('cursor', folder, fresh, {})
+      rmSync(folder, { recursive: true, force: true })
+    }
+    expect(existsSync(join(fresh, '.codex', 'config.toml'))).toBe(false)
+    expect(existsSync(join(fresh, '.copilot', 'config.json'))).toBe(false)
+    expect(existsSync(join(fresh, '.cursor'))).toBe(false)
+    rmSync(own, { recursive: true, force: true })
   })
 })

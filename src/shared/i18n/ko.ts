@@ -848,7 +848,7 @@ export const ko = {
   'agents.showOthers': '다른 에이전트 버튼 보이기',
   'agents.showOthersHint': '기본은 켜짐입니다. 끄면 독에는 Claude와 셸 버튼만 보입니다. 켜면 설치된 CLI와 직접 추가한 CLI 버튼이 나옵니다.',
   'agents.trustFolders': '폴더 신뢰 질문 미리 처리',
-  'agents.trustFoldersHint': 'Codex, Copilot, Cursor를 앱에서 처음 여는 폴더에 대해, 그 CLI의 "이 폴더를 신뢰할까요?"에 미리 예라고 기록해 둡니다. 신뢰 질문이 화면에 떠 있으면 앱이 입력하는 답과 예약 프롬프트가 거기서 멈추기 때문입니다. CLI의 승인과 샌드박스 설정은 바꾸지 않습니다.',
+  'agents.trustFoldersHint': 'Codex, Copilot, Cursor를 앱에서 처음 여는 폴더라면 그 CLI의 "이 폴더를 신뢰할까요?"에 미리 예라고 기록해 둡니다. 신뢰 질문이 화면에 떠 있으면 앱이 입력하는 답과 예약 프롬프트가 거기서 멈추기 때문입니다. 신뢰한 폴더에 든 MCP 서버와 훅 설정은 CLI가 그대로 실행하므로 기본은 꺼져 있고, 켜 두어도 자체 에이전트 설정(.codex, .cursor, .mcp.json, .vscode/mcp.json, .github/copilot*)이 있는 폴더는 기록하지 않습니다. CLI의 승인과 샌드박스 설정은 바꾸지 않습니다.',
   'agents.closeOnQuit': '앱을 닫을 때 터미널도 닫기',
   'agents.closeOnQuitHint': '기본은 꺼짐입니다. 꺼 두면 앱을 닫거나 다시 시작하거나 업데이트해도 터미널과 그 안의 Claude Code, 다른 CLI가 계속 실행되고, 앱을 다시 열면 그대로 보입니다. 켜면 앱을 닫을 때 모든 터미널이 함께 닫힙니다. 탭의 ×는 언제나 그 터미널을 닫습니다.',
   'agents.closeOnQuitOff': '이 컴퓨터에서는 앱을 닫으면 터미널도 함께 닫힙니다.',
