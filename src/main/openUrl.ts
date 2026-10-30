@@ -6,6 +6,19 @@
 import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+// Only a web address opens: open and xdg-open would take another scheme to whatever app owns it
+// (or a file), and a word that starts with '-' as an option of their own. The address the
+// browser gets is the one URL wrote out again, which always starts with its scheme.
+// Also the script's own copy, as isLocalAddress below.
+export function webAddress(raw: string): string | null {
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null
+  } catch {
+    return null
+  }
+}
+
 // Also the script's own copy: openUrlScript embeds its source, which the build has stripped of types.
 export function isLocalAddress(raw: string): boolean {
   let url: URL
@@ -28,8 +41,11 @@ const { request } = require('node:http')
 const { spawn } = require('node:child_process')
 const { homedir } = require('node:os')
 const { join } = require('node:path')
-const url = process.argv[2] || ''
+const webAddress = (${webAddress.toString()})
 const isLocalAddress = (${isLocalAddress.toString()})
+const url = webAddress(process.argv[2] || '')
+// Anything but a web address opens nowhere.
+if (url === null) process.exit(1)
 // Not cmd /c start on Windows: cmd would read & and | in the address as commands.
 const opener = process.platform === 'win32' ? ['rundll32', ['url.dll,FileProtocolHandler', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]]
 const own = () => {
