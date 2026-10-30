@@ -367,8 +367,13 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   db.exec('pragma journal_mode = wal;')
   // The WAL shrinks back to this after a checkpoint instead of keeping its largest size.
   db.exec('pragma journal_size_limit = 16777216;')
-  // What a bridge that died left in the WAL goes into the database now.
-  db.exec('pragma wal_checkpoint(TRUNCATE);')
+  // What a bridge that died left in the WAL goes into the database now (or at the next prune,
+  // when another connection holds it).
+  try {
+    db.exec('pragma wal_checkpoint(TRUNCATE);')
+  } catch {
+    // Not now.
+  }
   for (const file of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) if (existsSync(file)) chmodSync(file, 0o600)
   db.exec(SCHEMA)
   // Columns added after the first release: create them on databases made before.
