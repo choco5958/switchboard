@@ -97,7 +97,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 
 - Register a dev server, start it, and open it in the in-app browser.
 - Click an element on the page to leave a comment. The session receives it with the position, CSS, a screenshot, and the page's console errors and failed requests at that moment.
-- Sessions read, click and type on local pages with the `browser_*` tools to check their own fixes. Only addresses on this computer or the private network are allowed.
+- Sessions read, click and type on local pages with the `browser_*` tools to check their own fixes. Only addresses on this computer are allowed; turn on `Let sessions open private network pages in the in-app browser` in Settings > Agent CLIs to allow private network addresses (192.168.x.x, name.local and so on) too.
 - Local addresses that a CLI opens from an app terminal open in the in-app browser.
 
 ### Terminals and the shell
@@ -312,7 +312,7 @@ pnpm test; switchboard fire w3 "tests finished: exit code $?"
 - All data stays under `~/.claude-ide/` on this computer. The folder is readable only by you (0700), and so are the socket and database (0600).
 - With Telegram connected, decision questions and permission asks pass through Telegram's servers. Values that look like credentials are masked before sending. The bot token is kept only in the database, never in the screen state.
 - Console and request logs attached to screen comments are masked the same way as they are collected.
-- The sessions' browser tools only open addresses on this computer or the private network.
+- The sessions' browser tools only open addresses on this computer. Private network addresses open only when you allow them in Settings, because a router's or NAS's admin page sits there and the in-app browser keeps its sign-ins. Pages you open yourself are not limited.
 - The scripts of the browser tools and screen comments run in a world of their own, apart from the page. The page's scripts cannot fake where a click lands or what is read, or save a comment in the person's place.
 - Before typing a message into another CLI's terminal, the app checks the screen. While the CLI shows a confirmation menu such as "run this command?", it waits, so the typing never picks an option there.
 - Answering permission asks, setting away status, setting up Telegram, scheduling prompts, changing settings and controlling sessions are for the app only. The app hands the bridge a key kept encrypted by the system keychain, on standard input, and these routes answer only that key. So a session with shell access that calls the bridge itself still cannot allow its own permission asks. A bridge a mod started first has no key, so the app starts it again once when it opens.

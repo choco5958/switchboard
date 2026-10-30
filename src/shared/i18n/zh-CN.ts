@@ -850,6 +850,8 @@ export const zhCN: Dict = {
   'agents.showOthersHint': '默认开启。关闭时，停靠栏只显示 Claude 和 shell 按钮。开启后，会显示已安装和自行添加的 CLI 按钮。',
   'agents.trustFolders': '预先处理文件夹信任确认',
   'agents.trustFoldersHint': '对于应用首次打开 Codex、Copilot、Cursor 的文件夹，预先在该 CLI 中记录"信任此文件夹"。屏幕上停着信任确认时，应用输入的回答和定时提示会停在那里。不会更改 CLI 的批准和沙箱设置。',
+  'agents.browserLan': '允许内置浏览器打开私有网络地址',
+  'agents.browserLanHint': '默认关闭。关闭时，会话的 browser_* 工具只打开本机地址 (localhost、127.0.0.1)。开启后，也会打开 192.168.x.x、10.x.x.x 等私有网络地址和 名称.local。路由器或 NAS 的管理页面也在私有网络中，而内置浏览器会记住登录状态，所以请只在需要时开启。你自己输入地址打开的页面不受此设置限制。',
   'agents.closeOnQuit': '退出应用时关闭终端',
   'agents.closeOnQuitHint': '默认关闭。关闭时，退出、重启或更新应用后，终端及其中运行的 Claude Code 和其他 CLI 会继续运行，重新打开应用后照常显示。开启后，退出应用会关闭所有终端。标签上的 × 始终会关闭该终端。',
   'agents.closeOnQuitOff': '在这台电脑上，退出应用时终端也会关闭。',
