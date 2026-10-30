@@ -122,6 +122,22 @@ describe('projects', () => {
     expect(beta.archived.map(t => t.id)).toEqual([4])
     expect(beta.agents.map(a => a.id)).toEqual(['b'])
     expect(beta.commands).toHaveLength(1)
+    // No approvals sent: none made up.
+    expect('approvals' in beta).toBe(false)
+  })
+
+  it("leaves other projects' permission asks out of a project's view", () => {
+    const asks = {
+      ...state,
+      approvals: [
+        { id: 1, project: 'alpha', status: 'pending' },
+        { id: 2, project: 'beta', status: 'pending' },
+        { id: 3, project: 'beta', status: 'allowed' },
+      ],
+    } as unknown as BridgeState
+    expect(scopeState(asks, 'beta').approvals?.map(a => a.id)).toEqual([2, 3])
+    expect(scopeState(asks, 'gamma').approvals).toEqual([])
+    expect(scopeState(asks, null).approvals).toHaveLength(3)
   })
 })
 

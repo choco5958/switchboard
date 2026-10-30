@@ -73,7 +73,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 - **Decision queue**: a session posts options, a recommendation and the reason for it with `ask_decision`. Pick with keys such as `a` or `b` and send with `Enter`. You can also hold a question or answer with a note. The same question is never queued twice.
 - **Tasks and progress graph**: task stages (request, design, work, done) and nodes (check, build, test, review) are drawn on screen, with the subagent working on each node and whether it is running or finished.
 - **Waiting for you**: tasks with an open decision, a turn stalled for more than 5 minutes, a usage limit, or a dropped session gather at the top of the sidebar. Stalled sessions and sessions whose limit has reset also raise a macOS notification.
-- **Per-project view**: pick a folder on the left and the whole screen shows only that project's sessions and tasks.
+- **Per-project view**: pick a project on the left and the sidebar, home, log and dock show only that project's sessions, tasks, decisions and permission asks. The usage meters in the top bar are account-wide, and the top bar's counts show the project's number with the total beside it.
 
 ### Sessions working together
 

@@ -176,6 +176,8 @@ export function scopeState(state: BridgeState, scope: string | null): BridgeStat
     archived: state.archived.filter(t => t.project === scope),
     agents: state.agents.filter(a => ids.has(a.session_id)),
     commands: state.commands.filter(c => ids.has(c.session_id)),
+    // Permission asks name their project; another project's ask waits in that project's view.
+    ...(state.approvals ? { approvals: state.approvals.filter(a => a.project === scope) } : {}),
   }
 }
 

@@ -336,7 +336,7 @@ export function App() {
     [state.sessions, stalled],
   )
   const { pending, held } = useMemo(() => queueOf(view.questions), [view.questions])
-  const pendingApprovals = (state.approvals ?? []).filter(a => a.status === 'pending' && (scope === null || a.project === scope))
+  const pendingApprovals = (view.approvals ?? []).filter(a => a.status === 'pending')
   const reachOfQuestion = (q: Question) => reachOf(state.sessions.find(s => s.id === q.session_id), state.live ?? [])
   const inScope = (tab: Tab): boolean => {
     if (scope === null) return true
