@@ -2,11 +2,11 @@ import { app, BrowserWindow, dialog, ipcMain as rawIpcMain, nativeImage, Notific
 import { execFile, spawn } from 'node:child_process'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
-import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { BridgeState, Reply, WorktreeCheck } from '../shared/types'
-import { watchBridge } from './bridgeWatch'
+import { sharedStart, watchBridge } from './bridgeWatch'
 import { registerAccount } from './account'
 import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
@@ -26,6 +26,15 @@ import { STALL_MS, stalledSessions } from '../shared/stall'
 import { limitedUntil } from '../shared/limit'
 import { netEntry, type PageLogEntry } from '../shared/pageLog'
 import { resolveLang, setLang, t } from '../shared/i18n'
+
+// Captures keep their own profile so they never overwrite the real app's saved tabs and addresses.
+if (process.env.CLAUDE_IDE_CAPTURE) app.setPath('userData', `${process.env.CLAUDE_IDE_CAPTURE}.profile`)
+
+// One app at a time: a second start would run its own bridge start, terminals and delivery
+// beside the first. It hands over to the running one ('second-instance' below) and quits.
+// Captures run beside the installed app on purpose, with a profile of their own: no lock.
+const primary = process.env.CLAUDE_IDE_CAPTURE ? true : app.requestSingleInstanceLock()
+if (!primary) app.quit()
 
 const DIR = join(homedir(), '.claude-ide')
 // Where the bridge is: a Unix socket, or TCP with a token on Windows (bridge/endpoint.ts).
@@ -50,12 +59,18 @@ let appKey = ''
 async function launchBridge(): Promise<boolean> {
   mkdirSync(DIR, { recursive: true, mode: 0o700 })
   const log = openSync(join(DIR, 'bridge.log'), 'a')
-  const child = spawn(process.env.APPIMAGE ?? process.execPath, [join(nodeRoot(), 'bridge', 'server.ts')], {
-    detached: true,
-    windowsHide: true,
-    stdio: ['pipe', log, log],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_VERSION: app.isPackaged ? app.getVersion() : '', SWITCHBOARD_APP_KEY_STDIN: '1' },
-  })
+  let child: ReturnType<typeof spawn>
+  try {
+    child = spawn(process.env.APPIMAGE ?? process.execPath, [join(nodeRoot(), 'bridge', 'server.ts')], {
+      detached: true,
+      windowsHide: true,
+      stdio: ['pipe', log, log],
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_VERSION: app.isPackaged ? app.getVersion() : '', SWITCHBOARD_APP_KEY_STDIN: '1' },
+    })
+  } finally {
+    // The child has its own copy of the descriptor; this one would stay open for every start.
+    closeSync(log)
+  }
   // A spawn that fails (the app moved, no permission) says so in the log instead of throwing in main.
   child.on('error', error => {
     bridgeProblem = error.message
@@ -100,7 +115,11 @@ async function ensureOwnBridge(): Promise<void> {
   }
 }
 
-async function startBridge(): Promise<boolean> {
+// Shared by every caller (the app's start, ensureOwnBridge, the stream's retry): two at once
+// would each stop the other's new bridge and launch one more.
+const startBridge = sharedStart(startBridgeOnce)
+
+async function startBridgeOnce(): Promise<boolean> {
   const health = await call('GET', '/health')
   if (health.ok) {
     const outdated = app.isPackaged && staleBridge(health.json, app.getVersion()) !== null
@@ -573,10 +592,19 @@ function createWindow(): void {
   }
 }
 
-// Captures keep their own profile so they never overwrite the real app's saved tabs and addresses.
-if (process.env.CLAUDE_IDE_CAPTURE) app.setPath('userData', `${process.env.CLAUDE_IDE_CAPTURE}.profile`)
+// A second start of the app brings the running window forward (it quits itself, see `primary`).
+// Before the first window exists the start under way shows it.
+let started = false
+app.on('second-instance', () => {
+  if (!started) return
+  if (!win || win.isDestroyed()) return createWindow()
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+})
 
 app.whenReady().then(async () => {
+  if (!primary) return
   setLang(resolveLang(undefined, app.getLocale()))
   if (process.env.CLAUDE_IDE_CAPTURE) app.dock?.hide()
   else app.dock?.setIcon(nativeImage.createFromPath(ICON))
@@ -587,6 +615,7 @@ app.whenReady().then(async () => {
   await prepareRuntime()
   await startBridge()
   createWindow()
+  started = true
   watch()
   watchBrowserRequests()
   startUpdates(async () => {

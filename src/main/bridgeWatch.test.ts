@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { request } from 'node:http'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { takeFrames, watchBridge } from './bridgeWatch'
+import { sharedStart, takeFrames, watchBridge } from './bridgeWatch'
 
 const SERVER = join(import.meta.dirname, '../../bridge/server.ts')
 
@@ -45,6 +45,36 @@ async function until(check: () => boolean, ms = 8000): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 25))
   }
 }
+
+describe('sharedStart', () => {
+  it('callers during a start share it; the next call after it ends starts again', async () => {
+    let runs = 0
+    let finish: (ok: boolean) => void = () => undefined
+    const start = sharedStart(() => {
+      runs += 1
+      return new Promise<boolean>(resolve => (finish = resolve))
+    })
+    const first = start()
+    const second = start()
+    expect(second).toBe(first)
+    expect(runs).toBe(1)
+    finish(true)
+    expect(await Promise.all([first, second])).toEqual([true, true])
+    void start()
+    expect(runs).toBe(2)
+  })
+
+  it('a start that fails does not block the next one', async () => {
+    let runs = 0
+    const start = sharedStart(async () => {
+      runs += 1
+      if (runs === 1) throw new Error('spawn failed')
+      return true
+    })
+    await expect(start()).rejects.toThrow('spawn failed')
+    expect(await start()).toBe(true)
+  })
+})
 
 describe('takeFrames', () => {
   it('splits whole frames and keeps the partial one', () => {

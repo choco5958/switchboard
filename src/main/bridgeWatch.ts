@@ -17,6 +17,14 @@ export type WatchOptions = {
   beforeRetry?: () => Promise<unknown>
 }
 
+// One run of `start` at a time: a call while one is under way gets that run's result. The
+// bridge start goes through it, so the app's start, the stream's retry and ensureOwnBridge
+// never each stop the bridge the other just launched and launch another.
+export function sharedStart<T>(start: () => Promise<T>): () => Promise<T> {
+  let running: Promise<T> | null = null
+  return () => (running ??= start().finally(() => (running = null)))
+}
+
 // Splits complete SSE frames off the buffer; returns their data payloads and what is left.
 export function takeFrames(buffer: string): { data: string[]; rest: string } {
   const data: string[] = []
