@@ -547,8 +547,12 @@ const ICON = join(app.getAppPath(), 'resources', 'icon.png')
 
 function createWindow(): void {
   win = new BrowserWindow({
-    width: 1440,
+    // A capture can ask for another size (CLAUDE_IDE_CAPTURE_WIDTH), to check a narrow window.
+    width: Number(process.env.CLAUDE_IDE_CAPTURE && process.env.CLAUDE_IDE_CAPTURE_WIDTH) || 1440,
     height: 900,
+    // Below this the sidebar, the main area and the top bar's right group no longer fit side by side.
+    minWidth: 960,
+    minHeight: 600,
     backgroundColor: '#0f1424',
     title: 'Switchboard',
     icon: ICON,

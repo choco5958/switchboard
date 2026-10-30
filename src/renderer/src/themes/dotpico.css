@@ -15,17 +15,32 @@
   --good: #00e436;
   --warn: #ffec27;
   --bad: #ff77a8; /* the red #ff004d is too dark for text on the blue panel */
+  --line-strong: #83769c;
+  --on-good: #000000;
+  --on-warn: #000000;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --mono: 'Galmuri11', 'Galmuri9', 'DungGeunMo', 'D2Coding', Menlo, monospace;
   --sans: var(--mono);
+  /* Square corners everywhere. */
+  --r-sm: 0;
+  --r-md: 0;
+  --r-lg: 0;
+  --r-pill: 0;
+  --bw-surface: 2px;
+  --shadow-surface: 4px 4px 0 #000000;
+  --sel-bar: inset 3px 0 0 #ff77a8;
+  /* Buttons are raised grey keys that press down into their shadow. */
+  --btn-bg: #5f574f;
+  --btn-line: #000000;
+  --btn-shadow: 2px 2px 0 #000000;
+  --press: translate(2px, 2px);
+  --btn-primary-bg: #00e436;
+  --btn-primary-line: #000000;
+  --btn-primary-text: #000000;
 }
 
-[data-theme='dotpico'] * { border-radius: 0 !important; }
-[data-theme='dotpico'] .card,
-[data-theme='dotpico'] .stat,
-[data-theme='dotpico'] .home-card,
 [data-theme='dotpico'] .node,
-[data-theme='dotpico'] .option,
-[data-theme='dotpico'] .palette,
 [data-theme='dotpico'] .node-detail {
   border-width: 2px;
   box-shadow: 4px 4px 0 #000000;
@@ -34,26 +49,10 @@
 [data-theme='dotpico'] h1 { color: #ffec27; }
 [data-theme='dotpico'] h2 { color: #ffa300; }
 [data-theme='dotpico'] .tag { color: #ff77a8; }
-
-[data-theme='dotpico'] .actions button,
-[data-theme='dotpico'] .browser-bar button {
-  border: 2px solid #000000;
-  background: #5f574f;
-  box-shadow: 2px 2px 0 #000000;
-}
-[data-theme='dotpico'] .actions button.primary,
-[data-theme='dotpico'] .browser-bar button.primary {
-  background: #00e436;
-  border-color: #000000;
-  color: #000000;
-}
-[data-theme='dotpico'] .node-detail .actions button.danger { background: #ff004d; color: #fff1e8; border-color: #000000; }
-[data-theme='dotpico'] .actions button:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: none; }
+[data-theme='dotpico'] .btn { border-width: 2px; }
+[data-theme='dotpico'] .btn-danger { background: #ff004d; color: #fff1e8; border-color: #000000; }
 
 /* Stages as blocky progress cells. */
 [data-theme='dotpico'] .stages li { border-top-width: 6px; }
-[data-theme='dotpico'] .mini-stages span { height: 6px; }
 [data-theme='dotpico'] .meter-track { height: 8px; background: #5f574f; }
 [data-theme='dotpico'] .num-badge { box-shadow: 2px 2px 0 #000000; }
-[data-theme='dotpico'] .queue-item.active,
-[data-theme='dotpico'] .option.picked { border-color: #ff77a8; }

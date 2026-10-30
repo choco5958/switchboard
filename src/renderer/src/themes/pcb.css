@@ -13,7 +13,21 @@
   --good: #64d48d;
   --warn: #f2c65a;
   --bad: #ff7a68;
+  --line-strong: #c58a3e;
+  --on-good: #0a2615;
+  --on-warn: #0a2615;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --copper: #c58a3e;
+  /* Gold pads with copper rims: nearly square corners and a copper ring around each card. */
+  --r-md: 3px;
+  --r-lg: 3px;
+  --shadow-surface: 0 0 0 3px rgba(10, 38, 21, 0.9), 0 0 0 4px rgba(197, 138, 62, 0.35);
+  --btn-line: var(--copper);
+  --btn-primary-bg: linear-gradient(#f0c66a, #c9932f);
+  --btn-primary-line: #f5d68f;
+  --btn-primary-text: #0a2615;
+  --btn-primary-weight: 700;
 }
 
 /* Via holes on the board behind the main area. */
@@ -26,25 +40,17 @@
 [data-theme='pcb'] h2,
 [data-theme='pcb'] h3,
 [data-theme='pcb'] .brand,
-[data-theme='pcb'] .chip,
-[data-theme='pcb'] .tag-chip,
+[data-theme='pcb'] .badge,
 [data-theme='pcb'] .node .kind { font-family: var(--mono); letter-spacing: 0.04em; }
 [data-theme='pcb'] .card,
-[data-theme='pcb'] .stat,
-[data-theme='pcb'] .home-card,
+[data-theme='pcb'] .surface:not(.sunk),
 [data-theme='pcb'] .node,
-[data-theme='pcb'] .palette { border-radius: 3px; border-color: var(--copper); box-shadow: 0 0 0 3px rgba(10, 38, 21, 0.9), 0 0 0 4px rgba(197, 138, 62, 0.35); }
+[data-theme='pcb'] .dialog { border-color: var(--copper); }
+[data-theme='pcb'] .node,
+[data-theme='pcb'] .dialog { box-shadow: var(--shadow-surface); }
 [data-theme='pcb'] .node { border-width: 2px; }
 [data-theme='pcb'] .node-지금 { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 10px rgba(227, 179, 79, 0.35); }
 [data-theme='pcb'] .node-끝 { border-color: var(--good); }
 [data-theme='pcb'] .node-실패 { border-color: var(--bad); }
 [data-theme='pcb'] .edge { stroke: var(--copper); stroke-width: 2; }
-
-/* Buttons are gold pads. */
-[data-theme='pcb'] .actions button,
-[data-theme='pcb'] .browser-bar button { border-radius: 3px; border-color: var(--copper); }
-[data-theme='pcb'] .actions button.primary,
-[data-theme='pcb'] .browser-bar button.primary { background: linear-gradient(#f0c66a, #c9932f); border-color: #f5d68f; color: #0a2615; font-weight: 700; }
 [data-theme='pcb'] .stages li { border-top-width: 2px; }
-[data-theme='pcb'] .stages li.done { border-color: var(--good); }
-[data-theme='pcb'] .recommend { color: #0a2615; }

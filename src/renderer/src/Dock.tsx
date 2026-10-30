@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { AgentDetect, BridgeState, Task, TermInfo } from '../../shared/types'
 import { projectOfCwd, type ProjectInfo } from '../../shared/projects'
 import { CLAUDE_MIN, olderThan, PRESETS, type AgentTag, type CustomAgent } from '../../shared/agents'
-import { Icon } from './Icons'
 import { TerminalView } from './TerminalView'
-import { LogLines, onPress } from './parts'
+import { LogLines } from './parts'
+import { Badge, Button, EmptyState, IconButton, Input, Menu, MenuItem, TabList, cx } from './ui'
 import { composing } from './ime'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
 import { t } from '../../shared/i18n'
@@ -137,6 +137,9 @@ export function Dock({
   const body = useRef<HTMLDivElement>(null)
   const newBox = useRef<HTMLDivElement>(null)
   const logBox = useRef<HTMLDivElement>(null)
+  // The agent picker hands focus back to its ▾ button when it closes from the keyboard.
+  const pickButton = useRef<HTMLButtonElement>(null)
+  const listId = useId()
 
   // Settings can look for installed CLIs again; the dock takes what it found.
   useEffect(() => {
@@ -242,28 +245,20 @@ export function Dock({
     return () => clearTimeout(timer)
   }, [closing])
 
-  // The folder menu and the agent picker close on a click outside them or on Esc.
+  // The agent picker closes on a click outside it or on Esc; Esc puts focus back on its button.
+  // (The folder menu is a <Menu>, which does the same itself.)
+  const closePicker = (refocus: boolean) => {
+    setPicking(false)
+    if (refocus) pickButton.current?.focus()
+  }
   useEffect(() => {
-    if (!menu && !picking) return
+    if (!picking) return
     const outside = (event: MouseEvent) => {
-      if (!newBox.current?.contains(event.target as Node)) {
-        setMenu(null)
-        setPicking(false)
-      }
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setMenu(null)
-        setPicking(false)
-      }
+      if (!newBox.current?.contains(event.target as Node)) setPicking(false)
     }
     document.addEventListener('mousedown', outside)
-    document.addEventListener('keydown', escape)
-    return () => {
-      document.removeEventListener('mousedown', outside)
-      document.removeEventListener('keydown', escape)
-    }
-  }, [menu, picking])
+    return () => document.removeEventListener('mousedown', outside)
+  }, [picking])
 
   const close = async (id: string) => {
     const term = terms.find(t => t.id === id)
@@ -292,49 +287,54 @@ export function Dock({
     <footer className={`dock ${folded ? 'folded' : ''}`} style={folded ? undefined : { height }}>
       {!folded && <div className="dock-handle" onMouseDown={drag} title={t('dock.resize')} />}
       <div className="dock-head">
-        <button className={`dock-tab ${current === 'log' ? 'on' : ''}`} onClick={() => setActive('log')}>
-          {t('dock.log')}
-        </button>
-        {shown.map(term => (
-          <div
-            key={term.id}
-            role="tab"
-            tabIndex={0}
-            aria-selected={current === term.id}
-            className={`dock-tab ${current === term.id ? 'on' : ''} ${term.alive ? '' : 'dead'}`}
-            title={term.cwd}
-            onClick={() => setActive(term.id)}
-            onKeyDown={onPress(() => setActive(term.id))}
-          >
-            {scope === null && <span className="quiet">{projectOf(term)} </span>}
-            {term.title}
-            {!term.alive && <span className="quiet"> {t('dock.ended')}</span>}
-            {term.alive && stalledTerms.has(term.id) && (
-              <span className="stalled-mark" title={t('task.stalledTitle')}> {t('task.stalled')}</span>
-            )}
-            <button
-              className={`tab-close ${closing === term.id ? 'armed' : ''}`}
-              title={term.alive ? t('dock.closeArmedTitle') : t('common.close')}
-              onBlur={() => setClosing(armed => (armed === term.id ? null : armed))}
-              onClick={event => {
-                event.stopPropagation()
-                void close(term.id)
-              }}
-            >
-              {closing === term.id ? t('dock.closeConfirm') : '×'}
-            </button>
-          </div>
-        ))}
+        <TabList
+          label={t('dock.tabsLabel')}
+          className="dock-tabs"
+          active={current}
+          onSelect={setActive}
+          items={[
+            { key: 'log', label: t('dock.log') },
+            ...shown.map(term => ({
+              key: term.id,
+              title: term.cwd,
+              className: term.alive ? undefined : 'dead',
+              label: (
+                <>
+                  {scope === null && <span className="quiet">{projectOf(term)} </span>}
+                  {term.title}
+                  {!term.alive && <span className="quiet"> {t('dock.ended')}</span>}
+                  {term.alive && stalledTerms.has(term.id) && (
+                    <span className="stalled-mark" title={t('task.stalledTitle')}>
+                      {' '}
+                      {t('task.stalled')}
+                    </span>
+                  )}
+                </>
+              ),
+              close: {
+                label: t('dock.closeTerm', { title: term.title }),
+                title: term.alive ? t('dock.closeArmedTitle') : undefined,
+                content: closing === term.id ? t('dock.closeConfirm') : undefined,
+                className: closing === term.id ? 'armed' : undefined,
+                onBlur: () => setClosing(armed => (armed === term.id ? null : armed)),
+                onClose: () => void close(term.id),
+              },
+            })),
+          ]}
+        />
         <div className="dock-new" ref={newBox}>
           <div className="dock-split">
-            <button className={`dock-tab add ${main.warn ? 'add-warn' : ''}`} title={main.title} onClick={() => launch(main)}>
+            <button type="button" className={cx('dock-add', main.warn && 'add-warn')} title={main.title} onClick={() => launch(main)}>
               + {main.label === 'Claude Code' ? 'Claude' : main.label}
             </button>
             {choices.length > 1 && (
-              <button
-                className={`dock-tab add dock-pick ${picking ? 'on' : ''}`}
-                title={t('dock.pickAgent')}
-                aria-label={t('dock.pickAgent')}
+              <IconButton
+                ref={pickButton}
+                icon="chevronDown"
+                size="sm"
+                className="dock-pick"
+                label={t('dock.pickAgent')}
+                aria-haspopup="listbox"
                 aria-expanded={picking}
                 onClick={() => {
                   setMenu(null)
@@ -343,19 +343,26 @@ export function Dock({
                   setShowMissing(false)
                   setPicking(open => !open)
                 }}
-              >
-                ▾
-              </button>
+              />
             )}
           </div>
-          <button className="dock-tab add" title={t('dock.newShellTitle')} onClick={() => launch(shell)}>
+          <button type="button" className="dock-add" title={t('dock.newShellTitle')} onClick={() => launch(shell)}>
             {t('dock.newShell')}
           </button>
           {picking && (
-            <div className="dock-menu agent-picker" role="listbox" aria-label={t('dock.pickAgent')}>
-              <input
+            // A filter field that drives a list (a combobox): the arrows move the highlight in the
+            // list while typing stays in the field, Enter opens the highlighted agent.
+            <div className="menu dock-menu agent-picker">
+              <Input
+                compact
                 className="agent-filter"
                 autoFocus
+                role="combobox"
+                aria-label={t('dock.findAgent')}
+                aria-expanded="true"
+                aria-controls={listId}
+                aria-autocomplete="list"
+                aria-activedescendant={listed[cursor] ? `${listId}-${cursor}` : undefined}
                 placeholder={t('dock.findAgent')}
                 value={query}
                 onChange={e => {
@@ -367,67 +374,75 @@ export function Dock({
                   if (e.key === 'ArrowDown') setCursor(c => Math.min(listed.length - 1, c + 1))
                   else if (e.key === 'ArrowUp') setCursor(c => Math.max(0, c - 1))
                   else if (e.key === 'Enter' && listed[cursor]) launch(listed[cursor]!)
+                  else if (e.key === 'Escape') closePicker(true)
                   else return
                   e.preventDefault()
+                  e.stopPropagation()
                 }}
               />
-              {listed.map((c, i) => (
-                <button
-                  key={c.kind}
-                  role="option"
-                  aria-selected={i === cursor}
-                  className={`agent-row ${i === cursor ? 'on' : ''} ${c.installed ? '' : 'missing'}`}
-                  title={c.title}
-                  onMouseEnter={() => setCursor(i)}
-                  onClick={() => launch(c)}
-                >
-                  <span className="dock-menu-name">{c.label}</span>
-                  {c.kind === main.kind && c.installed && <span className="agent-default small">{t('dock.agentDefault')}</span>}
-                  <span className="spacer" />
-                  <span className={`agent-via small ${c.warn ? 'warn' : ''}`}>{c.installed ? t(`dock.via.${c.via}`) : t('dock.notInstalled')}</span>
-                </button>
-              ))}
-              {listed.length === 0 && <p className="quiet small agent-none">{t('dock.noAgentMatch')}</p>}
+              <div id={listId} role="listbox" aria-label={t('dock.pickAgent')} className="agent-options">
+                {listed.map((c, i) => (
+                  <div
+                    key={c.kind}
+                    id={`${listId}-${i}`}
+                    role="option"
+                    aria-selected={i === cursor}
+                    className={cx('row agent-row', i === cursor && 'on', !c.installed && 'missing')}
+                    title={c.title}
+                    onMouseEnter={() => setCursor(i)}
+                    // The field keeps focus: a press on a row must not take it away first.
+                    onMouseDown={event => event.preventDefault()}
+                    onClick={() => launch(c)}
+                  >
+                    <span className="dock-menu-name">{c.label}</span>
+                    {c.kind === main.kind && c.installed && (
+                      <Badge shape="pill" tone="accent" className="small agent-default">{t('dock.agentDefault')}</Badge>
+                    )}
+                    <span className="spacer" />
+                    <span className={cx('agent-via small', c.warn && 'warn')}>{c.installed ? t(`dock.via.${c.via}`) : t('dock.notInstalled')}</span>
+                  </div>
+                ))}
+              </div>
+              {listed.length === 0 && <EmptyState className="small agent-none">{t('dock.noAgentMatch')}</EmptyState>}
               {missingCount > 0 && !showMissing && query.trim() === '' && (
-                <button className="agent-more quiet small" onClick={() => setShowMissing(true)}>
+                <Button variant="link" size="sm" className="agent-more" onClick={() => setShowMissing(true)}>
                   {t('dock.showMissing', { n: missingCount })}
-                </button>
+                </Button>
               )}
             </div>
           )}
           {menu && (
-            <div className={`dock-menu menu-${menu === 'claude' || menu === 'shell' ? menu : 'agent'}`}>
-              <div className="dock-menu-title quiet small">{menuTitle(menu)}</div>
+            <Menu label={menuTitle(menu) ?? ''} className={`dock-menu menu-${menu === 'claude' || menu === 'shell' ? menu : 'agent'}`} within={newBox} onClose={() => setMenu(null)}>
+              <div className="menu-title quiet small">{menuTitle(menu)}</div>
               {projects
                 .filter(p => p.cwd)
                 .map(p => (
-                  <button key={p.name} title={p.cwd} onClick={() => void openIn(p.cwd, menu, pickSlot)}>
+                  <MenuItem key={p.name} title={p.cwd} onSelect={() => void openIn(p.cwd, menu, pickSlot)}>
                     <span className="dock-menu-name">{p.name}</span>
                     <span className="quiet small mono dock-menu-path">{p.cwd.replace(/^\/Users\/[^/]+/, '~')}</span>
-                  </button>
+                  </MenuItem>
                 ))}
-              <button onClick={() => void openIn(null, menu, pickSlot)}>{t('dock.otherFolder')}</button>
-            </div>
+              <MenuItem onSelect={() => void openIn(null, menu, pickSlot)}>{t('dock.otherFolder')}</MenuItem>
+            </Menu>
           )}
         </div>
         {error && <span className="error small">{error}</span>}
         <span className="spacer" />
         {current === 'log' && (
-          <button className="dock-action" onClick={onExpandLog} title={t('dock.expandLogTitle')}>
+          <Button variant="ghost" size="sm" className="dock-action" onClick={onExpandLog} title={t('dock.expandLogTitle')}>
             {t('dock.expandLog')}
-          </button>
+          </Button>
         )}
-        <button
-          className={`dock-fold ${folded ? 'is-folded' : ''}`}
-          title={folded ? t('dock.unfold') : t('dock.fold')}
-          aria-label={folded ? t('dock.unfold') : t('dock.fold')}
+        <IconButton
+          icon="collapse"
+          size="sm"
+          className={cx('dock-fold', folded && 'is-folded')}
+          label={folded ? t('dock.unfold') : t('dock.fold')}
           onClick={() => {
             autoFolded.current = false
             setFolded(f => !f)
           }}
-        >
-          <Icon name="collapse" size={14} />
-        </button>
+        />
       </div>
       <div className="dock-body" ref={body} style={{ display: folded ? 'none' : undefined }}>
         {current === 'log' && (

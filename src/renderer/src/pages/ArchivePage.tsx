@@ -2,13 +2,14 @@ import type { Task } from '../../../shared/types'
 import { clock } from '../model'
 import { NumberBadge } from '../parts'
 import { t } from '../../../shared/i18n'
+import { Button, EmptyState } from '../ui'
 
 export function ArchivePage({ archived, onRestore }: { archived: Task[]; onRestore: (id: number) => void }) {
   return (
     <div className="card wide">
       <h1>{t('rail.archive')}</h1>
       <p className="quiet small">{t('archive.intro')}</p>
-      {archived.length === 0 && <p className="quiet">{t('sidebar.noArchived')}</p>}
+      {archived.length === 0 && <EmptyState>{t('sidebar.noArchived')}</EmptyState>}
       <table className="history archive-table">
         <tbody>
           {archived.map(task => (
@@ -20,9 +21,9 @@ export function ArchivePage({ archived, onRestore }: { archived: Task[]; onResto
               <td className="quiet">{task.project}</td>
               <td className="quiet">{task.archived_at ? clock(task.archived_at) : ''}</td>
               <td className="archive-action">
-                <button className="link" onClick={() => onRestore(task.id)}>
+                <Button variant="link" onClick={() => onRestore(task.id)}>
                   {t('sidebar.restore')}
-                </button>
+                </Button>
               </td>
             </tr>
           ))}

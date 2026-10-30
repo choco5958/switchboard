@@ -13,31 +13,35 @@
   --good: #39ff6a;
   --warn: #ffc94a;
   --bad: #ff5f56;
+  --line-strong: #397241;
+  --on-good: #021204;
+  --on-warn: #021204;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --mono: 'D2Coding', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
   --sans: var(--mono);
+  /* Square corners everywhere. */
+  --r-sm: 0;
+  --r-md: 0;
+  --r-lg: 0;
+  --r-pill: 0;
 }
 
 [data-theme='crt'] body { text-shadow: 0 0 3px rgba(57, 255, 106, 0.45); }
-[data-theme='crt'] * { border-radius: 0 !important; }
 
 /* Scanlines over the whole window. pointer-events: none keeps every click working. */
 [data-theme='crt'] body::after {
   content: '';
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--z-screen);
   pointer-events: none;
   background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, 0.22) 2px 3px);
 }
 
-[data-theme='crt'] .actions button.primary,
-[data-theme='crt'] .browser-bar button.primary,
-[data-theme='crt'] .recommend,
-[data-theme='crt'] .num-badge,
-[data-theme='crt'] .rail-badge {
+[data-theme='crt'] .btn-primary,
+[data-theme='crt'] .badge-solid {
   text-shadow: none;
 }
 [data-theme='crt'] .node-지금 { box-shadow: 0 0 8px rgba(57, 255, 106, 0.5); }
-[data-theme='crt'] .memo:focus,
-[data-theme='crt'] .filter:focus,
-[data-theme='crt'] .address:focus { box-shadow: 0 0 6px rgba(57, 255, 106, 0.4); outline: none; }
+[data-theme='crt'] .input:focus-visible { box-shadow: 0 0 6px rgba(57, 255, 106, 0.4); }

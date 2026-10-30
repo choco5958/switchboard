@@ -22,8 +22,9 @@ export function TerminalView({ id, visible, themeKey }: { id: string; visible: b
   useEffect(() => {
     if (!box.current) return
     const css = getComputedStyle(document.documentElement)
+    const family = css.getPropertyValue('--mono').trim() || 'monospace'
     const xterm = new Terminal({
-      fontFamily: css.getPropertyValue('--mono').trim() || 'monospace',
+      fontFamily: family,
       fontSize: 13,
       cursorBlink: true,
       scrollback: 5000,
@@ -38,6 +39,16 @@ export function TerminalView({ id, visible, themeKey }: { id: string; visible: b
     fit.current = fitter
 
     let live = true
+    // The bundled mono font (fonts.css) may still be loading: xterm measured its cells with a
+    // fallback, so once the font is in it measures again. Only a changed value makes xterm look.
+    if (!document.fonts.check(`13px ${family}`)) {
+      void document.fonts.load(`13px ${family}`).then(() => {
+        if (!live) return
+        xterm.options.fontFamily = 'monospace'
+        xterm.options.fontFamily = family
+        if (box.current && box.current.clientWidth > 0) fitter.fit()
+      })
+    }
     // Replay what ran before this view existed (a renderer reload, a new window);
     // live output that beats the buffer here waits and is not written twice.
     const replay = createReplay(data => {

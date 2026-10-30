@@ -14,20 +14,26 @@
   --good: #00733a;
   --warn: #a34f00;
   --bad: #c41d1b;
+  --line-strong: #828780;
+  --on-good: #ffffff;
+  --on-warn: #ffffff;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --track: #9aa19a;
+  --tab-indicator: inset 0 -4px 0 var(--accent);
+  --scrim: rgba(30, 35, 30, 0.3);
+  --shadow-pop: 0 6px 20px rgba(30, 35, 30, 0.15);
+  --shadow-modal: 0 20px 60px rgba(30, 35, 30, 0.2);
 }
 
 [data-theme='metro'] h1,
 [data-theme='metro'] h2,
 [data-theme='metro'] .brand { font-weight: 800; letter-spacing: -0.01em; }
 [data-theme='metro'] .topbar { border-bottom: 4px solid var(--accent); }
-[data-theme='metro'] .tab.on { box-shadow: inset 0 -4px 0 var(--accent); }
 [data-theme='metro'] .card { border-width: 2px; border-radius: 14px; }
-[data-theme='metro'] .recommend,
-[data-theme='metro'] .rail-badge { color: #ffffff; }
-[data-theme='metro'] .chip { font-weight: 600; border-width: 2px; }
-[data-theme='metro'] .actions button { border-radius: 999px; border-width: 2px; font-weight: 600; }
-[data-theme='metro'] .option { border-width: 2px; border-radius: 999px; }
+[data-theme='metro'] .badge-pill { font-weight: 600; border-width: 2px; }
+[data-theme='metro'] .btn { border-radius: var(--r-pill); border-width: 2px; font-weight: 600; }
+[data-theme='metro'] .option { border-width: 2px; border-radius: var(--r-pill); }
 [data-theme='metro'] .node { border-width: 3px; border-radius: 16px; }
 [data-theme='metro'] .node-지금 { box-shadow: 0 0 0 3px var(--accent-soft); }
 [data-theme='metro'] .edge { stroke-width: 2.5; stroke: var(--track); }
@@ -76,5 +82,3 @@
 [data-theme='metro'] .stages li.done::before { border-color: var(--good); }
 [data-theme='metro'] .stages li.now::before { border-color: var(--accent); background: var(--accent); }
 [data-theme='metro'] .stages li.now { border-color: var(--accent); color: var(--accent); }
-[data-theme='metro'] .mini-stages span { height: 6px; border-radius: 3px; }
-[data-theme='metro'] .palette-backdrop { background: rgba(30, 35, 30, 0.3); }

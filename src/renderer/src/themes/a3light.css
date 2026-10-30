@@ -1,0 +1,32 @@
+/* 기본 남색 (밝음) (a3light): the default theme's light half. The same navy hue on white panels;
+   the accent and the task colours are darkened so white badge text and the state colours reach 4.5:1.
+   The terminal gets a palette of its own, as xterm's default colours are for a dark background. */
+[data-theme='a3light'] {
+  --task-0: #3363d6; --task-1: #1a7a4c; --task-2: #b4540f; --task-3: #7b4fd0; --task-4: #157a87; --task-5: #c0306f;
+  --bg: #f3f5fa;
+  --panel: #ffffff;
+  --panel-2: #eceff7;
+  --line: #d5dbe8;
+  --text: #161d33;
+  --quiet: #4f5876;
+  --accent: #3363d6;
+  --accent-soft: rgba(51, 99, 214, 0.12);
+  --on-accent: #ffffff;
+  --good: #1a7a4c;
+  --warn: #8f5c00;
+  --bad: #c53030;
+  --line-strong: #7d87a3;
+  --on-good: #ffffff;
+  --on-warn: #ffffff;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
+  --term-0: #1f2337; --term-1: #c4302b; --term-2: #1a7a4c; --term-3: #8f5c00;
+  --term-4: #3363d6; --term-5: #8a46c9; --term-6: #157a87; --term-7: #6b7591;
+  --term-8: #4f5876; --term-9: #a31d1d; --term-10: #126339; --term-11: #6e4600;
+  --term-12: #2a52b8; --term-13: #7038a8; --term-14: #106270; --term-15: #8a93ad;
+  --term-cursor: #3363d6;
+  --term-selection: #c9d6f5;
+  --scrim: rgba(22, 29, 51, 0.3);
+  --shadow-pop: 0 6px 20px rgba(22, 29, 51, 0.16);
+  --shadow-modal: 0 20px 60px rgba(22, 29, 51, 0.22);
+}

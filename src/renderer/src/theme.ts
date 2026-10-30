@@ -1,6 +1,7 @@
 // Themes: one CSS file per theme under ./themes plus one line in THEMES. Every file there is
 // bundled; data-theme on <html> picks the active one. See DESIGN_SYSTEM.md at the repo root.
 // The base sheet goes first so that a theme rule wins any tie with a base rule of equal specificity.
+import './fonts.css'
 import './styles.css'
 import './theme-files'
 import { tOr } from '../../shared/i18n'
@@ -9,6 +10,7 @@ export type Theme = { id: string; label: string }
 
 export const THEMES: Theme[] = [
   { id: 'a3', label: '기본 남색' },
+  { id: 'a3light', label: '기본 남색 (밝음)' },
   { id: 'a4', label: '모험 일지' },
   { id: 'crt', label: '인광 터미널' },
   { id: 'dotpico', label: '도트 픽셀' },

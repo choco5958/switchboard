@@ -14,6 +14,11 @@
   --good: #4cc38a;
   --warn: #f2b84b;
   --bad: #f06a6a;
+  --line-strong: #69718c; /* borders of fields and buttons: 3:1 on bg, panel and panel-2; --line stays for dividers */
+  --on-good: #0f1424; /* text on a --good or --warn fill (the recommended mark, count badges) */
+  --on-warn: #0f1424;
+  --on-accent-soft: var(--text); /* text on a selected row's --accent-soft */
+  --focus: var(--accent); /* the keyboard focus ring */
   --mono: 'D2Coding', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
   --sans: 'Pretendard', -apple-system, 'Apple SD Gothic Neo', sans-serif;
 }

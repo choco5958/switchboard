@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import qrcode from 'qrcode-generator'
 import { agoText, t } from '../../../shared/i18n'
 import { useToast } from '../parts'
+import { Button, Input, Notice, Select } from '../ui'
 
 // Settings: phones that open the bridge's phone page (bridge/mobile.ts). Each phone is paired
 // with a QR code that carries its own key; the bridge never hands the key out again, so the
@@ -104,7 +105,9 @@ export function MobileSection() {
     return (
       <section id="settings-mobile" className="settings-row mobile">
         <h2>{t('mobile.title')}</h2>
-        <p className="error small">{t('mobile.loadFailed', { error: loadError })}</p>
+        <Notice tone="error">
+          <span className="small">{t('mobile.loadFailed', { error: loadError })}</span>
+        </Notice>
       </section>
     )
   }
@@ -142,21 +145,21 @@ export function MobileSection() {
             <>
               <label className="small">
                 {t('mobile.address')}{' '}
-                <select value={chosen?.address ?? ''} onChange={e => setAddress(e.target.value)}>
+                <Select compact value={chosen?.address ?? ''} onChange={e => setAddress(e.target.value)}>
                   {status.addresses.map(a => (
                     <option key={a.url} value={a.address}>
                       {a.address}
                       {a.kind !== 'lan' ? ` (${t(a.kind === 'https' && status.tailscale.funnel ? 'mobile.httpsFunnel' : KIND_LABEL[a.kind])})` : ''}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               {chosen?.kind === 'name' && <p className="quiet small">{t('mobile.nameHint')}</p>}
               {!showing && (
                 <div className="mobile-add actions">
-                  <input placeholder={t('mobile.namePlaceholder')} aria-label={t('mobile.deviceName')} value={name} maxLength={60} onChange={e => setName(e.target.value)} />
-                  <button
-                    className="primary"
+                  <Input placeholder={t('mobile.namePlaceholder')} aria-label={t('mobile.deviceName')} value={name} maxLength={60} onChange={e => setName(e.target.value)} />
+                  <Button
+                    variant="primary"
                     disabled={busy || !chosen}
                     onClick={async () => {
                       if (!chosen) return
@@ -171,7 +174,7 @@ export function MobileSection() {
                     }}
                   >
                     {t('mobile.add')}
-                  </button>
+                  </Button>
                 </div>
               )}
               {showing && (
@@ -182,7 +185,7 @@ export function MobileSection() {
                     {showing.code && codeOpen && <p className="small">{t('mobile.code', { code: `${showing.code.slice(0, 4)}-${showing.code.slice(4)}` })}</p>}
                     {showing.code && !codeOpen && <p className="quiet small">{t('mobile.codeGone')}</p>}
                     <div className="actions">
-                      <button onClick={() => setShown(null)}>{t('mobile.done')}</button>
+                      <Button onClick={() => setShown(null)}>{t('mobile.done')}</Button>
                     </div>
                   </div>
                 </div>
@@ -195,7 +198,7 @@ export function MobileSection() {
             <div className="mobile-tailscale">
               <p className="quiet small">{t('mobile.tailscaleHint')}</p>
               <div className="actions">
-                <button
+                <Button
                   disabled={busy || (!status.tailscale.served && status.tailscale.busy)}
                   onClick={async () => {
                     setBusy(true)
@@ -208,7 +211,7 @@ export function MobileSection() {
                   }}
                 >
                   {status.tailscale.served ? t('mobile.tailscaleOff') : t('mobile.tailscaleOn')}
-                </button>
+                </Button>
               </div>
               {!status.tailscale.served && status.tailscale.busy && <p className="quiet small">{t('mobile.tailscaleBusy')}</p>}
               {status.tailscale.served && (
@@ -278,9 +281,9 @@ export function MobileSection() {
               <span>{d.name}</span>
               <span className="quiet small">{d.last_seen ? t('mobile.lastSeen', { time: agoText(Date.now() - d.last_seen) }) : t('mobile.never')}</span>
               {!d.strong && <span className="quiet small">{t('mobile.weakDevice')}</span>}
-              <button className="link small" disabled={busy} onClick={() => void post(`/mobile/devices/${d.id}/revoke`).then(load)}>
+              <Button variant="link" size="sm" disabled={busy} onClick={() => void post(`/mobile/devices/${d.id}/revoke`).then(load)}>
                 {t('mobile.revoke')}
-              </button>
+              </Button>
             </li>
           ))}
         </ul>

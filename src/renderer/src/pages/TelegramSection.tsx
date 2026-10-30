@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { t } from '../../../shared/i18n'
 import { useToast } from '../parts'
+import { Button, Input } from '../ui'
 
 // Settings: the person's own Telegram bot for answering decisions away from the desk
 // (bridge/telegram.ts). The token goes to the bridge and never comes back to this screen.
@@ -49,9 +50,9 @@ export function TelegramSection() {
             <li>{t('telegram.step3')}</li>
           </ol>
           <div className="telegram-token">
-            <input type="password" autoComplete="off" placeholder="123456:ABC..." value={token} onChange={e => setToken(e.target.value)} />
-            <button
-              className="primary"
+            <Input type="password" autoComplete="off" aria-label={t('telegram.tokenLabel')} placeholder="123456:ABC..." value={token} onChange={e => setToken(e.target.value)} />
+            <Button
+              variant="primary"
               disabled={busy || !token.trim()}
               onClick={async () => {
                 const reply = await post('/telegram/token', { token: token.trim() })
@@ -60,7 +61,7 @@ export function TelegramSection() {
               }}
             >
               {t('telegram.connectBot')}
-            </button>
+            </Button>
           </div>
         </>
       )}
@@ -71,7 +72,7 @@ export function TelegramSection() {
             {status.paired ? `, ${t('telegram.pairedWith', { name: status.name || '-' })}` : ''}
           </p>
           {!status.paired && !pair && (
-            <button
+            <Button
               disabled={busy}
               onClick={async () => {
                 // A failed request answers with { error }, which post() shows; only a code is kept.
@@ -80,7 +81,7 @@ export function TelegramSection() {
               }}
             >
               {t('telegram.getCode')}
-            </button>
+            </Button>
           )}
           {!status.paired && pair && (
             <p className="small">
@@ -95,18 +96,18 @@ export function TelegramSection() {
           )}
           <div className="actions">
             {status.paired && (
-              <button disabled={busy} onClick={() => void post('/telegram/test').then(r => r.ok && toast(t('telegram.testSent')))}>
+              <Button disabled={busy} onClick={() => void post('/telegram/test').then(r => r.ok && toast(t('telegram.testSent')))}>
                 {t('telegram.sendTest')}
-              </button>
+              </Button>
             )}
             {status.paired && (
-              <button disabled={busy} onClick={() => void post('/telegram/unpair')}>
+              <Button disabled={busy} onClick={() => void post('/telegram/unpair')}>
                 {t('telegram.unpair')}
-              </button>
+              </Button>
             )}
-            <button disabled={busy} onClick={() => void post('/telegram/token', { token: null }).then(() => load())}>
+            <Button disabled={busy} onClick={() => void post('/telegram/token', { token: null }).then(() => load())}>
               {t('telegram.forget')}
-            </button>
+            </Button>
           </div>
         </div>
       )}

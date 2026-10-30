@@ -13,7 +13,19 @@
   --good: #93c062;
   --warn: #f0b955;
   --bad: #e0705a;
+  --line-strong: #836f56;
+  --on-good: #1b130c;
+  --on-warn: #1b130c;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --serif: 'Nanum Myeongjo', 'AppleMyungjo', 'Batang', serif;
+  --tab-indicator: inset 0 2px 0 var(--accent);
+  /* Cards read like a framed page of the quest log: a thin gold rule inside the border. */
+  --shadow-surface: inset 0 0 0 3px var(--panel), inset 0 0 0 4px #4a3824;
+  --btn-primary-bg: linear-gradient(#ecbd5e, #c8902e);
+  --btn-primary-line: #f3d38d;
+  --btn-primary-text: #1b130c;
+  --btn-primary-weight: 700;
 }
 
 [data-theme='a4'] h1,
@@ -28,24 +40,10 @@
 [data-theme='a4'] h1 { color: var(--accent); letter-spacing: 0.02em; }
 [data-theme='a4'] h2 { color: var(--accent); }
 [data-theme='a4'] .brand { color: var(--accent); }
-
-/* Cards read like a framed page of the quest log: a thin gold rule inside the border. */
 [data-theme='a4'] .card,
-[data-theme='a4'] .stat,
-[data-theme='a4'] .home-card,
-[data-theme='a4'] .palette {
-  border-color: #7a5c34;
-  box-shadow: inset 0 0 0 3px var(--panel), inset 0 0 0 4px #4a3824;
-}
+[data-theme='a4'] .surface:not(.sunk),
+[data-theme='a4'] .dialog { border-color: #7a5c34; }
+[data-theme='a4'] .card,
+[data-theme='a4'] .dialog { box-shadow: var(--shadow-surface); }
 [data-theme='a4'] .body { background: #2e2216; border-left: 3px solid #7a5c34; }
-
-[data-theme='a4'] .actions button.primary,
-[data-theme='a4'] .browser-bar button.primary {
-  background: linear-gradient(#ecbd5e, #c8902e);
-  border-color: #f3d38d;
-  color: #1b130c;
-  font-weight: 700;
-}
 [data-theme='a4'] .num-badge { box-shadow: 0 0 0 1px #1b130c, 0 0 0 2px #7a5c34; }
-[data-theme='a4'] .tab.on { box-shadow: inset 0 2px 0 var(--accent); }
-[data-theme='a4'] .recommend { color: #1b130c; }
