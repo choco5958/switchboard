@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { chmodSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { CUSTOM_AGENTS_KEY, PRESETS, TRUST_FOLDERS_KEY, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, type Launch } from '../shared/agents'
+import { CUSTOM_AGENTS_KEY, PRESETS, TRUST_FOLDERS_KEY, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
@@ -61,7 +61,9 @@ function writeFiles(launch: Launch): void {
   for (const f of launch.files) writeFileSync(f.path, f.content, { mode: 0o600 })
 }
 
-type Call = (method: string, path: string, body?: unknown) => Promise<Reply>
+// `proven`: the bridge proved the app's key (bridgeClient.ts), so its settings are the person's.
+type Call = (method: string, path: string, body?: unknown) => Promise<Reply & { proven?: boolean }>
+
 
 const TRUSTED_AHEAD = ['codex', 'copilot', 'cursor']
 
@@ -72,8 +74,8 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   const preset = presetOf(String(agentId))
   // The settings matter for a custom CLI, and for the CLIs whose folder trust the app records.
   const state = !preset || TRUSTED_AHEAD.includes(preset.id) ? await call('GET', '/state') : null
-  const settings = state?.json.settings as Record<string, unknown> | undefined
-  const custom = customAgents(settings?.[CUSTOM_AGENTS_KEY]).find(a => a.id === agentId)
+  const settings = state?.proven ? (state.json.settings as Record<string, unknown> | undefined) : undefined
+  const custom = checkedCustom(customAgents(settings?.[CUSTOM_AGENTS_KEY]), String(agentId))
   if (!preset && !custom) return { error: t('agents.unknown', { id: String(agentId) }) }
   const found = await detect()
   if (preset && !found.found[preset.bin]) return { error: t('agents.notInstalled', { label: preset.label, install: preset.install }) }

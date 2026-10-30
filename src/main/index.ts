@@ -1,6 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain as rawIpcMain, nativeImage, Notification, powerMonitor, powerSaveBlocker, session, shell, webContents } from 'electron'
 import { execFile, spawn } from 'node:child_process'
-import { request } from 'node:http'
 import { homedir } from 'node:os'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -10,7 +9,7 @@ import { sharedStart, watchBridge } from './bridgeWatch'
 import { registerAccount } from './account'
 import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
-import { BROWSER_PARTITION, BROWSER_WORLD, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
+import { BROWSER_PARTITION, BROWSER_WORLD, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, fromMainFrame, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
 import { anyoneWorking } from './awake'
 import { onTerminalsChange, openClaudeIn, registerTerminals, setCloseTerminalsOnQuit, startTerminalHost, terminalStates, typingTarget } from './terminals'
@@ -19,7 +18,8 @@ import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
 import { buildId, copyRuntime, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
 import { startUpdates } from './updater'
-import { APP_HEADER, requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
+import { requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
+import { bridgeClient } from './bridgeClient'
 import { ROUTINE_FAIL_LIMIT } from '../../bridge/schedule.ts'
 import { loadAppKey } from './appKey'
 import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled, switchedOff } from './notify'
@@ -51,8 +51,9 @@ let connected = false
 // The app's own page. Only it may navigate the main window or call the handlers
 // below: every ipcMain.handle and ipcMain.on in this process goes through the
 // guard, so a page dropped onto the window or opened in a webview gets nothing.
+// The main window's top frame is the one sender: its preload is the only one there is.
 const APP_URL = process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(join(import.meta.dirname, '../renderer/index.html')).href
-const ipcMain = guardIpc(rawIpcMain, event => isAppUrl(event.senderFrame?.url, APP_URL))
+const ipcMain = guardIpc(rawIpcMain, event => !!win && !win.isDestroyed() && fromMainFrame(event, win.webContents) && isAppUrl(event.senderFrame?.url, APP_URL))
 
 // The app's key for the person-only routes (src/main/appKey.ts), read once the app is ready.
 let appKey = ''
@@ -94,6 +95,8 @@ async function launchBridge(): Promise<boolean> {
   return false
 }
 
+// Only a pid the bridge proved the key for (bridgeClient.ts), or the process that holds the
+// socket and runs bridge/server.ts (a bridge of 0.3.5 or before, which cannot prove it).
 async function stopBridge(pid: number): Promise<void> {
   try {
     process.kill(pid)
@@ -132,8 +135,10 @@ async function startBridgeOnce(): Promise<boolean> {
   if (health.ok) {
     const outdated = app.isPackaged && staleBridge(health.json, ownBuild()) !== null
     if (!outdated && (await call('GET', '/app/check')).ok) return true
+    // What /health says is anyone's word: only a bridge that proves the key names a pid to stop.
+    // One without the key gives way to the bridge the app starts (bridge/server.ts listen).
     const where = resolveEndpoint()
-    const pid = typeof health.json.pid === 'number' ? health.json.pid : where.kind === 'socket' ? await oldBridgePid(where.path) : null
+    const pid = (await bridge.provenPid()) ?? (where.kind === 'socket' ? await oldBridgePid(where.path) : null)
     if (pid !== null) await stopBridge(pid)
   }
   return launchBridge()
@@ -176,31 +181,9 @@ async function prepareRuntime(): Promise<void> {
   }
 }
 
-function call(method: string, path: string, body?: unknown): Promise<Reply> {
-  return new Promise(resolve => {
-    const req = request(
-      { ...target(), method, path, headers: { ...target().headers, 'content-type': 'application/json', [APP_HEADER]: appKey } },
-      res => {
-        let text = ''
-        res.setEncoding('utf8')
-        res.on('data', chunk => (text += chunk))
-        res.on('end', () => {
-          let json: Record<string, unknown> = {}
-          try {
-            json = text ? (JSON.parse(text) as Record<string, unknown>) : {}
-          } catch {
-            json = { error: text }
-          }
-          const status = res.statusCode ?? 0
-          resolve({ ok: status >= 200 && status < 300, status, json })
-        })
-      },
-    )
-    req.on('error', error => resolve({ ok: false, status: 0, json: { error: error.message } }))
-    if (body !== undefined) req.write(JSON.stringify(body))
-    req.end()
-  })
-}
+// The key goes only to a bridge that proves it holds it (bridgeClient.ts); `proven` says so.
+const bridge = bridgeClient(target, () => appKey)
+const call = bridge.call
 
 function send(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
@@ -400,17 +383,30 @@ function watch(): void {
     },
     onEvent: event => {
       // A scheduled prompt found no session of its agent in its project: start one there.
-      const change = event as { type?: string; cwd?: string; agent?: string }
-      if (change.type === 'routine-open' && change.cwd) {
-        if (!change.agent || change.agent === 'claude') openClaudeIn(change.cwd)
-        else void openAgentIn(call, change.cwd, change.agent).then(opened => 'error' in opened && console.error('routine terminal:', opened.error))
-      }
+      const change = event as { type?: string; routineId?: unknown }
+      if (change.type === 'routine-open') void openForRoutine(change.routineId)
       send('bridge:change', event)
       scheduleScan()
       agentDelivery.onBridgeEvent(event)
     },
     beforeRetry: startBridge,
   })
+}
+
+// A scheduled prompt's terminal, where the routine the person saved says: only for a routine a
+// bridge that proved the key lists, never a folder or a CLI an event names by itself.
+async function openForRoutine(routineId: unknown): Promise<void> {
+  if (typeof routineId !== 'number') return
+  const reply = await call('GET', '/state')
+  if (!reply.proven) return
+  const routine = ((reply.json as unknown as BridgeState).routines ?? []).find(r => r.id === routineId)
+  if (!routine?.cwd) return
+  if (!routine.agent || routine.agent === 'claude') {
+    openClaudeIn(routine.cwd)
+    return
+  }
+  const opened = await openAgentIn(call, routine.cwd, routine.agent)
+  if ('error' in opened) console.error('routine terminal:', opened.error)
 }
 
 ipcMain.handle('bridge:state', async (): Promise<BridgeState | null> => {
@@ -619,6 +615,10 @@ function createWindow(): void {
   }
 }
 
+// No web page in the app opens a window of its own: a webview's page, or anything else made
+// later. The main window sets its own handler right after (createWindow), which replaces this.
+app.on('web-contents-created', (_event, contents) => contents.setWindowOpenHandler(() => ({ action: 'deny' })))
+
 // A second start of the app brings the running window forward (it quits itself, see `primary`).
 // Before the first window exists the start under way shows it.
 let started = false
@@ -647,10 +647,7 @@ app.whenReady().then(async () => {
   started = true
   watch()
   watchBrowserRequests()
-  startUpdates(async () => {
-    const health = await call('GET', '/health')
-    return health.ok && typeof health.json.pid === 'number' ? health.json.pid : null
-  }, terminalStates)
+  startUpdates(() => bridge.provenPid(), terminalStates)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

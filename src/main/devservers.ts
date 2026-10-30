@@ -207,10 +207,6 @@ export function registerDevServers(ipcMain: IpcMain, onChange: (event: { id: str
     return { ok: true, out: t('devMain.stopped') }
   }
 
-  ipcMain.handle('dev:start', async (_e, target: DevTarget) => {
-    await cleared
-    return start(target)
-  })
   ipcMain.handle('dev:stop', (_e, id: string) => stop(id))
   ipcMain.handle('dev:restart', async (_e, target: DevTarget) => {
     await cleared

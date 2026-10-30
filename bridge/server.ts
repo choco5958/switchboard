@@ -12,7 +12,7 @@ import type { AddressInfo } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
-import { APP_HEADER, curlConfigFile, endpointFile, ideDir, usesTcp } from './endpoint.ts'
+import { APP_HEADER, PROVE_PATH, bridgeProof, curlConfigFile, endpointFile, ideDir, usesTcp } from './endpoint.ts'
 import type { Activity } from '../src/shared/stall.ts'
 import { limitedUntil } from '../src/shared/limit.ts'
 import { maskSecrets } from '../src/shared/pageLog.ts'
@@ -758,7 +758,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         // Only the app opens terminals: with it away the run asks again on the next tick.
         if (!run.opened && watchers.size > 0) {
           db.prepare('update routine_runs set opened = 1 where id = ?').run(run.id)
-          for (const res of watchers) sseSend(res, 'change', { type: 'routine-open', cwd: run.cwd, project: run.project, agent: run.agent })
+          for (const res of watchers) sseSend(res, 'change', { type: 'routine-open', routineId: run.routine_id, cwd: run.cwd, project: run.project, agent: run.agent })
         }
         continue
       }
@@ -1233,6 +1233,9 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   }
   if (mobileSetting().enabled) void mobile.start(mobileSetting().port, mobileSetting().lan)
 
+  // Where this bridge listens, read once it does (PROVE_PATH): the inode of its socket file, or its port.
+  let bound = ''
+
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // A path is taken as written: no dot segments, which URL would resolve into another route
     // (a tool argument such as close_wait's id ends up in the path).
@@ -1256,6 +1259,12 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     // The installed app's start script names its version: an app updated since replaces this bridge.
     // `app`: whether the app started it with its key; one started by a mod has none.
     if (method === 'GET' && path === '/health') return send(res, 200, { ok: true, version: process.env.SWITCHBOARD_VERSION ?? '', pid: process.pid, app: options.appKey !== undefined })
+    // Asked without the key: the app sends it only to a bridge that answers this (bridge/endpoint.ts bridgeProof).
+    if (method === 'GET' && path === PROVE_PATH) {
+      const nonce = url.searchParams.get('nonce') ?? ''
+      if (options.appKey === undefined || !bound || !/^[0-9a-f]{64}$/.test(nonce)) return send(res, 404, { error: say('bridge.noRoute', { method, path }) })
+      return send(res, 200, { pid: process.pid, proof: bridgeProof(options.appKey, nonce, process.pid, bound) })
+    }
     if (appOnly(method, path) && !fromPhone && !(options.appKey !== undefined && sameSecret(String(req.headers[APP_HEADER] ?? ''), options.appKey))) {
       return send(res, 403, { error: say('bridge.appOnly') })
     }
@@ -2326,6 +2335,15 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     })
   })
 
+  server.on('listening', () => {
+    const address = server.address()
+    try {
+      bound = typeof address === 'string' ? `inode:${statSync(address).ino}` : address ? `port:${address.port}` : ''
+    } catch {
+      bound = ''
+    }
+  })
+
   // Once only: a signal and the self-check may both ask. The last checkpoint leaves the WAL empty.
   let closed = false
   const close = () => {
@@ -2378,8 +2396,10 @@ function writePrivate(path: string, text: string): void {
 
 // Windows (bridge/endpoint.ts): a free port on 127.0.0.1, written with the token for the
 // clients. bridge.lock holds the pid of the bridge that serves, so a second one started at
-// the same moment (the IDE and a mod can both try) refuses instead of taking over.
-export async function listenTcp(server: Server, token: string, home = homedir()): Promise<number> {
+// the same moment (the IDE and a mod can both try) refuses instead of taking over. Except the
+// app's own bridge (`ownsKey`) over one a session started without the key, as `listen` does:
+// the app no longer stops a bridge that cannot prove the key (src/main/bridgeClient.ts).
+export async function listenTcp(server: Server, token: string, home = homedir(), ownsKey = false): Promise<number> {
   const dir = ideDir(home)
   privateDir(dir)
   const lock = join(dir, 'bridge.lock')
@@ -2391,7 +2411,11 @@ export async function listenTcp(server: Server, token: string, home = homedir())
       break
     } catch {
       const holder = Number(readFileSync(lock, 'utf8').trim() || 0)
-      if (holder && holder !== process.pid && alive(holder)) throw new Error(`다른 브리지(pid ${holder})가 이미 돌고 있습니다`)
+      if (holder && holder !== process.pid && alive(holder)) {
+        const keyless = ownsKey ? await keylessPid(tcpTarget(home)) : null
+        if (keyless !== holder || !(await stopped(holder))) throw new Error(`다른 브리지(pid ${holder})가 이미 돌고 있습니다`)
+        console.log(`claude-ide bridge: replaced bridge ${holder}, which ran without the app's key`)
+      }
       if (attempt >= 20) throw new Error(tIn(resolveLang(undefined, systemLocale()), 'bridge.noLock', { file: lock }))
       if (holder) rmSync(lock, { force: true })
       await new Promise(resolve => setTimeout(resolve, 25))
@@ -2448,10 +2472,22 @@ function isAnswering(socketPath: string): Promise<boolean> {
   })
 }
 
-// The pid of the bridge answering on the socket when it runs without the app's key, else null.
-function keylessPid(socketPath: string): Promise<number | null> {
+// Where the bridge in bridge.json listens, for keylessPid; null without one.
+function tcpTarget(home: string): { host: string; port: number; headers: Record<string, string> } | null {
+  try {
+    const saved = JSON.parse(readFileSync(endpointFile(home), 'utf8')) as { port?: unknown; token?: unknown }
+    if (typeof saved.port === 'number' && typeof saved.token === 'string') return { host: '127.0.0.1', port: saved.port, headers: { authorization: `Bearer ${saved.token}` } }
+  } catch {
+    // None written.
+  }
+  return null
+}
+
+// The pid of the bridge answering on the socket (or the port) when it runs without the app's key, else null.
+function keylessPid(where: string | ReturnType<typeof tcpTarget>): Promise<number | null> {
+  if (where === null) return Promise.resolve(null)
   return new Promise(resolve => {
-    const req = httpRequest({ socketPath, path: '/health', timeout: 1000 }, res => {
+    const req = httpRequest({ ...(typeof where === 'string' ? { socketPath: where } : where), path: '/health', timeout: 1000 }, res => {
       let text = ''
       res.on('data', chunk => (text += String(chunk)))
       res.on('end', () => {
@@ -2534,7 +2570,7 @@ if (import.meta.main) {
   try {
     let where = defaultSocketPath()
     if (token === undefined) await listen(bridge.server, where, appKey !== undefined)
-    else where = `127.0.0.1:${await listenTcp(bridge.server, token)}`
+    else where = `127.0.0.1:${await listenTcp(bridge.server, token, homedir(), appKey !== undefined)}`
     console.log(`claude-ide bridge listening on ${where}`)
     const serving = servingCheck(token === undefined ? { socketPath: where } : { home: homedir() })
     // Tests that start a bridge name themselves here, so one they leave behind goes with them.
