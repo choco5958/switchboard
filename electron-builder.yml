@@ -10,6 +10,8 @@ files:
   - out/**
   - resources/**
   - package.json
+  # Font licences for the bundled fonts (src/renderer/src/fonts.css).
+  - THIRD_PARTY_NOTICES.md
 # The Node side runs as .ts files with the app's own Node (src/main/runtime.ts), so it
 # stays outside the asar archive with the folder layout its imports expect.
 extraResources:
