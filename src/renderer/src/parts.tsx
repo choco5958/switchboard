@@ -186,8 +186,10 @@ export function LogLines({
 // Short notices after an action ("진행 보고를 요청했습니다", or the error). App keeps the
 // list and renders <Toast>; any component under it calls useToast() to add one.
 export type ToastKind = 'good' | 'bad' | 'info'
-export type ToastItem = { id: number; text: string; kind: ToastKind }
-export type ShowToast = (text: string, kind?: ToastKind) => void
+// action: one button on the notice, such as Undo; pressing it runs it and closes the notice.
+export type ToastAction = { label: string; run: () => void }
+export type ToastItem = { id: number; text: string; kind: ToastKind; action?: ToastAction }
+export type ShowToast = (text: string, kind?: ToastKind, action?: ToastAction) => void
 
 const ToastContext = createContext<ShowToast>(() => {})
 export const ToastProvider = ToastContext.Provider
@@ -202,10 +204,11 @@ export function useToastList(ms = 4000): { toasts: ToastItem[]; show: ShowToast;
   const next = useRef(1)
   const dismiss = useCallback((id: number) => setToasts(list => list.filter(t => t.id !== id)), [])
   const show = useCallback<ShowToast>(
-    (text, kind = 'good') => {
+    (text, kind = 'good', action) => {
       const id = next.current++
-      setToasts(list => [...list.slice(-3), { id, text, kind }])
-      setTimeout(() => dismiss(id), kind === 'bad' ? ms * 2 : ms)
+      setToasts(list => [...list.slice(-3), { id, text, kind, action }])
+      // A notice with an action stays longer, so there is time to reach its button.
+      setTimeout(() => dismiss(id), kind === 'bad' || action ? ms * 2 : ms)
     },
     [dismiss, ms],
   )
@@ -218,6 +221,17 @@ export function Toast({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (
       {toasts.map(item => (
         <div key={item.id} className={`toast toast-${item.kind}`}>
           <span>{item.text}</span>
+          {item.action && (
+            <button
+              className="link small toast-action"
+              onClick={() => {
+                onDismiss(item.id)
+                item.action?.run()
+              }}
+            >
+              {item.action.label}
+            </button>
+          )}
           <button className="toast-close" title={t('common.close')} onClick={() => onDismiss(item.id)}>
             ×
           </button>

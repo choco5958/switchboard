@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BridgeState } from './types'
-import { hiddenProjects, isRunning, moveToFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
+import { hiddenProjects, isRunning, moveToFolder, restoreFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
 
 const state = {
   sessions: [
@@ -198,5 +198,16 @@ describe('project folders', () => {
     expect(moved.map(f => f.projects)).toEqual([['beta'], ['alpha']])
     expect(moveToFolder(moved, 'alpha', null).map(f => f.projects)).toEqual([['beta'], []])
     expect(moveToFolder(folders, 'beta', 'f1').map(f => f.projects)).toEqual([['alpha', 'beta'], []])
+  })
+
+  it('puts an ungrouped folder back where it was', () => {
+    const work = { id: 'f1', name: 'Work', projects: ['alpha', 'beta'], closed: true }
+    const side = { id: 'f2', name: 'Side', projects: ['gamma'], closed: false }
+    // Ungrouped, then beta moved into Side before the undo: it goes back to Work.
+    const after = [{ ...side, projects: ['gamma', 'beta'] }]
+    expect(restoreFolder(after, work, 0)).toEqual([work, side])
+    expect(restoreFolder([side], work, 5).map(f => f.id)).toEqual(['f2', 'f1'])
+    // Already back: nothing changes.
+    expect(restoreFolder([work, side], work, 1)).toEqual([work, side])
   })
 })

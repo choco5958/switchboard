@@ -25,6 +25,7 @@ import { limitedUntil } from '../../shared/limit'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
 import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
 import { applyTheme } from './theme'
+import { installSettingSaver, postSetting, settle, withPending, type Pending } from './settings'
 import { LOCALE_TAG, resolveLang, setLang, stageLabel, t, type Key } from '../../shared/i18n'
 
 const EMPTY: BridgeState = {
@@ -95,7 +96,16 @@ function loadTabs(): Tabs {
 }
 
 export function App() {
-  const [state, setState] = useState<BridgeState>(EMPTY)
+  const [bridgeState, setState] = useState<BridgeState>(EMPTY)
+  // Settings writes still on their way to the bridge, shown at once (settings.ts).
+  const [unsaved, setUnsaved] = useState<Pending>({})
+  const pendingRef = useRef<Pending>({})
+  const state = useMemo(
+    () => (Object.keys(unsaved).length === 0 ? bridgeState : { ...bridgeState, settings: withPending(bridgeState.settings, unsaved) }),
+    [bridgeState, unsaved],
+  )
+  const stateRef = useRef(state)
+  stateRef.current = state
   const [loaded, setLoaded] = useState(false)
   // null until the first check, so the app never flashes the disconnected notice on start.
   const [connected, setConnected] = useState<boolean | null>(null)
@@ -130,6 +140,11 @@ export function App() {
     document.documentElement.lang = LOCALE_TAG[lang]
   }, [lang])
   const NO_SESSION = t('app.noSession')
+  const toggleLive = () => {
+    liveRef.current = !live
+    setLive(!live)
+    if (!live) void refresh()
+  }
 
   // Busy sessions send many changes a second: one read at a time, and one more after it for
   // whatever came in meanwhile, instead of a full read and redraw for each.
@@ -154,6 +169,40 @@ export function App() {
       reading.current = false
     }
   }, [])
+
+  // A settings write reads the settings back whether or not Live is paused: a paused screen keeps
+  // its tasks and questions as they were, and takes only the new settings.
+  const readSettings = useCallback(async () => {
+    const next = await window.ide.state()
+    if (!next) return
+    setState(current => (liveRef.current ? next : { ...current, settings: next.settings }))
+    setLoaded(true)
+  }, [])
+  const writeSetting = useCallback(
+    async (key: string, value: unknown) => {
+      pendingRef.current = { ...pendingRef.current, [key]: value }
+      setUnsaved(pendingRef.current)
+      const reply = await postSetting(key, value)
+      if (reply.ok) await readSettings()
+      pendingRef.current = settle(pendingRef.current, key, value)
+      setUnsaved(pendingRef.current)
+      return reply
+    },
+    [readSettings],
+  )
+  useEffect(() => {
+    installSettingSaver(writeSetting)
+    return () => installSettingSaver(null)
+  }, [writeSetting])
+  // A change built on the latest value of a setting, writes still on their way included, so two
+  // quick changes in a row both stay.
+  const updateSetting = useCallback(
+    (key: string, change: (current: unknown) => unknown) => {
+      const current = key in pendingRef.current ? pendingRef.current[key] : stateRef.current.settings[key]
+      return writeSetting(key, change(current))
+    },
+    [writeSetting],
+  )
 
   // The top bar's play button opens a terminal in the dock; a closed dock would hold it out of sight.
   useEffect(() => {
@@ -239,6 +288,7 @@ export function App() {
   const allProjects = useMemo(() => projectsOf(state, saved), [state, saved])
   const hidden = useMemo(() => hiddenProjects(state.settings[HIDDEN_KEY]), [state.settings])
   const projects = useMemo(() => allProjects.filter(p => !hidden.includes(p.name)), [allProjects, hidden])
+  const hiddenPending = useMemo(() => Object.fromEntries(allProjects.filter(p => hidden.includes(p.name)).map(p => [p.name, p.pending])), [allProjects, hidden])
   const folders = useMemo(() => projectFolders(state.settings.projectFolders), [state.settings])
   // Feature area: agent CLIs other than Claude Code. Badges by session, and the person's own CLIs.
   const customs = useMemo(() => customAgents(state.settings[CUSTOM_AGENTS_KEY]), [state.settings])
@@ -307,11 +357,14 @@ export function App() {
     async (cwd: string) => {
       // A folder taken off the list comes back when it is added again.
       const name = nameForFolder(allProjects, cwd)
-      if (hidden.includes(name)) await window.ide.bridge('POST', '/settings', { key: HIDDEN_KEY, value: hidden.filter(h => h !== name) })
+      if (hidden.includes(name)) await updateSetting(HIDDEN_KEY, current => hiddenProjects(current).filter(h => h !== name))
       if (saved.some(p => p.cwd === cwd)) return
-      await window.ide.bridge('POST', '/settings', { key: 'projects', value: [...saved, { name, cwd }] })
+      await updateSetting('projects', current => {
+        const list = savedProjects(current)
+        return list.some(p => p.cwd === cwd) ? list : [...list, { name, cwd }]
+      })
     },
-    [saved, allProjects, hidden],
+    [saved, allProjects, hidden, updateSetting],
   )
   const pickProject = async () => {
     const cwd = await window.ide.pickFolder()
@@ -478,11 +531,7 @@ export function App() {
           state={state}
           scoped={scope ? view : null}
           live={live}
-          onToggleLive={() => {
-            liveRef.current = !live
-            setLive(!live)
-            if (!live) void refresh()
-          }}
+          onToggleLive={toggleLive}
           onToggleSidebar={() => setSidebarOpen(open => !open)}
           onToggleDock={() => setDockOpen(open => !open)}
           connected={connected === true}
@@ -526,13 +575,14 @@ export function App() {
             <ProjectList
               projects={projects}
               hidden={hidden}
+              hiddenPending={hiddenPending}
               folders={folders}
               scope={scope}
               totals={{ running: state.tasks.filter(isRunning).length, pending: state.questions.filter(q => q.status === 'pending').length }}
               badges={name => projectAgents(state.sessions, tags, name).map(tag => <AgentBadge key={tag.kind} tag={tag} />)}
               onScope={setScope}
               onAddProject={() => void pickProject()}
-              save={(key, value) => void window.ide.bridge('POST', '/settings', { key, value })}
+              update={(key, change) => void updateSetting(key, change)}
             />
             {section === 'home' && offline && (
               <section>
@@ -681,6 +731,14 @@ export function App() {
         </div>
 
         <main className="main">
+          {connected === true && !live && (
+            <div className="paused-note" role="status">
+              <span className="small">{t('app.paused')}</span>
+              <button className="link small" onClick={toggleLive}>
+                {t('app.resumeLive')}
+              </button>
+            </div>
+          )}
           {connected === false && (
             <div className="disconnected" role="alert">
               <b>{t('app.disconnected')}</b>

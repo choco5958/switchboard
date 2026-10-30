@@ -95,6 +95,15 @@ export function moveToFolder(folders: readonly ProjectFolder[], project: string,
   })
 }
 
+// Undo of Ungroup: the folder comes back where it was, with its projects taken out of any folder
+// they moved to meanwhile. A folder already there again is left as it is.
+export function restoreFolder(folders: readonly ProjectFolder[], folder: ProjectFolder, index: number): ProjectFolder[] {
+  if (folders.some(f => f.id === folder.id)) return [...folders]
+  const rest = folders.map(f => ({ ...f, projects: f.projects.filter(p => !folder.projects.includes(p)) }))
+  const at = Math.max(0, Math.min(index, rest.length))
+  return [...rest.slice(0, at), folder, ...rest.slice(at)]
+}
+
 // Every project the IDE knows of: folders added by hand and ones sessions or
 // tasks name, the most recently active first so adding a folder never reorders
 // the list. The folder comes from the hand-added entry, else the newest session.

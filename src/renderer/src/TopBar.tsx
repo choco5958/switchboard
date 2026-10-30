@@ -6,6 +6,7 @@ import { countLabel, flipTheme, isLight, resetText } from './taskInfo'
 import { DEFAULT_THEME, themeOf } from './theme'
 import { isClaude } from '../../shared/agents'
 import { t } from '../../shared/i18n'
+import { saveSetting } from './settings'
 
 // The search key as this system writes it (App.tsx takes both).
 const SEARCH_KEY = /Mac/.test(navigator.userAgent) ? '⌘K' : 'Ctrl+K'
@@ -211,8 +212,8 @@ export function TopBar({
 
   const flip = async () => {
     const next = flipTheme(theme, typeof state.settings.darkTheme === 'string' ? state.settings.darkTheme : undefined, DEFAULT_THEME)
-    if (!light) await window.ide.bridge('POST', '/settings', { key: 'darkTheme', value: next.lastDark })
-    await window.ide.bridge('POST', '/settings', { key: 'theme', value: next.theme })
+    if (!light) await saveSetting('darkTheme', next.lastDark)
+    await saveSetting('theme', next.theme)
   }
 
   return (
