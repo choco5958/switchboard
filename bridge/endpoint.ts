@@ -11,6 +11,9 @@ import { join } from 'node:path'
 
 // The header the app proves itself with on the person-only routes (bridge/server.ts appOnly).
 export const APP_HEADER = 'x-switchboard-app'
+// The header a session proves itself with on its own routes: the token POST /sessions gave it
+// (mod/hooks/link.ts SESSION_HEADER is the mod's copy).
+export const SESSION_HEADER = 'x-switchboard-session'
 
 export type Endpoint = { kind: 'socket'; path: string } | { kind: 'tcp'; port: number; token: string }
 

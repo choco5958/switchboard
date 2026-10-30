@@ -5,7 +5,7 @@ import { batchText, nextDelay, normalizeIds, parseFrame, pendingLine, remember, 
 import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
-import { bridgeFetch, startArgv, streamArgv } from './link.ts'
+import { SESSION_HEADER, bridgeFetch, startArgv, streamArgv } from './link.ts'
 import { BROWSER_TOOLS, cancelText, peersText, sentText, toolDefs, type Peer } from './tools.ts'
 import { waitApproval } from './approval.ts'
 
@@ -22,8 +22,11 @@ const ID_CAP = 500
 
 // What this mod keeps in $.store per session, so a mod reload loses none of it:
 // sent, the deliveries submitted; commands, the command ids already run;
-// agents, the subagents paused or stopped from the IDE; queued, command prompts not yet submitted.
-type StoreKind = 'sent' | 'commands' | 'agents' | 'queued'
+// agents, the subagents paused or stopped from the IDE; queued, command prompts not yet submitted;
+// token, what the bridge gave this session to act as it (sessionToken).
+type StoreKind = 'sent' | 'commands' | 'agents' | 'queued' | 'token'
+// Removed at the session's exit. The token stays (until STALE_MS): a session resumed later
+// under the same id registers again with it, and the bridge refuses that without it.
 const STORE_KINDS: StoreKind[] = ['sent', 'commands', 'agents', 'queued']
 
 function storeKey(kind: StoreKind, id = sessionId): string {
@@ -34,6 +37,10 @@ type Reply = { ok: boolean; status: number; json: Record<string, unknown> }
 
 let sessionId = ''
 let cwd = ''
+// The token the bridge handed over when this session first registered (POST /sessions): its own
+// routes (deliveries, acknowledgements, commands, permission asks) answer only with it, so another
+// program that knows the session's id cannot act as it. '' with a bridge from before tokens.
+let sessionToken = ''
 let subscribed = false
 // The main loop is mid-turn: what arrives now waits and goes in as one prompt
 // when the turn completes.
@@ -102,7 +109,7 @@ const APPROVAL_WAIT_MS = 6 * 3600_000
 async function call($: Engine, method: string, path: string, body?: unknown): Promise<Reply> {
   const res = await bridgeFetch($, path, {
     method,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...(sessionToken ? { [SESSION_HEADER]: sessionToken } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   let json: Record<string, unknown> = {}
@@ -198,12 +205,23 @@ async function subscribe($: Engine): Promise<void> {
 // bridge may have restarted), then read the stream until it ends. True when it connected.
 async function listenOnce($: Engine): Promise<boolean> {
   if (!(await ensureBridge($))) return false
-  const registered = await call($, 'POST', '/sessions', { id: sessionId, cwd }).catch(() => undefined)
-  if (!registered?.ok) return false
+  // `token`: the bridge makes one with the session's row and hands it over this once.
+  const registered = await call($, 'POST', '/sessions', { id: sessionId, cwd, token: true }).catch(() => undefined)
+  if (!registered?.ok) {
+    // 403: the session took a token this mod no longer has (its store lost it); only the app could act for it now.
+    if (registered?.status === 403) $.ui.log(t(currentLang(), 'log.subscriptionLost', { error: String(registered.json.error) }), { to: 'debug' })
+    return false
+  }
+  if (typeof registered.json.token === 'string' && registered.json.token) {
+    sessionToken = registered.json.token
+    await $.store.set(storeKey('token'), sessionToken).catch(() => undefined)
+  }
   let connected = false
   try {
+    // The token goes to curl on its standard input, never its command line.
     const stream = $.process.spawn({
-      argv: await streamArgv($, `/deliveries?session=${sessionId}`),
+      argv: await streamArgv($, `/deliveries?session=${sessionId}`, sessionToken !== ''),
+      ...(sessionToken ? { input: `${SESSION_HEADER}: ${sessionToken}\n` } : {}),
     })
     let buffer = ''
     for await (const piece of stream) {
@@ -306,6 +324,8 @@ async function saveAgents($: Engine): Promise<void> {
 // After a reload (or a restart of the same session) the module starts empty: take back
 // what the store kept, and forget the keys of sessions gone for two weeks.
 async function restore($: Engine): Promise<void> {
+  const token = await $.store.get(storeKey('token'))
+  sessionToken = typeof token === 'string' ? token : ''
   const agents = (await $.store.get(storeKey('agents'))) as { paused?: string[]; stopped?: string[] } | undefined
   for (const id of agents?.paused ?? []) paused.add(id)
   for (const id of agents?.stopped ?? []) stopped.add(id)
@@ -315,7 +335,7 @@ async function restore($: Engine): Promise<void> {
   const seen = { ...(((await $.store.get('seen')) as Record<string, number> | undefined) ?? {}) }
   const keys = await $.store.keys()
   for (const key of keys) {
-    const id = /^(?:sent|commands|agents|queued):(.+)$/.exec(key)?.[1]
+    const id = /^(?:sent|commands|agents|queued|token):(.+)$/.exec(key)?.[1]
     if (id && seen[id] === undefined) seen[id] = at
   }
   seen[sessionId] = at

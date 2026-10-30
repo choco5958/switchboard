@@ -8,7 +8,7 @@ import { request } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { requestTarget, resolveEndpoint, startCommand, usesTcp } from '../bridge/endpoint.ts'
+import { SESSION_HEADER, requestTarget, resolveEndpoint, startCommand, usesTcp } from '../bridge/endpoint.ts'
 import { takenText } from '../mod/hooks/batch.ts'
 import { langFromLocale, langOfState, osLocale, t, type Key, type Lang, type Vars } from '../mod/hooks/i18n.ts'
 import { BROWSER_TOOLS, cancelText, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
@@ -87,17 +87,18 @@ export type Reply = { ok: boolean; status: number; json: Record<string, unknown>
 type Run = (argv: string[], cwd?: string) => Promise<{ code: number; stdout: string; stderr: string }>
 
 export type Deps = {
-  call: (method: string, path: string, body?: unknown) => Promise<Reply>
+  // `headers`: the session's token (SESSION_HEADER) once the bridge gave it one.
+  call: (method: string, path: string, body?: unknown, headers?: Record<string, string>) => Promise<Reply>
   startBridge: () => Promise<boolean>
   run: Run
   log: (line: string) => void
 }
 
 export function bridgeCall(socket: string): Deps['call'] {
-  return (method, path, body) =>
+  return (method, path, body, headers = {}) =>
     new Promise(resolve => {
       const target = requestTarget(socket ? { kind: 'socket', path: socket } : resolveEndpoint())
-      const req = request({ ...target, method, path, headers: { ...target.headers, 'content-type': 'application/json' } }, res => {
+      const req = request({ ...target, method, path, headers: { ...target.headers, ...headers, 'content-type': 'application/json' } }, res => {
         let text = ''
         res.setEncoding('utf8')
         res.on('data', chunk => (text += chunk))
@@ -133,6 +134,10 @@ const text = (value: unknown): string => (typeof value === 'string' ? value : ''
 
 export function createSession(options: Options, deps: Deps) {
   const sessionId = randomUUID()
+  // What the bridge handed over at registration: this session's own routes answer only with it,
+  // so another program that learns the id cannot take its answers. Kept in memory only.
+  let token = ''
+  const own = (): Record<string, string> => (token ? { [SESSION_HEADER]: token } : {})
   let registered: Promise<boolean> | null = null
   let timer: ReturnType<typeof setInterval> | null = null
   // The bridge's `lang` setting, read at registration and with every heartbeat.
@@ -145,11 +150,15 @@ export function createSession(options: Options, deps: Deps) {
   }
 
   const register = async (): Promise<boolean> => {
-    const body = { id: sessionId, cwd: options.cwd, agent: options.agent, terminal: options.terminal }
-    let reply = await deps.call('POST', '/sessions', body)
-    if (reply.status === 0 && (await deps.startBridge())) reply = await deps.call('POST', '/sessions', body)
+    // `token`: made with the session's row (a new database makes it anew) and handed over once.
+    const body = { id: sessionId, cwd: options.cwd, agent: options.agent, terminal: options.terminal, token: true }
+    let reply = await deps.call('POST', '/sessions', body, own())
+    if (reply.status === 0 && (await deps.startBridge())) reply = await deps.call('POST', '/sessions', body, own())
     if (!reply.ok) deps.log(say('mcp.registerFailed', { error: String(reply.json.error ?? reply.status) }))
-    else await readLang()
+    else {
+      if (typeof reply.json.token === 'string' && reply.json.token) token = reply.json.token
+      await readLang()
+    }
     return reply.ok
   }
 
@@ -165,15 +174,15 @@ export function createSession(options: Options, deps: Deps) {
   // that answers 404 for this session (a new database).
   const call = async (method: string, path: string, body?: unknown): Promise<Reply> => {
     await ready()
-    const reply = await deps.call(method, path, body)
+    const reply = await deps.call(method, path, body, own())
     if (reply.status !== 0 && !(reply.status === 404 && path === '/deliveries/take')) return reply
     registered = null
     if (!(await ready())) return reply
-    return deps.call(method, path, body)
+    return deps.call(method, path, body, own())
   }
 
   const seen = async () => {
-    const reply = await deps.call('POST', '/sessions/seen', { sessionId })
+    const reply = await deps.call('POST', '/sessions/seen', { sessionId }, own())
     if (!reply.ok) {
       registered = null
       await ready()

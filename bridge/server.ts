@@ -7,12 +7,12 @@ import { connect } from 'node:net'
 import { Readable } from 'node:stream'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { debugRoutes } from './debug.ts'
-import { APP_HEADER, curlConfigFile, endpointFile, ideDir, usesTcp } from './endpoint.ts'
+import { APP_HEADER, SESSION_HEADER, curlConfigFile, endpointFile, ideDir, usesTcp } from './endpoint.ts'
 import type { Activity } from '../src/shared/stall.ts'
 import { limitedUntil } from '../src/shared/limit.ts'
 import { maskSecrets } from '../src/shared/pageLog.ts'
@@ -27,6 +27,7 @@ import {
   clipText,
   forwardText,
   forwardedAnswer,
+  newFence,
   noReplyText,
   peerText,
   routineText,
@@ -83,6 +84,7 @@ type ApprovalRow = {
   reason: string
   status: 'pending' | 'allow' | 'deny' | 'terminal' | 'expired'
   created_at: number
+  seal: string
 }
 
 type OutboxRow = PeerRow & {
@@ -100,6 +102,7 @@ type OutboxRow = PeerRow & {
   no_reply: string
   cancelled: number
   piggyback: number
+  from_app: number
 }
 
 export type QuestionRow = {
@@ -118,6 +121,8 @@ export type QuestionRow = {
   created_at: number
   answered_at: number | null
   delivered: number
+  // 'shell': answered without the app's key (switchboard answer), so not surely by the person.
+  answered_from?: string
 }
 
 const SCHEMA = `
@@ -309,14 +314,19 @@ function sseSend(res: ServerResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
 }
 
-// The answer as the session reads it, in the UI language.
-export function deliveryText(q: QuestionRow, lang: Lang = 'ko'): string {
+// The answer as the session reads it, in the UI language. One given without the app's key
+// (switchboard answer) may come from another session as well as the person: it says so, and
+// its memo is fenced like a message.
+export function deliveryText(q: QuestionRow, lang: Lang = 'ko', fence = newFence()): string {
   const options = JSON.parse(q.options) as Option[]
   const picked = options.find(o => o.key === q.choice)
-  const lines = [tIn(lang, 'prompt.answer.head', { id: q.id }), tIn(lang, 'prompt.answer.question', { question: q.question })]
+  const shell = q.answered_from === 'shell'
+  const lines = [tIn(lang, shell ? 'prompt.answer.shellHead' : 'prompt.answer.head', { id: q.id }), tIn(lang, 'prompt.answer.question', { question: q.question })]
+  if (shell) lines.push(tIn(lang, 'prompt.answer.shellRule'))
   if (q.choice) lines.push(tIn(lang, 'prompt.answer.picked', { key: q.choice, label: picked?.label ?? '' }).trimEnd())
   else lines.push(tIn(lang, 'prompt.answer.none'))
-  if (q.memo) lines.push(tIn(lang, 'prompt.answer.memo', { memo: q.memo }))
+  if (q.memo && shell) lines.push(tIn(lang, 'prompt.answer.memo', { memo: '' }).trimEnd(), tIn(lang, 'peer.bodyFenced', { fence }), q.memo, tIn(lang, 'peer.bodyEnd', { fence }))
+  else if (q.memo) lines.push(tIn(lang, 'prompt.answer.memo', { memo: q.memo }))
   lines.push(tIn(lang, 'prompt.answer.go'))
   return lines.join('\n')
 }
@@ -343,7 +353,8 @@ export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch; token?
 // set up Telegram or phones, schedule prompts, change settings, control sessions and read their
 // transcripts. Any program of the same user reaches the bridge, a session with a shell too;
 // without the app's key these refuse. Answers to decision questions, messages and waits stay
-// open to the switchboard command.
+// open to the switchboard command, and the session reads what comes that way as from a shell
+// command, fenced, never as the person's (outboxText, deliveryText, waitText).
 export function appOnly(method: string, path: string): boolean {
   if (path === '/telegram' || path.startsWith('/telegram/') || path === '/app/check') return true
   // Phones: turning them on, pairing and the view they read (bridge/mobile.ts).
@@ -418,6 +429,20 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   // Which agent CLI a session runs in (sessions before this were all Claude Code)
   // and the app terminal it runs in, when it does.
   addColumns('sessions', [['agent', "text not null default 'claude'"], ['terminal', "text not null default ''"]])
+  // The hash of the token a session took at registration (POST /sessions); '' for one that took
+  // none (mods and MCP servers from before), whose routes stay open as they were.
+  addColumns('sessions', [['token', "text not null default ''"]])
+  // Whether a row came in with the app's key (POST /outbox): text without it may be any program
+  // of the same user, another session's shell too (outboxText). Rows from before were all shown
+  // as they are, and stay so.
+  const outboxHadOrigin = (db.prepare('pragma table_info(outbox)').all() as { name: string }[]).some(c => c.name === 'from_app')
+  addColumns('outbox', [['from_app', 'integer not null default 0']])
+  if (!outboxHadOrigin) db.exec('update outbox set from_app = 1')
+  // 'shell' for a decision answered without the app's key (deliveryText).
+  addColumns('questions', [['answered_from', "text not null default ''"]])
+  // A permission answer sealed with the app's key (sealOf): a status written into the database
+  // by anything else is no answer.
+  addColumns('approvals', [['seal', "text not null default ''"]])
   // A scheduled prompt that switched itself off after ROUTINE_FAIL_LIMIT failed runs in a row.
   addColumns('routines', [['failed_off', 'integer not null default 0']])
   // Which agent CLI a scheduled prompt goes to (agents.ts ids; routines before this were Claude Code's).
@@ -541,7 +566,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (q) return forwardText(m.id, q, sessionLabel(q.session_id), langNow(), autoReplies(m.session_id))
     }
     if (m.from_session) return peerText(m, sessionLabel(m.from_session), langNow(), autoReplies(m.session_id))
-    if (m.expects_reply) return shellText(m, langNow(), autoReplies(m.session_id))
+    if (!m.from_app || m.expects_reply) return shellText(m, langNow(), autoReplies(m.session_id))
     return m.text
   }
 
@@ -576,10 +601,11 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     return []
   }
 
-  const answerQuestion = (q: QuestionRow, choice: string | null, memo: string | null, via: 'app' | 'telegram' = 'app') => {
+  // `shell`: answered without the app's key (switchboard answer); the session is told so.
+  const answerQuestion = (q: QuestionRow, choice: string | null, memo: string | null, via: 'app' | 'telegram' | 'shell' = 'app') => {
     db.prepare(
-      "update questions set status = 'answered', choice = ?, memo = ?, answered_at = ?, delivered = 0 where id = ?",
-    ).run(choice, memo, now(), q.id)
+      "update questions set status = 'answered', choice = ?, memo = ?, answered_at = ?, delivered = 0, answered_from = ? where id = ?",
+    ).run(choice, memo, now(), via === 'shell' ? 'shell' : '', q.id)
     logEvent(q.session_id, '답함', `Q${q.id} ${choice ? `(${choice})` : say('history.memo')} ${q.question}`, q.task_title)
     changed('questions')
     pushDeliveries(q.session_id)
@@ -588,9 +614,20 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
 
   let shuttingDown = false
 
+  // A permission answer the bridge gave, sealed with the app's key (HMAC over the ask and the
+  // decision). A program of the same user that writes 'allow' into the database has no key to
+  // seal it with, and the mod is told to ask in the terminal instead (approvalStatus). Without
+  // a key (a bridge a mod started) nothing is sealed, and nothing could answer allow but Telegram.
+  const sealOf = (id: number, decision: string): string =>
+    options.appKey === undefined ? '' : createHmac('sha256', options.appKey).update(`approval:${id}:${decision}`).digest('hex')
+  const approvalStatus = (row: { id: number; status: string; seal: string }): string =>
+    row.status !== 'allow' || options.appKey === undefined || sameSecret(row.seal, sealOf(row.id, 'allow')) ? row.status : 'terminal'
+
   // A permission ask answered once, from wherever it was first.
   const answerApproval = (row: ApprovalRow, decision: 'allow' | 'deny' | 'terminal' | 'expired', via: string, event?: Key): boolean => {
-    const result = db.prepare("update approvals set status = ?, via = ?, answered_at = ? where id = ? and status = 'pending'").run(decision, via, now(), row.id)
+    const result = db
+      .prepare("update approvals set status = ?, via = ?, answered_at = ?, seal = ? where id = ? and status = 'pending'")
+      .run(decision, via, now(), sealOf(row.id, decision), row.id)
     if (result.changes === 0) return false
     const key = event ?? ({ allow: 'bridge.event.approvalAllow', deny: 'bridge.event.approvalDeny', terminal: 'bridge.event.approvalTerminal', expired: 'bridge.event.approvalExpired' } as const)[decision]
     logEvent(row.session_id, '권한', say(key, { id: row.id, tool: row.tool }))
@@ -939,7 +976,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const marked = db.prepare("update outbox set no_reply = ? where id = ? and no_reply = ''").run(reason, row.id)
     if (marked.changes === 0) return
     const recipient = sessionLabel(row.session_id)
-    db.prepare("insert into outbox (session_id, kind, text, created_at, reply_to) values (?, '세션메시지', ?, ?, ?)").run(
+    db.prepare("insert into outbox (session_id, kind, text, created_at, reply_to, from_app) values (?, '세션메시지', ?, ?, ?, 1)").run(
       row.from_session,
       noReplyText(row.id, recipient, reason, langNow()),
       now(),
@@ -1064,9 +1101,12 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   // What the app reads, on every change. Sessions: the connected ones, the SESSIONS_SHOWN seen
   // last, the newest of each project (its folder), any a waiting question or running task names,
   // and one in an app terminal seen today (src/main/agentDelivery.ts opens streams only for these).
+  // `full`: the app asks (its key). Anyone else (a mod, the switchboard command, any program of
+  // the same user) reads permission asks with secrets masked and no terminal keys; session
+  // token hashes and approval seals go to nobody.
   const SESSIONS_SHOWN = 300
-  const state = () => ({
-    sessions: stmt(
+  const state = (full: boolean) => ({
+    sessions: (stmt(
       `select * from sessions where id in (
          select value from json_each(?)
          union select * from (select id from sessions order by last_seen desc limit ${SESSIONS_SHOWN})
@@ -1075,10 +1115,16 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
          union select session_id from tasks where status = '하는 중'
          union select id from sessions where last_seen > ? and terminal != '')
        order by last_seen desc`,
-    ).all(JSON.stringify(liveSessions()), now() - DAY),
+    ).all(JSON.stringify(liveSessions()), now() - DAY) as Json[]).map(({ token, ...s }) => {
+      void token
+      return full ? s : { ...s, terminal: '' }
+    }),
     live: liveSessions(),
     routines: stmt('select * from routines order by id').all(),
-    approvals: stmt('select * from (select * from approvals order by id desc limit 30) order by id').all(),
+    approvals: (stmt('select * from (select * from approvals order by id desc limit 30) order by id').all() as ApprovalRow[]).map(({ seal, ...a }) => {
+      void seal
+      return full ? a : { ...a, summary: maskSecrets(a.summary) }
+    }),
     routineRuns: stmt('select * from (select * from routine_runs order by id desc limit 100) order by id').all(),
     activity: Object.fromEntries(activity),
     // Every running task, however many: the limit only trims waiting ones.
@@ -1256,11 +1302,21 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     // The installed app's start script names its version: an app updated since replaces this bridge.
     // `app`: whether the app started it with its key; one started by a mod has none.
     if (method === 'GET' && path === '/health') return send(res, 200, { ok: true, version: process.env.SWITCHBOARD_VERSION ?? '', pid: process.pid, app: options.appKey !== undefined })
-    if (appOnly(method, path) && !fromPhone && !(options.appKey !== undefined && sameSecret(String(req.headers[APP_HEADER] ?? ''), options.appKey))) {
-      return send(res, 403, { error: say('bridge.appOnly') })
+    // The app (its key) or a phone: the person.
+    const keyed = fromPhone || (options.appKey !== undefined && sameSecret(String(req.headers[APP_HEADER] ?? ''), options.appKey))
+    if (appOnly(method, path) && !keyed) return send(res, 403, { error: say('bridge.appOnly') })
+    // A session that took a token at registration (POST /sessions) is acted for only with that
+    // token or by the app: knowing its id (keyless /state lists them) is not enough to take its
+    // answers and messages, close its stream or answer its commands. One registered without a
+    // token (a mod or MCP server from before, still running after an update) stays open.
+    const asSession = (sessionId: string): boolean => {
+      if (keyed) return true
+      const row = stmt('select token from sessions where id = ?').get(sessionId) as { token: string } | undefined
+      return !row?.token || sameSecret(tokenHash(String(req.headers[SESSION_HEADER] ?? '')), row.token)
     }
+    const notYours = (sessionId: string) => send(res, 403, { error: say('bridge.notYourSession', { id: sessionId }) })
     if (method === 'GET' && path === '/app/check') return send(res, 200, { ok: true })
-    if (method === 'GET' && path === '/state') return send(res, 200, state())
+    if (method === 'GET' && path === '/state') return send(res, 200, state(keyed))
 
     if (method === 'GET' && path === '/stream') {
       sse(res)
@@ -1285,6 +1341,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const body = await readJson(req)
       const sessionId = str(body.sessionId)
       if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
+      if (!asSession(sessionId)) return notYours(sessionId)
       const requestKey = str(body.requestKey)
       const same = requestKey ? (db.prepare('select id from approvals where session_id = ? and request_key = ?').get(sessionId, requestKey) as { id: number } | undefined) : undefined
       if (same) return send(res, 200, { id: same.id, duplicate: true })
@@ -1308,14 +1365,15 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     if (approvalOne) {
       const row = db.prepare('select * from approvals where id = ?').get(Number(approvalOne[1])) as ApprovalRow | undefined
       if (!row) return send(res, 404, { error: say('bridge.notFound') })
+      if (!asSession(row.session_id)) return notYours(row.session_id)
       // `wait`: answers once the ask is answered or that many milliseconds (at most
       // APPROVAL_POLL_MAX_MS) went by, whichever is first. `waitMs` tells the mod this bridge waits.
       if (method === 'GET' && !approvalOne[2]) {
         const waitMs = Math.min(Math.max(Number(url.searchParams.get('wait')) || 0, 0), APPROVAL_POLL_MAX_MS)
         const reply = () => {
           approvalSeen.set(row.id, now())
-          const status = (db.prepare('select status from approvals where id = ?').get(row.id) as { status: string } | undefined)?.status ?? row.status
-          send(res, 200, { id: row.id, status, waitMs })
+          const latest = db.prepare('select id, status, seal from approvals where id = ?').get(row.id) as { id: number; status: string; seal: string } | undefined
+          send(res, 200, { id: row.id, status: approvalStatus(latest ?? row), waitMs })
         }
         if (row.status !== 'pending' || waitMs === 0) return reply()
         approvalSeen.set(row.id, now())
@@ -1441,6 +1499,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     if (method === 'GET' && path === '/deliveries') {
       const sessionId = url.searchParams.get('session') ?? ''
       if (!sessionId) return send(res, 400, { error: say('bridge.noSession') })
+      if (!asSession(sessionId)) return notYours(sessionId)
       sse(res)
       const set = deliveryWatchers.get(sessionId) ?? new Set()
       set.add(res)
@@ -1483,18 +1542,24 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (agent && !AGENT_KIND.test(agent)) return send(res, 400, { error: say('bridge.badAgent') })
       if (!TERMINAL_ID.test(terminal)) return send(res, 400, { error: say('bridge.badTerminal') })
       const known = db.prepare('select project from sessions where id = ?').get(id) as { project: string } | undefined
+      // Registering again (every reconnect) takes the session's token: nobody else re-registers it.
+      if (known && !asSession(id)) return notYours(id)
       const taken = db.prepare('select project, cwd from sessions where id != ?').all(id) as { project: string; cwd: string }[]
       // A session registers again on every reconnect: it keeps the name it got first,
       // and its agent and terminal unless it names them again.
       const project = str(body.project) || known?.project || projectName(cwd, taken) || id
+      // `token: true`: the client keeps a token and sends it (SESSION_HEADER). It is made once, with
+      // the row, and handed over this once: a session someone registered first without one (an
+      // older mod) stays without one, so no other caller can bind it to a token of its own.
+      const token = !known && body.token === true ? newToken() : ''
       db.prepare(
-        `insert into sessions (id, project, cwd, started_at, last_seen, agent, terminal)
-         values (?, ?, ?, ?, ?, coalesce(nullif(?, ''), 'claude'), ?)
+        `insert into sessions (id, project, cwd, started_at, last_seen, agent, terminal, token)
+         values (?, ?, ?, ?, ?, coalesce(nullif(?, ''), 'claude'), ?, ?)
          on conflict (id) do update set project = excluded.project, cwd = excluded.cwd, last_seen = excluded.last_seen,
            agent = coalesce(nullif(?, ''), sessions.agent), terminal = coalesce(nullif(?, ''), sessions.terminal)`,
-      ).run(id, project, cwd, now(), now(), agent, terminal, agent, terminal)
+      ).run(id, project, cwd, now(), now(), agent, terminal, token ? tokenHash(token) : '', agent, terminal)
       changed('sessions')
-      return send(res, 200, { id, project })
+      return send(res, 200, token ? { id, project, token } : { id, project })
     }
 
     if (method === 'POST' && path === '/tasks') {
@@ -1502,6 +1567,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const sessionId = str(body.sessionId)
       const title = str(body.title).trim()
       if (!sessionId || !title) return send(res, 400, { error: say('bridge.needSessionTitle') })
+      if (!asSession(sessionId)) return notYours(sessionId)
       const stage = str(body.stage)
       if (stage && !(STAGES as readonly string[]).includes(stage)) {
         return send(res, 400, { error: say('bridge.badStage', { values: STAGES.join(', ') }) })
@@ -1541,6 +1607,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const sessionId = str(body.sessionId)
       const question = str(body.question).trim()
       if (!sessionId || !question) return send(res, 400, { error: say('bridge.needSessionQuestion') })
+      if (!asSession(sessionId)) return notYours(sessionId)
       const options = Array.isArray(body.options) ? body.options : []
       const clean: Option[] = options
         .filter((o): o is Json => o !== null && typeof o === 'object')
@@ -1601,7 +1668,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         return send(res, 400, { error })
       }
       if (!choice && !memo) return send(res, 400, { error: say('bridge.needAnswer') })
-      answerQuestion(q, choice || null, memo || null)
+      // Without the app's key (switchboard answer) it may be another session: the answer says so.
+      answerQuestion(q, choice || null, memo || null, keyed ? 'app' : 'shell')
       return send(res, 200, { id, status: 'answered' })
     }
 
@@ -1634,6 +1702,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const ackMessage = path.match(/^\/deliveries\/m(\d+)\/ack$/)
     if (method === 'POST' && ackMessage) {
       const id = Number(ackMessage[1])
+      const owner = stmt('select session_id from outbox where id = ?').get(id) as { session_id: string } | undefined
+      if (owner && !asSession(owner.session_id)) return notYours(owner.session_id)
       holding.delete(id)
       const result = db.prepare('update outbox set delivered = 1 where id = ? and delivered = 0').run(id)
       if (result.changes > 0) {
@@ -1652,6 +1722,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const ack = path.match(/^\/deliveries\/q?(\d+)\/ack$/)
     if (method === 'POST' && ack) {
       const id = Number(ack[1])
+      const owner = stmt('select session_id from questions where id = ?').get(id) as { session_id: string } | undefined
+      if (owner && !asSession(owner.session_id)) return notYours(owner.session_id)
       const result = db.prepare('update questions set delivered = 1 where id = ? and delivered = 0').run(id)
       if (result.changes > 0) {
         const q = db.prepare('select * from questions where id = ?').get(id) as QuestionRow
@@ -1670,6 +1742,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (!sessionId || !taskTitle || list.length === 0) {
         return send(res, 400, { error: say('bridge.needNodes') })
       }
+      if (!asSession(sessionId)) return notYours(sessionId)
       const nodes = list.filter((n): n is Json => n !== null && typeof n === 'object')
       // A node may come after one this request leaves out but an earlier plan of the task made.
       const existing = db
@@ -1717,6 +1790,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (!(NODE_STATUSES as readonly string[]).includes(status)) {
         return send(res, 400, { error: say('bridge.badNodeStatus', { values: NODE_STATUSES.join(', ') }) })
       }
+      if (!asSession(sessionId)) return notYours(sessionId)
       const task = db.prepare('select id from tasks where session_id = ? and title = ?').get(sessionId, taskTitle) as
         | { id: number }
         | undefined
@@ -1748,9 +1822,10 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const taskTitle = str(body.taskTitle)
       // From the shell (scripts/switchboard.ts): the session's reply is kept on the row.
       const expectsReply = body.expectsReply === true ? 1 : 0
+      // Without the app's key the text is fenced and never said to be the person's (outboxText).
       const result = db
-        .prepare('insert into outbox (session_id, kind, task_title, text, created_at, expects_reply) values (?, ?, ?, ?, ?, ?)')
-        .run(sessionId, kind, taskTitle, text, now(), expectsReply)
+        .prepare('insert into outbox (session_id, kind, task_title, text, created_at, expects_reply, from_app) values (?, ?, ?, ?, ?, ?, ?)')
+        .run(sessionId, kind, taskTitle, text, now(), expectsReply, keyed ? 1 : 0)
       logEvent(sessionId, kind, text.split('\n')[0]?.slice(0, 200) ?? '', taskTitle)
       changed('outbox')
       pushDeliveries(sessionId)
@@ -1774,6 +1849,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         | { id: number; title: string; session_id: string; task_title: string }
         | undefined
       if (!node) return send(res, 404, { error: say('bridge.noNode', { task: taskTitle, key }) })
+      if (!asSession(node.session_id)) return notYours(node.session_id)
       db.prepare('update nodes set worktree = ?, branch = ?, updated_at = ? where id = ?').run(worktree, branch, now(), node.id)
       logEvent(
         node.session_id,
@@ -1816,6 +1892,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const sessionId = str(body.sessionId)
       const list = Array.isArray(body.agents) ? body.agents.filter((a): a is Json => a !== null && typeof a === 'object') : []
       if (!sessionId) return send(res, 400, { error: say('bridge.noSession') })
+      if (!asSession(sessionId)) return notYours(sessionId)
       for (const a of list) {
         const id = str(a.id)
         if (!id) continue
@@ -1858,6 +1935,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     if (method === 'POST' && commandDone) {
       const body = await readJson(req)
       const id = Number(commandDone[1])
+      const owner = db.prepare('select session_id from commands where id = ?').get(id) as { session_id: string } | undefined
+      if (owner && !asSession(owner.session_id)) return notYours(owner.session_id)
       db.prepare('update commands set done_at = coalesce(done_at, ?), result = ? where id = ?').run(now(), JSON.stringify(body.result ?? null), id)
       changed('commands')
       return send(res, 200, { id })
@@ -1876,6 +1955,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const body = await readJson(req)
       const sessionId = str(body.sessionId)
       if (!sessionId) return send(res, 400, { error: say('bridge.noSession') })
+      if (!asSession(sessionId)) return notYours(sessionId)
       db.prepare('update sessions set usage = ?, last_seen = ? where id = ?').run(JSON.stringify(body.usage ?? {}), now(), sessionId)
       changed('sessions')
       return send(res, 200, { ok: true })
@@ -1896,6 +1976,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const sessionId = str(body.sessionId)
       const text = str(body.text).trim()
       if (!sessionId || !text) return send(res, 400, { error: say('bridge.needText') })
+      if (!asSession(sessionId)) return notYours(sessionId)
       logEvent(sessionId, str(body.kind, '로그') || '로그', text.slice(0, 500), str(body.taskTitle))
       db.prepare('update sessions set last_seen = ? where id = ?').run(now(), sessionId)
       changed('events')
@@ -1910,6 +1991,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const body = await readJson(req)
       const from = str(body.sessionId)
       if (!db.prepare('select 1 from sessions where id = ?').get(from)) return send(res, 404, { error: say('bridge.noSessionFound', { id: from }) })
+      if (!asSession(from)) return notYours(from)
       const text = str(body.text).trim()
       if (!text) return send(res, 400, { error: say('bridge.needText') })
       const requestKey = str(body.requestKey)
@@ -1971,6 +2053,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const body = await readJson(req)
       const from = str(body.sessionId)
       if (!db.prepare('select 1 from sessions where id = ?').get(from)) return send(res, 404, { error: say('bridge.noSessionFound', { id: from }) })
+      if (!asSession(from)) return notYours(from)
       const ids = (Array.isArray(body.ids) ? body.ids : [body.ids]).map(id => Number(str(id).replace(/^m/, ''))).filter(Boolean)
       if (ids.length === 0) return send(res, 400, { error: say('bridge.peer.needIds') })
       const rows = ids.map(id => db.prepare('select * from outbox where id = ?').get(id) as OutboxRow | undefined)
@@ -1980,7 +2063,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const results: Record<string, 'queued' | 'noted' | 'stopped' | 'done'> = {}
       // The recipient is told to drop it, with its next prompt.
       const noteCancel = (row: OutboxRow) =>
-        db.prepare("insert into outbox (session_id, kind, text, created_at, piggyback) values (?, '세션메시지', ?, ?, 1)").run(
+        db.prepare("insert into outbox (session_id, kind, text, created_at, piggyback, from_app) values (?, '세션메시지', ?, ?, 1, 1)").run(
           row.session_id,
           cancelledText(row.id, sessionLabel(from), reason, langNow()),
           now(),
@@ -2040,6 +2123,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const body = await readJson(req)
       const sessionId = str(body.sessionId)
       if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
+      if (!asSession(sessionId)) return notYours(sessionId)
       const held = (db.prepare('select * from outbox where session_id = ? and delivered = 0 order by id').all(sessionId) as OutboxRow[]).filter(m => heldReply(m))
       for (const m of held) {
         db.prepare('update outbox set delivered = 1 where id = ?').run(m.id)
@@ -2077,6 +2161,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const sessionId = str(body.sessionId)
       const answerText = str(body.answer).trim()
       const aborted = body.aborted === true
+      if (!asSession(sessionId)) return notYours(sessionId)
       const ids = Array.isArray(body.ids) ? body.ids.map(id => Number(str(id).replace(/^m/, ''))).filter(Boolean) : []
       let relayed = 0
       for (const id of ids) {
@@ -2185,6 +2270,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     // when its turn ends.
     if (method === 'POST' && path === '/routines/report') {
       const body = await readJson(req)
+      if (!asSession(str(body.sessionId))) return notYours(str(body.sessionId))
       const run = db
         .prepare("select id from routine_runs where session_id = ? and status = 'sent' order by id desc limit 1")
         .get(str(body.sessionId)) as { id: number } | undefined
@@ -2201,6 +2287,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const sessionId = str(body.sessionId)
       const note = str(body.note).trim()
       if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
+      if (!asSession(sessionId)) return notYours(sessionId)
       if (!note) return send(res, 400, { error: say('bridge.needText') })
       const open = (db.prepare('select count(*) n from waits where session_id = ? and fired_at is null and closed_at is null').get(sessionId) as { n: number }).n
       if (open >= 20) return send(res, 400, { error: say('bridge.waitLimit', { max: 20 }) })
@@ -2223,6 +2310,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (!wait || wait.fired_at || wait.closed_at) return send(res, 404, { error: say('bridge.notFound') })
       // A session closes only its own wait; the shell (no sessionId) fires and closes any.
       if (str(body.sessionId) && str(body.sessionId) !== wait.session_id) return send(res, 403, { error: say('bridge.notFound') })
+      if (str(body.sessionId) && !asSession(wait.session_id)) return notYours(wait.session_id)
       if (waitAction[2] === 'close') {
         db.prepare('update waits set closed_at = ? where id = ?').run(now(), wait.id)
       } else {
@@ -2242,6 +2330,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const sessionId = str(body.sessionId)
       const state = str(body.state)
       if (!sessionId || (state !== 'working' && state !== 'idle')) return send(res, 400, { error: say('bridge.noSession') })
+      if (!asSession(sessionId)) return notYours(sessionId)
       const openTools = Math.max(0, Math.floor(Number(body.openTools) || 0))
       const before = activity.get(sessionId)
       activity.set(sessionId, { state, openTools, at: now() })
@@ -2251,6 +2340,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
 
     if (method === 'POST' && path === '/sessions/seen') {
       const body = await readJson(req)
+      if (!asSession(str(body.sessionId))) return notYours(str(body.sessionId))
       const result = db.prepare('update sessions set last_seen = ? where id = ?').run(now(), str(body.sessionId))
       if (result.changes === 0) return send(res, 404, { error: say('bridge.noSessionFound', { id: str(body.sessionId) }) })
       return send(res, 200, { ok: true })
@@ -2262,7 +2352,11 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     // The app took these with `hold` but could not type them (the terminal closed): they are not in.
     if (method === 'POST' && path === '/deliveries/unhold') {
       const body = await readJson(req)
-      for (const id of Array.isArray(body.ids) ? body.ids : []) holding.delete(Number(str(id).replace(/^m/, '')))
+      for (const id of Array.isArray(body.ids) ? body.ids : []) {
+        const n = Number(str(id).replace(/^m/, ''))
+        const owner = stmt('select session_id from outbox where id = ?').get(n) as { session_id: string } | undefined
+        if (!owner || asSession(owner.session_id)) holding.delete(n)
+      }
       return send(res, 200, { ok: true })
     }
 
@@ -2272,6 +2366,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (!stmt('select 1 from sessions where id = ?').get(sessionId)) {
         return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
       }
+      if (!asSession(sessionId)) return notYours(sessionId)
       const limited = limitedSession(sessionId)
       const answers = limited ? [] : undelivered(sessionId)
       const messages = limited ? [] : pendingOutbox(sessionId)
@@ -2350,6 +2445,11 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   const memory = () => ({ streams: deliveryWatchers.size, activity: activity.size, offlineSince: offlineSince.size })
 
   return { server, db, prune, tickRoutines, checkNoReplies, forgetGone, memory, close }
+}
+
+// What the bridge keeps of a session's token: never the token itself.
+function tokenHash(token: string): string {
+  return createHash('sha256').update(token).digest('hex')
 }
 
 function sameSecret(given: string, expected: string): boolean {

@@ -6,7 +6,7 @@
 //   switchboard send <session|project> <text | -> [--wait] [--timeout 30m] [--info] [--json]
 //   switchboard status <m12>
 //   switchboard decisions [--json]
-//   switchboard answer <Q12> <key | -> [memo]
+//   switchboard answer <Q12> <key | -> [memo]     (not inside an agent session)
 //   switchboard waits
 //   switchboard fire <w3> [what happened | -]     (a session's await_event)
 //
@@ -14,6 +14,10 @@
 // sessions match, 3 the session waits for a person (a decision question it posted since the
 // message), 4 the wait timed out (the session keeps working), 5 the bridge is not running or
 // the session is unknown.
+//
+// Nothing here carries the app's key, so the bridge marks what this sends as coming from a
+// shell command, which another session may run too: the session reads it fenced, as
+// collaborator input, and an answer to a decision says it came from the shell.
 
 import { request } from 'node:http'
 import { requestTarget, resolveEndpoint } from '../bridge/endpoint.ts'
@@ -83,7 +87,21 @@ switchboard answer <Q12> <key | -> [memo]
 switchboard waits
 switchboard fire <w3> [what happened | -]`
 
-type Io = { out: (text: string) => void; err: (text: string) => void; stdin: () => Promise<string>; sleep: (ms: number) => Promise<void>; now: () => number }
+// `env`: the environment, to tell an agent session's shell (agentSession).
+type Io = {
+  out: (text: string) => void
+  err: (text: string) => void
+  stdin: () => Promise<string>
+  sleep: (ms: number) => Promise<void>
+  now: () => number
+  env?: Record<string, string | undefined>
+}
+
+// A shell an agent runs commands in: Claude Code sets CLAUDECODE there, and the app's terminals
+// set SWITCHBOARD_AGENT for the agent CLIs they start.
+export function agentSession(env: Record<string, string | undefined>): boolean {
+  return Boolean(env.CLAUDECODE || env.SWITCHBOARD_AGENT)
+}
 
 export async function run(argv: readonly string[], call: Call, io: Io): Promise<number> {
   const { command, args, flags } = parseArgs(argv)
@@ -131,6 +149,11 @@ export async function run(argv: readonly string[], call: Call, io: Io): Promise<
     const choice = args[1] === '-' ? '' : (args[1] ?? '')
     const memo = args.slice(2).join(' ')
     if (!id || (!choice && !memo)) return fail(EXIT.usage, USAGE)
+    // A speed bump, not a lock: a decision is the person's, and a session told to answer another
+    // one's would do it here. The bridge marks shell answers either way (deliveryText).
+    if (agentSession(io.env ?? {})) {
+      return fail(EXIT.failed, 'switchboard answer does not run inside an agent session (CLAUDECODE or SWITCHBOARD_AGENT is set). Answer in the Switchboard app, or from a terminal of your own.')
+    }
     const r = await ask('POST', `/questions/${id}/answer`, { choice, memo })
     if (!r) return fail(EXIT.unreachable, 'the bridge is not running')
     if (r.status !== 200) return fail(r.status === 404 ? EXIT.unreachable : EXIT.failed, String(r.json.error ?? r.status))
@@ -238,6 +261,7 @@ if (import.meta.main) {
     stdin,
     sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
     now: () => Date.now(),
+    env: process.env,
   })
   // Not process.exit: output to a pipe is written asynchronously, and exiting at once cuts what
   // is past the first 64 KiB. Nothing else is left running, so the process ends by itself.

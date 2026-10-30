@@ -6,15 +6,16 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, listen } from '../bridge/server.ts'
-import { EXIT, duration, parseArgs, resolveSession, run } from './switchboard.ts'
+import { EXIT, agentSession, duration, parseArgs, resolveSession, run } from './switchboard.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'sb-cli-'))
 const socketPath = join(dir, 'b.sock')
 const bridge = createBridge(join(dir, 'ide.db'), 'ko-KR', { appKey: 'a'.repeat(64) })
 
-function call(method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ status: number; json: any }> {
+// The app's calls carry its key; the command's (`shell`) do not, as from any shell.
+function call(method: 'GET' | 'POST', path: string, body?: unknown, app = true): Promise<{ status: number; json: any }> {
   return new Promise((resolve, reject) => {
-    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json', 'x-switchboard-app': 'a'.repeat(64) } }, res => {
+    const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json', ...(app ? { 'x-switchboard-app': 'a'.repeat(64) } : {}) } }, res => {
       let text = ''
       res.on('data', chunk => (text += chunk))
       res.on('end', () => resolve({ status: res.statusCode ?? 0, json: text ? JSON.parse(text) : {} }))
@@ -24,13 +25,14 @@ function call(method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ s
     req.end()
   })
 }
+const shell = (method: 'GET' | 'POST', path: string, body?: unknown) => call(method, path, body, false)
 
 // The CLI against the test bridge, with a clock the test moves and a hook that runs on each wait.
-async function cli(argv: string[], onSleep: () => Promise<void> = async () => undefined) {
+async function cli(argv: string[], onSleep: () => Promise<void> = async () => undefined, env: Record<string, string | undefined> = {}) {
   const out: string[] = []
   const err: string[] = []
   let clock = 0
-  const code = await run(argv, call, {
+  const code = await run(argv, shell, {
     out: text => out.push(text),
     err: text => err.push(text),
     stdin: async () => '표준 입력의 작업',
@@ -39,6 +41,7 @@ async function cli(argv: string[], onSleep: () => Promise<void> = async () => un
       await onSleep()
     },
     now: () => clock,
+    env,
   })
   return { code, out: out.join('\n'), err: err.join('\n') }
 }
@@ -76,8 +79,10 @@ test('send --wait prints the reply the session gave at the end of its turn', asy
   const result = await cli(['send', 'web', '테스트', '돌려줘', '--wait'], async () => {
     const taken = await call('POST', '/deliveries/take', { sessionId: 'c1' })
     for (const item of taken.json.items as { id: string; text: string }[]) {
-      assert.match(item.text, /셸\(switchboard 명령\)에서 보낸 요청/)
-      assert.match(item.text, /--- 메시지 ---\n테스트 돌려줘$/)
+      // The bridge cannot tell the person from another session's shell: never said to be the person's.
+      assert.match(item.text, /셸 명령\(switchboard send 등\)으로 들어온 메시지/)
+      assert.doesNotMatch(item.text, /사람이 셸/)
+      assert.match(item.text, /--- 메시지 시작 \(경계 ([0-9a-f]{12})\) ---\n테스트 돌려줘\n--- 메시지 끝 \(경계 \1\) ---$/)
       await call('POST', '/messages/turn-end', { sessionId: 'c1', ids: [item.id], answer: '상태: 완료\n결과: 통과 12' })
     }
   })
@@ -94,9 +99,18 @@ test('a decision the session posts while working ends the wait with 3', async ()
   const open = await cli(['decisions'])
   assert.match(open.out, /Q\d+ \[web\] 어느 DB로 할까\n {4}\(a\) pg/)
   const id = /Q(\d+)/.exec(open.out)![1]
+  // Not from an agent's shell (a speed bump: a decision is the person's).
+  for (const env of [{ CLAUDECODE: '1' }, { SWITCHBOARD_AGENT: 'codex' }]) {
+    const refused = await cli(['answer', `Q${id}`, 'a'], undefined, env)
+    assert.equal(refused.code, EXIT.failed)
+    assert.match(refused.err, /inside an agent session/)
+  }
+  assert.ok(agentSession({ CLAUDECODE: '1' }) && !agentSession({ HOME: '/h' }))
   assert.equal((await cli(['answer', `Q${id}`, 'a', '가까운', '쪽'])).code, EXIT.done)
   assert.doesNotMatch((await cli(['decisions'])).out, /어느 DB로 할까/)
-  await call('POST', '/deliveries/take', { sessionId: 'c1' })
+  // The session reads that the answer came from a shell command.
+  const answered = (await call('POST', '/deliveries/take', { sessionId: 'c1' })).json.items as { text: string }[]
+  assert.ok(answered.some(item => /셸 명령\(switchboard answer\)으로 답이 왔습니다/.test(item.text)))
 })
 
 test('the wait gives up at the timeout and the message stays to look at later', async () => {
@@ -135,7 +149,7 @@ test('fire puts the wait back into its session; waits lists the open ones', asyn
   assert.equal((await cli(['fire', json.id])).code, EXIT.failed)
   assert.equal((await cli(['waits'])).out, 'no open waits')
   const items = (await call('POST', '/deliveries/take', { sessionId: 'c1' })).json.items as { text: string }[]
-  assert.ok(items.some(item => /함께 온 내용:\n배포 완료/.test(item.text)))
+  assert.ok(items.some(item => /함께 온 내용:\n.+\n--- 메시지 시작 \(경계 [0-9a-f]{12}\) ---\n배포 완료\n/.test(item.text)))
 })
 
 // A call that answers each path from a table, one reply at a time; anything else is a 200 with nothing.

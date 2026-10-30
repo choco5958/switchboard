@@ -286,6 +286,8 @@ In Settings > Scheduled prompts, set a name, project, prompt and schedule. Inter
 
 Exit codes: 0 done, 1 failed, 2 usage error, 3 the session is waiting on a decision, 4 timed out (the session keeps working), 5 the bridge is down or there is no such session.
 
+The `switchboard` command does not hold the app's key, and another session can run it too. So what it sends (messages, wait payloads) reaches the session marked as input from a shell command, between fence lines, and never as the person's words. An answer given with `switchboard answer` is marked as coming from the shell as well. `switchboard answer` refuses to run inside an agent session (a shell with `CLAUDECODE` or `SWITCHBOARD_AGENT` set): answer in the app or from a terminal of your own.
+
 ```sh
 # Wake the session waiting on the test run when it finishes
 pnpm test; switchboard fire w3 "tests finished: exit code $?"
@@ -316,7 +318,10 @@ pnpm test; switchboard fire w3 "tests finished: exit code $?"
 - The scripts of the browser tools and screen comments run in a world of their own, apart from the page. The page's scripts cannot fake where a click lands or what is read, or save a comment in the person's place.
 - Before typing a message into another CLI's terminal, the app checks the screen. While the CLI shows a confirmation menu such as "run this command?", it waits, so the typing never picks an option there.
 - Answering permission asks, setting away status, setting up Telegram, scheduling prompts, changing settings and controlling sessions are for the app only. The app hands the bridge a key kept encrypted by the system keychain, on standard input, and these routes answer only that key. So a session with shell access that calls the bridge itself still cannot allow its own permission asks. A bridge a mod started first has no key, so the app starts it again once when it opens.
-- Answering decision questions, sending messages to sessions and firing waits are what the `switchboard` command uses, so any program of the same user can do them. When you give an agent shell access, block `~/.claude-ide` with the Claude Code sandbox.
+- Answering decision questions, sending messages to sessions and firing waits are what the `switchboard` command uses, so any program of the same user can do them. What comes in without the app's key reaches the session as collaborator input from a shell command, between fence lines, not as the person's instruction. When you give an agent shell access, block `~/.claude-ide` with the Claude Code sandbox.
+- Each session gets a token from the bridge when it first registers. Receiving its answers and messages, acknowledging them, reporting command results and its permission asks need that token or the app's key, so another program that knows a session's id cannot take its answers first or close its asks. Sessions started before an update keep working without one.
+- The state read without the app's key (`/state`) has secrets in permission asks masked, and leaves out terminal keys and session tokens.
+- A permission allow is stored with a seal made with the app's key. An allow another program writes into the database directly does not count without it: the terminal asks again.
 - A dev server command a session named through `open_in_ide` runs only after the app shows the command and its folder and you confirm, the first time and whenever it changes.
 - Remote approvals show the command first. Asks that cannot be shown whole (cut, hidden characters, edits in several places) are asked in the terminal only, and asks with masked values cannot be allowed from Telegram.
 - On Windows the bridge opens a port on 127.0.0.1 only and answers only requests carrying the token it makes at each start. Requests from web pages are refused.

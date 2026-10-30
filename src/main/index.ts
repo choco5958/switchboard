@@ -530,7 +530,11 @@ registerAccount(ipcMain, () => ccrPath())
 // Feature area: agent CLIs other than Claude Code. Their terminals, and answers typed into them.
 registerAgentTerms(ipcMain, call)
 const agentDelivery = startAgentDelivery({
-  target,
+  // The app's key on the delivery stream too: a session that took a token answers only it or the app.
+  target: () => {
+    const where = target()
+    return { ...where, headers: { ...where.headers, [APP_HEADER]: appKey } }
+  },
   call,
   terminal: typingTarget,
   // The CLI shows a menu of its own: what waits is not typed into it, and the person hears why.
