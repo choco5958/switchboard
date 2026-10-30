@@ -374,7 +374,7 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
   grid-area: rail; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); padding-top: var(--sp-2);
   background: var(--panel); border-right: var(--bw) solid var(--line);
 }
-.rail .badge-count { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 3px; line-height: 16px; }
+.icon-btn > .badge-count { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 3px; line-height: 16px; }
 
 /* Sidebar */
 .sidebar { grid-area: side; position: relative; overflow: auto; padding: var(--sp-3); background: var(--panel); border-right: var(--bw) solid var(--line); }
@@ -842,12 +842,13 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-4); }
 .gallery-grid .home-card, .gallery-grid .stat { margin-bottom: var(--sp-2); }
 .gallery-pane { padding: var(--sp-2); border: var(--bw) solid var(--line); border-radius: var(--r-md); background: var(--panel); }
-.gallery .browser-bar { margin-top: var(--sp-2); border: var(--bw) solid var(--line); }
 .gallery-tabs { height: 34px; border: var(--bw) solid var(--line); }
 .gallery-rail { flex-direction: row; width: fit-content; margin-top: var(--sp-2); padding: var(--sp-1); border: var(--bw) solid var(--line); }
-.gallery-menu { position: relative; height: 150px; }
-.gallery-menu .menu { top: 0; left: 0; }
-.gallery-dialog { position: relative; inset: auto; z-index: auto; padding: var(--sp-4); border-radius: var(--r-md); }
+.gallery-menu { position: relative; display: inline-flex; }
+.gallery-menu .menu { right: auto; left: 0; }
+.gallery-tabs + .gallery-tabs { margin-top: var(--sp-2); }
+.gallery .toasts { position: absolute; }
+.gallery .dialog.palette { margin-top: var(--sp-2); }
 .gallery .worklog-body.full { max-height: none; }
 .gallery-tokens { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-2); }
 .gallery-token { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); }
