@@ -74,4 +74,31 @@ describe('typing an answer', () => {
     const menu = 'Allow execution?\r\n● 1. Yes\r\n  2. No'
     expect(permissionMenu(await shown(`${menu}\x1b[2K\x1b[1A\x1b[2K\x1b[1A\x1b[2K\r> `))).toBe(false)
   })
+
+  // node-pty on Windows reports the spawn's terminal name as the process, never the CLI.
+  describe('on Windows', () => {
+    const win = { alive: true, foreground: 'xterm-256color', shell: 'powershell.exe', lastOutput: 0, platform: 'win32', expect: ['codex', 'node'] }
+
+    it("types into a CLI terminal although the foreground is only the terminal's name", async () => {
+      expect(typingBlock({ ...win, screen: await shown('PS C:\\work> codex\r\n\x1b[2J\x1b[H› Ask Codex') }, 1e9)).toBe(null)
+      expect(typingBlock({ ...win, screen: [] }, 1e9)).toBe(null)
+    })
+
+    it('still waits while the CLI prints or shows its menu', async () => {
+      expect(typingBlock({ ...win, lastOutput: 1e9 - 10, screen: ['› '] }, 1e9)).toBe('busy')
+      expect(typingBlock({ ...win, screen: await shown(' Allow execution?\r\n● 1. Yes\r\n  2. No') }, 1e9)).toBe('menu')
+    })
+
+    it("stops once the shell's prompt is back, and never types into a plain shell", async () => {
+      expect(typingBlock({ ...win, screen: await shown('Bye!\r\nPS C:\\work> ') }, 1e9)).toBe('gone')
+      expect(typingBlock({ ...win, screen: ['C:\\work>'] }, 1e9)).toBe('gone')
+      expect(typingBlock({ ...win, expect: [], screen: ['› '] }, 1e9)).toBe('gone')
+      expect(typingBlock({ ...win, alive: false, screen: ['› '] }, 1e9)).toBe('gone')
+    })
+
+    it('macOS and Linux still go by the foreground program', () => {
+      expect(typingBlock({ ...win, platform: 'darwin', screen: [] }, 1e9)).toBe('gone')
+      expect(typingBlock({ ...win, platform: 'linux', foreground: 'codex', shell: '/bin/bash', screen: [] }, 1e9)).toBe(null)
+    })
+  })
 })

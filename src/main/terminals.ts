@@ -45,9 +45,11 @@ export function typingTarget(key: string): TypingTarget | undefined {
     shell: term.shell,
     lastOutput: term.lastOutput,
     paste: term.paste,
+    // On Windows this is the terminal name, not a program: typingBlock goes by the screen there.
     foreground: term.alive ? term.proc.process : '',
     expect: term.bins,
     screen: term.screen.rows(),
+    platform: process.platform,
     write: data => {
       if (term.alive) term.proc.write(data)
     },

@@ -64,10 +64,30 @@ export function permissionMenu(rows: readonly string[]): boolean {
   return lines.some((line, i) => MARKED.test(line) && lines.slice(Math.max(0, i - 6), i + 7).filter((other, j) => j !== Math.min(i, 6) && OPTION.test(other)).length >= 1)
 }
 
+// The shell's own prompt on the last line: PowerShell's "PS C:\work>" or cmd's "C:\work>".
+// A prompt the person styled themselves (oh-my-posh and the like) is not recognised.
+const SHELL_PROMPT = /^(?:PS [^>]*|[A-Za-z]:\\[^>]*)>$/
+export function shellPromptShown(rows: readonly string[]): boolean {
+  const last = rows.map(line => line.trim()).filter(Boolean).at(-1)
+  return last !== undefined && SHELL_PROMPT.test(last)
+}
+
+// On Windows node-pty gives no foreground program: its `process` is the terminal name the
+// spawn was given ('xterm-256color'). There a terminal the app opened for a CLI (`expect` set)
+// counts as the CLI's until the screen shows the shell's prompt again, the CLI having quit.
+export function cliInFrontOn(platform: string | undefined, t: { foreground: string; shell: string; expect?: string[]; screen?: readonly string[] }): boolean {
+  if (platform === 'win32') return (t.expect?.length ?? 0) > 0 && !shellPromptShown(t.screen ?? [])
+  return cliInFront(t.foreground, t.shell, t.expect)
+}
+
 // Why typing waits now, or null when it may go: the CLI is not in front, still printing, or
-// showing a menu (permissionMenu). `screen`: the terminal's rows as they are.
-export function typingBlock(t: { alive: boolean; foreground: string; shell: string; lastOutput: number; expect?: string[]; screen?: readonly string[] }, now: number): 'gone' | 'busy' | 'menu' | null {
-  if (!t.alive || !cliInFront(t.foreground, t.shell, t.expect)) return 'gone'
+// showing a menu (permissionMenu). `screen`: the terminal's rows as they are. `platform`:
+// where the terminal runs (process.platform); left out, the foreground program decides.
+export function typingBlock(
+  t: { alive: boolean; foreground: string; shell: string; lastOutput: number; expect?: string[]; screen?: readonly string[]; platform?: string },
+  now: number,
+): 'gone' | 'busy' | 'menu' | null {
+  if (!t.alive || !cliInFrontOn(t.platform, t)) return 'gone'
   if (now - t.lastOutput < QUIET_MS) return 'busy'
   return permissionMenu(t.screen ?? []) ? 'menu' : null
 }
@@ -78,4 +98,15 @@ export function readyToType(t: Parameters<typeof typingBlock>[0], now: number): 
 
 // A terminal as the answer typing sees it, at the moment it asks.
 // `expect`: the program names of the terminal's CLI; when given, only they count as it.
-export type TypingTarget = { alive: boolean; shell: string; lastOutput: number; paste: boolean; foreground: string; expect?: string[]; screen?: readonly string[]; write: (data: string) => void }
+// `platform`: process.platform, which decides how the CLI in front is told (cliInFrontOn).
+export type TypingTarget = {
+  alive: boolean
+  shell: string
+  lastOutput: number
+  paste: boolean
+  foreground: string
+  expect?: string[]
+  screen?: readonly string[]
+  platform?: string
+  write: (data: string) => void
+}
