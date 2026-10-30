@@ -420,6 +420,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   addColumns('sessions', [['agent', "text not null default 'claude'"], ['terminal', "text not null default ''"]])
   // A scheduled prompt that switched itself off after ROUTINE_FAIL_LIMIT failed runs in a row.
   addColumns('routines', [['failed_off', 'integer not null default 0']])
+  // Which agent CLI a scheduled prompt goes to (agents.ts ids; routines before this were Claude Code's).
+  addColumns('routines', [['agent', "text not null default 'claude'"]])
   db.exec('update tasks set number = id where number is null')
   // Indexes for what runs on every delivery, timer tick and /state, made after the columns
   // above exist: without them each of these reads the whole table.
@@ -740,23 +742,23 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     }
     addRun(r, scheduledFor, 'waiting')
   }
-  const routineSession = (project: string): string | null => {
+  const routineSession = (project: string, agent: string): string | null => {
     const live = liveSessions()
-    const rows = db.prepare("select id from sessions where project = ? and agent = 'claude' order by last_seen desc").all(project) as { id: string }[]
+    const rows = db.prepare('select id from sessions where project = ? and agent = ? order by last_seen desc').all(project, agent) as { id: string }[]
     const ready = rows.filter(row => live.includes(row.id) && !limitedSession(row.id))
     return (ready.find(row => activity.get(row.id)?.state !== 'working') ?? ready[0])?.id ?? null
   }
   const assignRuns = () => {
     const waiting = db
-      .prepare("select rr.*, r.project, r.cwd, r.name from routine_runs rr join routines r on r.id = rr.routine_id where rr.status = 'waiting' order by rr.id")
-      .all() as (RunRow & { project: string; cwd: string; name: string })[]
+      .prepare("select rr.*, r.project, r.cwd, r.name, r.agent from routine_runs rr join routines r on r.id = rr.routine_id where rr.status = 'waiting' order by rr.id")
+      .all() as (RunRow & { project: string; cwd: string; name: string; agent: string })[]
     for (const run of waiting) {
-      const sessionId = routineSession(run.project)
+      const sessionId = routineSession(run.project, run.agent)
       if (!sessionId) {
         // Only the app opens terminals: with it away the run asks again on the next tick.
         if (!run.opened && watchers.size > 0) {
           db.prepare('update routine_runs set opened = 1 where id = ?').run(run.id)
-          for (const res of watchers) sseSend(res, 'change', { type: 'routine-open', cwd: run.cwd, project: run.project })
+          for (const res of watchers) sseSend(res, 'change', { type: 'routine-open', cwd: run.cwd, project: run.project, agent: run.agent })
         }
         continue
       }
@@ -2133,11 +2135,14 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (!name || !prompt || !project || !cwd) return send(res, 400, { error: say('bridge.needText') })
       const missed = str(body.missed) === 'run-once' ? 'run-once' : 'skip'
       const enabled = body.enabled === false ? 0 : 1
+      // An agents.ts id, or a custom CLI's: the app opens it by that id.
+      const agent = str(body.agent, 'claude').trim() || 'claude'
+      if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(agent)) return send(res, 400, { error: say('bridge.badAgent') })
       const next = nextRun(schedule, now())
       const id = Number(body.id) || 0
       if (id) {
-        const updated = db.prepare('update routines set project = ?, cwd = ?, name = ?, prompt = ?, schedule = ?, missed = ?, enabled = ?, next_at = ?, updated_at = ?, failed_off = 0 where id = ?').run(
-          project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), id,
+        const updated = db.prepare('update routines set project = ?, cwd = ?, name = ?, prompt = ?, schedule = ?, missed = ?, enabled = ?, next_at = ?, updated_at = ?, failed_off = 0, agent = ? where id = ?').run(
+          project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), agent, id,
         )
         // Deleted meanwhile (another window): nothing was saved.
         if (updated.changes === 0) return send(res, 404, { error: say('bridge.notFound') })
@@ -2146,8 +2151,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         ? id
         : Number(
             db
-              .prepare('insert into routines (project, cwd, name, prompt, schedule, missed, enabled, next_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-              .run(project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), now()).lastInsertRowid,
+              .prepare('insert into routines (project, cwd, name, prompt, schedule, missed, enabled, next_at, created_at, updated_at, agent) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+              .run(project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), now(), agent).lastInsertRowid,
           )
       changed('routines')
       return send(res, 200, db.prepare('select * from routines where id = ?').get(saved))

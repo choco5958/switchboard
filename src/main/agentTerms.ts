@@ -60,37 +60,44 @@ function writeFiles(launch: Launch): void {
   for (const f of launch.files) writeFileSync(f.path, f.content, { mode: 0o600 })
 }
 
-export function registerAgentTerms(ipcMain: IpcMain, call: (method: string, path: string, body?: unknown) => Promise<Reply>): void {
+type Call = (method: string, path: string, body?: unknown) => Promise<Reply>
+
+// A terminal running an agent CLI other than Claude Code (a preset or the person's own), with
+// the Switchboard MCP server attached to that run. The dock opens these, and so does a
+// scheduled prompt whose agent has no session to go to.
+export async function openAgentIn(call: Call, cwd: string, agentId: string, cols = 100, rows = 30): Promise<TermInfo | { error: string }> {
+  const preset = presetOf(String(agentId))
+  const state = preset ? null : await call('GET', '/state')
+  const custom = customAgents((state?.json.settings as Record<string, unknown> | undefined)?.[CUSTOM_AGENTS_KEY]).find(a => a.id === agentId)
+  if (!preset && !custom) return { error: t('agents.unknown', { id: String(agentId) }) }
+  const found = await detect()
+  if (preset && !found.found[preset.bin]) return { error: t('agents.notInstalled', { label: preset.label, install: preset.install }) }
+  const needsServer = preset ? preset.mcp !== null : custom!.mcp !== 'none'
+  const node = mcpNode(app.isPackaged, process.platform, found.node, nodeLauncher(homedir()))
+  if (needsServer && !node) return { error: t('agents.noNode') }
+  const id = preset?.id ?? custom!.id
+  return openTerminal({
+    cwd,
+    cols,
+    rows,
+    title: preset ? preset.bin : custom!.name,
+    agent: id,
+    // npm-installed CLIs run as node.
+    bins: [preset ? preset.bin : (custom!.command.trim().split(/\s+/)[0] ?? ''), 'node'].filter(Boolean),
+    prepare: key => {
+      const server = serverFor(node ?? 'node', join(nodeRoot(), 'mcp', 'server.ts'), id, key, process.env.CLAUDE_IDE_SOCKET)
+      const configFile = join(DIR, `${key}-${id}.json`)
+      const launch = preset ? presetLaunch(preset, server, configFile) : customLaunch(custom!, server, configFile)
+      writeFiles(launch)
+      return { env: launch.env, line: launch.line }
+    },
+  })
+}
+
+export function registerAgentTerms(ipcMain: IpcMain, call: Call): void {
   pruneFiles()
 
   ipcMain.handle('agents:detect', (_e, force: boolean) => detect(force === true))
 
-  ipcMain.handle('term:openAgent', async (_e, cwd: string, agentId: string, cols: number, rows: number): Promise<TermInfo | { error: string }> => {
-    const preset = presetOf(String(agentId))
-    const state = preset ? null : await call('GET', '/state')
-    const custom = customAgents((state?.json.settings as Record<string, unknown> | undefined)?.[CUSTOM_AGENTS_KEY]).find(a => a.id === agentId)
-    if (!preset && !custom) return { error: t('agents.unknown', { id: String(agentId) }) }
-    const found = await detect()
-    if (preset && !found.found[preset.bin]) return { error: t('agents.notInstalled', { label: preset.label, install: preset.install }) }
-    const needsServer = preset ? preset.mcp !== null : custom!.mcp !== 'none'
-    const node = mcpNode(app.isPackaged, process.platform, found.node, nodeLauncher(homedir()))
-    if (needsServer && !node) return { error: t('agents.noNode') }
-    const id = preset?.id ?? custom!.id
-    return openTerminal({
-      cwd,
-      cols,
-      rows,
-      title: preset ? preset.bin : custom!.name,
-      agent: id,
-      // npm-installed CLIs run as node.
-      bins: [preset ? preset.bin : (custom!.command.trim().split(/\s+/)[0] ?? ''), 'node'].filter(Boolean),
-      prepare: key => {
-        const server = serverFor(node ?? 'node', join(nodeRoot(), 'mcp', 'server.ts'), id, key, process.env.CLAUDE_IDE_SOCKET)
-        const configFile = join(DIR, `${key}-${id}.json`)
-        const launch = preset ? presetLaunch(preset, server, configFile) : customLaunch(custom!, server, configFile)
-        writeFiles(launch)
-        return { env: launch.env, line: launch.line }
-      },
-    })
-  })
+  ipcMain.handle('term:openAgent', (_e, cwd: string, agentId: string, cols: number, rows: number) => openAgentIn(call, cwd, agentId, cols, rows))
 }

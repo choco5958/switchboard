@@ -13,7 +13,7 @@ import { registerDevServers } from './devservers'
 import { BROWSER_PARTITION, BROWSER_WORLD, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
 import { onTerminalsChange, openClaudeIn, registerTerminals, typingTarget } from './terminals'
-import { registerAgentTerms } from './agentTerms'
+import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
 import { buildId, copyRuntime, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
@@ -381,9 +381,12 @@ function watch(): void {
       else app.dock?.setBadge('')
     },
     onEvent: event => {
-      // A scheduled prompt found no Claude session of its project: start one there.
-      const change = event as { type?: string; cwd?: string }
-      if (change.type === 'routine-open' && change.cwd) openClaudeIn(change.cwd)
+      // A scheduled prompt found no session of its agent in its project: start one there.
+      const change = event as { type?: string; cwd?: string; agent?: string }
+      if (change.type === 'routine-open' && change.cwd) {
+        if (!change.agent || change.agent === 'claude') openClaudeIn(change.cwd)
+        else void openAgentIn(call, change.cwd, change.agent).then(opened => 'error' in opened && console.error('routine terminal:', opened.error))
+      }
       send('bridge:change', event)
       scheduleScan()
       agentDelivery.onBridgeEvent(event)

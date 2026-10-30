@@ -22,8 +22,8 @@ test('the default session: the chosen one while sendable, else the newest sendab
 
 test('where a message goes, naming the same folder when it is the target\'s repo', () => {
   const target = makeTarget({ name: 'x', description: '', repo: '/p/app/', command: 'c', url: '127.0.0.1:1' }, 't')
-  expect(whereTo(s('a1234567890', 'app'), target)).toBe('이 레포의 Claude Code 세션 a1234567 (같은 폴더)')
-  expect(whereTo(s('b1234567890', 'billing'))).toBe('billing의 Claude Code 세션 b1234567')
+  expect(whereTo(s('a1234567890', 'app'), target)).toBe('이 레포의 세션 a1234567 (같은 폴더)')
+  expect(whereTo(s('b1234567890', 'billing'))).toBe('billing의 세션 b1234567')
 })
 
 test('load failures in words', () => {

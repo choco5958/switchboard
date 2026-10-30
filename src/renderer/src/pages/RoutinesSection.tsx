@@ -1,17 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Routine, RoutineRun, RoutineSchedule } from '../../../shared/types'
 import type { ProjectInfo } from '../../../shared/projects'
 import { t, type Key } from '../../../shared/i18n'
 import { useToast } from '../parts'
 import { clock } from '../model'
 import { ROUTINE_FAIL_LIMIT } from '../../../../bridge/schedule.ts'
+import { agentLabel, routineAgents, type CustomAgent } from '../../../shared/agents'
 
 // Settings: scheduled prompts (bridge/schedule.ts). Each goes to a connected Claude Code
 // session of its project at its time; with none, the app opens one there.
 
-type Draft = { id: number; name: string; project: string; cwd: string; prompt: string; kind: RoutineSchedule['kind']; time: string; every: string; at: string; runMissed: boolean }
+type Draft = { id: number; name: string; project: string; cwd: string; agent: string; prompt: string; kind: RoutineSchedule['kind']; time: string; every: string; at: string; runMissed: boolean }
 
-const EMPTY: Draft = { id: 0, name: '', project: '', cwd: '', prompt: '', kind: 'daily', time: '09:00', every: '60', at: '', runMissed: false }
+const EMPTY: Draft = { id: 0, name: '', project: '', cwd: '', agent: 'claude', prompt: '', kind: 'daily', time: '09:00', every: '60', at: '', runMissed: false }
 
 const STATUS_KEYS: Record<RoutineRun['status'], Key> = {
   waiting: 'routines.status.waiting',
@@ -46,6 +47,7 @@ function draftOf(routine: Routine): Draft {
     name: routine.name,
     project: routine.project,
     cwd: routine.cwd,
+    agent: routine.agent || 'claude',
     prompt: routine.prompt,
     kind: s?.kind ?? 'daily',
     time: s && 'time' in s ? s.time : '09:00',
@@ -55,7 +57,12 @@ function draftOf(routine: Routine): Draft {
   }
 }
 
-export function RoutinesSection({ routines, runs, projects }: { routines: Routine[]; runs: RoutineRun[]; projects: ProjectInfo[] }) {
+export function RoutinesSection({ routines, runs, projects, customs }: { routines: Routine[]; runs: RoutineRun[]; projects: ProjectInfo[]; customs: CustomAgent[] }) {
+  // Which agent CLIs are installed, for the agent a routine goes to.
+  const [found, setFound] = useState<Record<string, unknown> | null>(null)
+  useEffect(() => {
+    void window.ide.detectAgents?.().then(detected => setFound(detected.found))
+  }, [])
   const toast = useToast()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
@@ -82,6 +89,7 @@ export function RoutinesSection({ routines, runs, projects }: { routines: Routin
       name: draft.name,
       prompt: draft.prompt,
       project: draft.project,
+      agent: draft.agent,
       cwd: project?.cwd ?? (draft.project === own ? draft.cwd : ''),
       schedule,
       missed: draft.runMissed ? 'run-once' : 'skip',
@@ -106,7 +114,8 @@ export function RoutinesSection({ routines, runs, projects }: { routines: Routin
             <div className="routine-head">
               <strong>{r.name}</strong>
               <span className="quiet small">
-                {r.project}, {scheduleLabel(parse(r))}
+                {r.project}
+                {r.agent && r.agent !== 'claude' ? ` (${agentLabel(r.agent, customs)})` : ''}, {scheduleLabel(parse(r))}
                 {r.enabled && r.next_at ? `, ${t('routines.next', { at: clock(r.next_at) })}` : ''}
               </span>
               <span className="spacer" />
@@ -153,6 +162,16 @@ export function RoutinesSection({ routines, runs, projects }: { routines: Routin
               </option>
             ))}
           </select>
+          <label className="small">
+            {t('routines.agent')}{' '}
+            <select className="session-select inline" value={draft.agent} onChange={e => set({ agent: e.target.value })}>
+              {routineAgents(found, customs, draft.agent).map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <textarea className="memo" placeholder={t('routines.prompt')} value={draft.prompt} onChange={e => set({ prompt: e.target.value })} />
           <div className="routine-when">
             <select className="session-select inline" value={draft.kind} onChange={e => set({ kind: e.target.value as Draft['kind'] })}>

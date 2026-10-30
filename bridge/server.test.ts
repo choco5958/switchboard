@@ -1026,6 +1026,27 @@ describe('scheduled prompts and waits', () => {
     return req
   }
 
+  test('a routine goes to a session of the agent it names, never to another agent in the project', async () => {
+    assert.equal((await call('POST', '/routines', { name: 'x', prompt: 'y', project: 'mixed', cwd: '/w/mixed', agent: 'bad agent!', schedule: { kind: 'daily', time: '09:00' } })).status, 400)
+    const { json: r } = await call('POST', '/routines', { name: '코덱스 점검', prompt: '테스트를 돌려 줘', project: 'mixed', cwd: '/w/mixed', agent: 'codex', schedule: { kind: 'daily', time: '09:00' } })
+    assert.equal(r.agent, 'codex')
+    // A Claude Code session of the same project is not the one.
+    await call('POST', '/sessions', { id: 'mx-claude', cwd: '/w/mixed' })
+    const claude = open('mx-claude')
+    await call('POST', `/routines/${r.id}/run`)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.deepEqual((await runs(r.id)).map(run => run.status), ['waiting'])
+    await call('POST', '/sessions', { id: 'mx-codex', cwd: '/w/mixed', agent: 'codex' })
+    const codex = open('mx-codex')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const [run] = await runs(r.id)
+    assert.equal(run!.status, 'sent')
+    assert.equal(((await call('GET', '/state')).json.routineRuns as { routine_id: number; session_id: string }[]).find(one => one.routine_id === r.id)!.session_id, 'mx-codex')
+    claude.destroy()
+    codex.destroy()
+    await call('POST', `/routines/${r.id}/delete`)
+  })
+
   test('a run waits for a session of its project, goes in, and ends quiet', async () => {
     assert.equal((await call('POST', '/routines', { name: 'x', prompt: 'y', project: 'p', cwd: '/w', schedule: { kind: 'interval', every: 1 } })).status, 400)
     const { json: r } = await call('POST', '/routines', {

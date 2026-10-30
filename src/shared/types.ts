@@ -271,6 +271,7 @@ export type Routine = {
   created_at: number
   updated_at: number
   failed_off?: number // 1 when it switched itself off after ROUTINE_FAIL_LIMIT failed runs (bridge/schedule.ts)
+  agent?: string // the agent CLI it goes to (agents.ts id); 'claude' when left out
 }
 
 export type RoutineRun = {

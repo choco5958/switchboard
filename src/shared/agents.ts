@@ -281,6 +281,19 @@ export function agentLabel(kind: string | undefined, customs: readonly CustomAge
   return presetOf(kind)?.label ?? customs.find(c => c.id === kind)?.name ?? kind
 }
 
+// The agents a scheduled prompt can go to: Claude Code, and every installed or added CLI that
+// gets the Switchboard server (a session of its own, which the prompt is delivered to). `found`:
+// which commands are installed (agents:detect), null while unknown. The one already chosen stays.
+export function routineAgents(found: Record<string, unknown> | null, customs: readonly CustomAgent[], chosen?: string): { id: string; label: string }[] {
+  const list = [
+    { id: 'claude', label: 'Claude Code' },
+    ...PRESETS.filter(p => p.mcp !== null && found?.[p.bin]).map(p => ({ id: p.id, label: p.label })),
+    ...customs.filter(c => c.mcp !== 'none').map(c => ({ id: c.id, label: c.name })),
+  ]
+  if (chosen && !list.some(a => a.id === chosen)) list.push({ id: chosen, label: agentLabel(chosen, customs) })
+  return list
+}
+
 export function isClaude(kind: string | undefined): boolean {
   return !kind || kind === 'claude'
 }

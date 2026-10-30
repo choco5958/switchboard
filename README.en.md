@@ -63,7 +63,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 ## Quick start
 
 1. Get the installer for your system from [Releases](https://github.com/choco5958/switchboard/releases/latest) and open it. Details are under [Install](#install).
-2. Open a session with `+ Claude` in the dock at the bottom and give it work as usual.
+2. Open a session with an agent button in the dock at the bottom, such as `+ Claude`, `+ Codex` or `+ Gemini`, and give it work as usual.
 3. When a decision comes in, answer with a key. The session carries on from there.
 
 ## Features
@@ -89,7 +89,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 - **Answer on Telegram**: when the app is closed, the screen is locked, or there has been no input for more than 5 minutes, decision questions go to your own Telegram bot. Answer with a button or a reply.
 - **Permission relay**: in the same situations, Claude Code's permission asks also come to the app and to Telegram. Allowing from Telegram takes a second tap. At your desk, the terminal asks as usual.
 - **Phone browser**: from a phone on the same Wi-Fi (or Tailscale), answer decisions, allow or deny permission asks, see tasks and write to sessions. There is nothing to install; add it to the home screen to open it like an app. Opened over Tailscale HTTPS, it also notifies you of new questions.
-- **Scheduled prompts**: daily, weekdays, every N minutes, or once, a prompt goes to a project's session. If no session is connected, the app opens a `+ Claude` terminal. Runs with nothing to report send no notification.
+- **Scheduled prompts**: daily, weekdays, every N minutes, or once, a prompt goes to a project's session. Each routine picks the agent that gets it; with no session of that agent, the app opens that agent's terminal. Runs with nothing to report send no notification.
 
 ### Fixing what you see (live debugging)
 
@@ -100,7 +100,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 
 ### Terminals and the shell
 
-- **Built-in terminals**: `+ Claude` in the dock at the bottom opens Claude Code with the mod connected; `+ Shell` opens a plain shell.
+- **Built-in terminals**: `+ Claude` in the dock at the bottom opens Claude Code with the mod connected, buttons such as `+ Codex` or `+ Gemini` open that CLI with the connection server, and `+ Shell` opens a plain shell.
 - **Other coding CLIs**: Codex, Gemini CLI, Qwen Code, GitHub Copilot CLI, OpenCode, Goose and Amp also connect to the decision queue and task reports. The app attaches its MCP server through launch options, so each CLI's config files stay untouched. Cursor CLI, Grok, Kimi and Crush open as plain terminals, and any other CLI can be registered in Settings. Only installed CLIs appear in the dock.
 - **`switchboard` command**: hand a session work from a shell or script and get the result back, with the outcome also reported as an exit code.
 - **Session-side pane**: type `/switchboard` in Claude Code to see this session's task flow and open decisions in a side pane.
@@ -114,6 +114,21 @@ When a session needs a decision from you, it posts the question to a decision qu
 - With Orca installed, each node can get its own worktree, and a Linear issue can start a task.
 
 
+
+## Support by agent
+
+Claude Code connects through the mod; other CLIs connect through the connection server (MCP) the app attaches to that run only. Both get the same tools, so most features work whichever agent you use.
+
+| Feature | Claude Code | CLIs with the connection server | CLIs opened as plain terminals |
+| --- | --- | --- | --- |
+| Task and plan reports, decision questions, asking other sessions, waits, browser tools | Yes | Yes | No |
+| Receiving answers and messages | The mod puts them in the session | Typed into the app terminal; a session started outside the app fetches them with `check_answers` | No |
+| Scheduled prompts | Yes | Yes (with no session, the app opens that CLI) | No |
+| Relaying permission asks while you are away | Yes | Not yet | No |
+| Usage meters, session-side pane (`/switchboard`), state put back after compaction | Yes | No | No |
+
+- CLIs with the connection server: Codex, Gemini CLI, Qwen Code, GitHub Copilot CLI, OpenCode, Goose, Amp, and CLIs you add in Settings with a connection template
+- CLIs opened as plain terminals: Cursor CLI, Grok, Kimi, Crush
 
 ## Screenshots
 
@@ -206,8 +221,8 @@ Sessions started after the install connect to the bridge. If the bridge is not r
 
 ## Usage
 
-1. Start the app and click `+ Claude` in the dock. The first time, choose a project folder with `+ Project` at the top left.
-2. Give Claude Code work as usual. The tool descriptions say when to use them, so the session posts its task on its own and asks when it needs a decision.
+1. Start the app and click `+ Claude` or another agent button in the dock. The first time, choose a project folder with `+ Project` at the top left.
+2. Give the agent work as usual. The tool descriptions say when to use them, so the session posts its task on its own and asks when it needs a decision.
 3. A number on the question-mark icon on the left means a decision or a permission ask is waiting; permission asks also show on the home screen. Open it and answer with a key.
 
 ### Keys

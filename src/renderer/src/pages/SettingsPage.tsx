@@ -9,6 +9,7 @@ import { MobileSection } from './MobileSection'
 import type { Routine, RoutineRun } from '../../../shared/types'
 import type { ProjectInfo } from '../../../shared/projects'
 import { saveSetting } from '../settings'
+import { CUSTOM_AGENTS_KEY, customAgents } from '../../../shared/agents'
 
 const SECTIONS: [string, Key][] = [
   ['settings-lang', 'settings.language'],
@@ -158,7 +159,7 @@ export function SettingsPage({
         {error && <span className="error small">{error}</span>}
       </div>
       <AgentSettings settings={settings} />
-      <RoutinesSection routines={routines} runs={runs} projects={projects} />
+      <RoutinesSection routines={routines} runs={runs} projects={projects} customs={customAgents(settings[CUSTOM_AGENTS_KEY])} />
       <TelegramSection />
       <MobileSection />
       <section id="settings-dev" className="settings-row settings-dev">
