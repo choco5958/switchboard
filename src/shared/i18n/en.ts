@@ -846,6 +846,8 @@ export const en: Dict = {
   'agents.intro': "Coding CLIs such as Claude Code, Codex and Gemini open from the dock below. Claude Code connects through the mod, the others through the Switchboard connection server (MCP) attached to that run only; either way they post tasks, plans and questions, and answers are typed into the terminal. The CLI's own config files are left alone. Usage meters and permission relay work with Claude Code only for now.",
   'agents.showOthers': 'Show other agent buttons',
   'agents.showOthersHint': 'On by default. Off: the dock shows only Claude and shell buttons. On: buttons for installed CLIs and the ones you added appear.',
+  'agents.trustFolders': 'Answer folder trust ahead',
+  'agents.trustFoldersHint': 'For a folder where the app first opens Codex, Copilot or Cursor, records yes to that CLI\'s "trust this folder?" question ahead of time. A trust question on screen would stop the answers and scheduled prompts the app types in. The CLI\'s approval and sandbox settings stay as they are.',
   'agents.looking': 'Looking',
   'agents.installed': 'Installed',
   'agents.missing': 'Not installed',

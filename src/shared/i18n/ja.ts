@@ -846,6 +846,8 @@ export const ja: Dict = {
   'agents.intro': 'Claude Code、Codex、Gemini などのコーディング CLI を下のドックから開きます。Claude Code は mod で、ほかの CLI はその実行だけに付ける Switchboard の接続サーバー (MCP) で、タスク、計画、質問を送ります。回答はそのターミナルに入力されます。CLI 自体の設定ファイルは変更しません。使用量のメーターと権限確認の中継は、いまは Claude Code だけで使えます。',
   'agents.showOthers': '他のエージェントのボタンを表示',
   'agents.showOthersHint': '初期設定はオンです。オフの間、ドックには Claude とシェルのボタンだけが表示されます。オンにすると、インストール済みの CLI と追加した CLI のボタンが表示されます。',
+  'agents.trustFolders': 'フォルダーの信頼確認を先に済ませる',
+  'agents.trustFoldersHint': 'アプリで Codex、Copilot、Cursor を初めて開くフォルダーについて、その CLI の「このフォルダーを信頼しますか?」に先にはいと記録します。信頼の確認が画面に出ていると、アプリが入力する回答や予約プロンプトがそこで止まるためです。CLI の承認やサンドボックスの設定は変えません。',
   'agents.looking': '検索中',
   'agents.installed': 'インストール済み',
   'agents.missing': '未インストール',

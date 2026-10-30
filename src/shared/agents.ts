@@ -189,6 +189,10 @@ export const CUSTOM_AGENTS_KEY = 'customAgents'
 export const SHOW_OTHER_AGENTS_KEY = 'showOtherAgents'
 export const showOtherAgents = (value: unknown): boolean => value !== false
 
+// Settings: record folder trust before Codex, Copilot or Cursor opens there (src/main/agentTrust.ts). On unless turned off.
+export const TRUST_FOLDERS_KEY = 'trustFolders'
+export const trustFolders = (value: unknown): boolean => value !== false
+
 export const PLACEHOLDERS = ['server', 'command', 'args', 'args_json', 'config_file', 'config_json', 'name'] as const
 
 // Every placeholder becomes one or more shell words, already quoted. {server} is the

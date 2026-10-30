@@ -101,6 +101,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 ### Terminals and the shell
 
 - **Built-in terminals**: the dock's `+` button opens the agent you opened last. The ▾ beside it lists the installed agents with how each connects (mod, connection server, terminal only), and you can type to find one. `+ Shell` opens a plain shell.
+- **No stalls**: the Mac does not sleep while an agent is working. For a folder where Codex, Copilot or Cursor opens for the first time, the app records yes to that CLI's folder trust question ahead, so answers and scheduled prompts it types in are not stopped by it (can be turned off in Settings).
 - **Other coding CLIs**: Codex, Gemini CLI, Qwen Code, GitHub Copilot CLI, OpenCode, Goose and Amp also connect to the decision queue and task reports. The app attaches its MCP server through launch options, so each CLI's config files stay untouched. Cursor CLI, Grok, Kimi and Crush open as plain terminals, and any other CLI can be registered in Settings. Only installed CLIs appear in the dock.
 - **`switchboard` command**: hand a session work from a shell or script and get the result back, with the outcome also reported as an exit code.
 - **Session-side pane**: type `/switchboard` in Claude Code to see this session's task flow and open decisions in a side pane.

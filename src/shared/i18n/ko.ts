@@ -845,6 +845,8 @@ export const ko = {
   'agents.intro': 'Claude Code, Codex, Gemini 같은 코딩 CLI를 아래 도크에서 엽니다. Claude Code는 mod로, 다른 CLI는 그 실행에만 붙이는 Switchboard 연결 서버(MCP)로 작업, 계획, 질문을 올리고, 답은 그 터미널에 입력됩니다. CLI 자체의 설정 파일은 고치지 않습니다. 사용량 막대와 권한 확인 중계는 지금 Claude Code에서만 됩니다.',
   'agents.showOthers': '다른 에이전트 버튼 보이기',
   'agents.showOthersHint': '기본은 켜짐입니다. 끄면 독에는 Claude와 셸 버튼만 보입니다. 켜면 설치된 CLI와 직접 추가한 CLI 버튼이 나옵니다.',
+  'agents.trustFolders': '폴더 신뢰 질문 미리 처리',
+  'agents.trustFoldersHint': 'Codex, Copilot, Cursor를 앱에서 처음 여는 폴더에 대해, 그 CLI의 "이 폴더를 신뢰할까요?"에 미리 예라고 기록해 둡니다. 신뢰 질문이 화면에 떠 있으면 앱이 입력하는 답과 예약 프롬프트가 거기서 멈추기 때문입니다. CLI의 승인과 샌드박스 설정은 바꾸지 않습니다.',
   'agents.looking': '찾는 중',
   'agents.installed': '설치됨',
   'agents.missing': '설치되지 않음',

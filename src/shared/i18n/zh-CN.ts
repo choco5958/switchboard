@@ -846,6 +846,8 @@ export const zhCN: Dict = {
   'agents.intro': 'Claude Code、Codex、Gemini 等编码 CLI 都从下方的停靠栏打开。Claude Code 通过 mod 连接，其他 CLI 通过仅在该次运行中挂上的 Switchboard 连接服务器 (MCP) 连接，用来提交任务、计划和问题，回答会输入到它的终端。不会修改 CLI 自己的配置文件。用量条和权限确认中转目前只支持 Claude Code。',
   'agents.showOthers': '显示其他代理按钮',
   'agents.showOthersHint': '默认开启。关闭时，停靠栏只显示 Claude 和 shell 按钮。开启后，会显示已安装和自行添加的 CLI 按钮。',
+  'agents.trustFolders': '预先处理文件夹信任确认',
+  'agents.trustFoldersHint': '对于应用首次打开 Codex、Copilot、Cursor 的文件夹，预先在该 CLI 中记录"信任此文件夹"。屏幕上停着信任确认时，应用输入的回答和定时提示会停在那里。不会更改 CLI 的批准和沙箱设置。',
   'agents.looking': '查找中',
   'agents.installed': '已安装',
   'agents.missing': '未安装',

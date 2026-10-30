@@ -101,6 +101,7 @@ Claude Code、Codex、Gemini CLI 会话会向你请求决定、彼此委派工�
 ### 终端与 Shell
 
 - **内置终端**: 停靠栏的 `+` 按钮会打开上次使用的代理。点旁边的 ▾ 会列出已安装的代理及其连接方式 (mod、连接服务器、仅终端)，可以输入名称查找。`+ 终端` 打开普通 Shell。
+- **不中断**: 代理工作期间 Mac 不会睡眠。首次打开 Codex、Copilot、Cursor 的文件夹，会预先在该 CLI 的文件夹信任确认中记录"是"，应用输入的回答和定时提示不会卡在信任确认上 (可在设置中关闭)。
 - **其他编码 CLI**: Codex、Gemini CLI、Qwen Code、GitHub Copilot CLI、OpenCode、Goose、Amp 也能接入待决定队列和任务汇报。应用通过启动参数挂上 MCP 服务器，不会改动各 CLI 的配置文件。Cursor CLI、Grok、Kimi、Crush 仅作为终端打开，其他 CLI 可在设置中登记命令。停靠栏只显示已安装的 CLI。
 - **`switchboard` 命令**: 在 Shell 或脚本中把工作交给会话并取回结果，结果也可以通过退出码区分。
 - **会话侧面板**: 在 Claude Code 中输入 `/switchboard`，即可在侧边面板查看该会话的工作流程和待决定。

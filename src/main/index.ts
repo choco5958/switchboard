@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain as rawIpcMain, nativeImage, Notification, powerMonitor, session, shell, webContents } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain as rawIpcMain, nativeImage, Notification, powerMonitor, powerSaveBlocker, session, shell, webContents } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
@@ -12,6 +12,7 @@ import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
 import { BROWSER_PARTITION, BROWSER_WORLD, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
+import { anyoneWorking } from './awake'
 import { onTerminalsChange, openClaudeIn, registerTerminals, terminalStates, typingTarget } from './terminals'
 import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
@@ -227,9 +228,21 @@ function focusWindow(afterLoad?: () => void): void {
   win.focus()
 }
 
+// The power save blocker held while an agent works (awake.ts), or null.
+let awakeBlocker: number | null = null
+function keepAwake(state: BridgeState): void {
+  const working = anyoneWorking(state.activity ?? {}, state.live ?? [], Date.now())
+  if (working && awakeBlocker === null) awakeBlocker = powerSaveBlocker.start('prevent-app-suspension')
+  else if (!working && awakeBlocker !== null) {
+    powerSaveBlocker.stop(awakeBlocker)
+    awakeBlocker = null
+  }
+}
+
 async function scanQueue(): Promise<void> {
   const reply = await call('GET', '/state')
   if (!reply.ok) return
+  keepAwake(reply.json as unknown as BridgeState)
   notifyStalled(reply.json as unknown as BridgeState)
   notifyReleased(reply.json as unknown as BridgeState)
   notifyRuns(reply.json as unknown as BridgeState)

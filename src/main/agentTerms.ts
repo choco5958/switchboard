@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { chmodSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { CUSTOM_AGENTS_KEY, PRESETS, customAgents, customLaunch, presetLaunch, presetOf, type Launch } from '../shared/agents'
+import { CUSTOM_AGENTS_KEY, PRESETS, TRUST_FOLDERS_KEY, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
@@ -12,6 +12,7 @@ import { openTerminal } from './terminals'
 import { nodeRoot } from './appRoot'
 import { nodeLauncher } from './runtime'
 import { loginShell } from './shell'
+import { trustFolder } from './agentTrust'
 
 // Terminals for agent CLIs other than Claude Code: which ones are installed (on the
 // login-shell PATH the terminals get) and opening one with the Switchboard MCP server.
@@ -62,13 +63,17 @@ function writeFiles(launch: Launch): void {
 
 type Call = (method: string, path: string, body?: unknown) => Promise<Reply>
 
+const TRUSTED_AHEAD = ['codex', 'copilot', 'cursor']
+
 // A terminal running an agent CLI other than Claude Code (a preset or the person's own), with
 // the Switchboard MCP server attached to that run. The dock opens these, and so does a
 // scheduled prompt whose agent has no session to go to.
 export async function openAgentIn(call: Call, cwd: string, agentId: string, cols = 100, rows = 30): Promise<TermInfo | { error: string }> {
   const preset = presetOf(String(agentId))
-  const state = preset ? null : await call('GET', '/state')
-  const custom = customAgents((state?.json.settings as Record<string, unknown> | undefined)?.[CUSTOM_AGENTS_KEY]).find(a => a.id === agentId)
+  // The settings matter for a custom CLI, and for the CLIs whose folder trust the app records.
+  const state = !preset || TRUSTED_AHEAD.includes(preset.id) ? await call('GET', '/state') : null
+  const settings = state?.json.settings as Record<string, unknown> | undefined
+  const custom = customAgents(settings?.[CUSTOM_AGENTS_KEY]).find(a => a.id === agentId)
   if (!preset && !custom) return { error: t('agents.unknown', { id: String(agentId) }) }
   const found = await detect()
   if (preset && !found.found[preset.bin]) return { error: t('agents.notInstalled', { label: preset.label, install: preset.install }) }
@@ -76,6 +81,8 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   const node = mcpNode(app.isPackaged, process.platform, found.node, nodeLauncher(homedir()))
   if (needsServer && !node) return { error: t('agents.noNode') }
   const id = preset?.id ?? custom!.id
+  // A trust menu on screen would hold back what the app types in (agentTrust.ts).
+  if (preset && TRUSTED_AHEAD.includes(preset.id) && trustFolders(settings?.[TRUST_FOLDERS_KEY])) trustFolder(preset.id, cwd.startsWith('~/') ? homedir() + cwd.slice(1) : cwd, homedir())
   return openTerminal({
     cwd,
     cols,

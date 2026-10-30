@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AgentDetect } from '../../../shared/types'
-import { CUSTOM_AGENTS_KEY, PLACEHOLDERS, PRESETS, SHOW_OTHER_AGENTS_KEY, customAgents, showOtherAgents, validateCustom } from '../../../shared/agents'
+import { CUSTOM_AGENTS_KEY, PLACEHOLDERS, PRESETS, SHOW_OTHER_AGENTS_KEY, TRUST_FOLDERS_KEY, customAgents, showOtherAgents, trustFolders, validateCustom } from '../../../shared/agents'
 import { AGENTS_FOUND } from '../Dock'
 import { useToast } from '../parts'
 import { t } from '../../../shared/i18n'
@@ -13,6 +13,7 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
   const toast = useToast()
   const customs = customAgents(settings[CUSTOM_AGENTS_KEY])
   const showOthers = showOtherAgents(settings[SHOW_OTHER_AGENTS_KEY])
+  const trusting = trustFolders(settings[TRUST_FOLDERS_KEY])
   const [found, setFound] = useState<AgentDetect | null>(null)
   const [looking, setLooking] = useState(false)
   const [form, setForm] = useState({ name: '', command: '', mcp: '' })
@@ -41,6 +42,11 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 
+  const toggleTrust = async () => {
+    const reply = await saveSetting(TRUST_FOLDERS_KEY, trusting ? false : null)
+    if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
+  }
+
   const add = async () => {
     const checked = validateCustom(form, customs)
     if ('error' in checked) return setError(checked.error)
@@ -59,6 +65,11 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
         <input type="checkbox" checked={showOthers} onChange={() => void toggleOthers()} />
         {t('agents.showOthers')}
         <span className="quiet small">{t('agents.showOthersHint')}</span>
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={trusting} onChange={() => void toggleTrust()} />
+        {t('agents.trustFolders')}
+        <span className="quiet small">{t('agents.trustFoldersHint')}</span>
       </label>
       <ul className="agent-list">
         {PRESETS.map(p => {
