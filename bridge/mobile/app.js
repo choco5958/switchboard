@@ -15,7 +15,7 @@ let pairing = null
 let offset = 0
 let view = null
 let tab = 'decisions'
-let state = 'loading' // loading | unpaired | revoked | offline | ready
+let state = 'loading' // loading | unpaired | revoked | weak | offline | ready
 let notice = null
 let noticeTimer = 0
 let armed = null
@@ -36,15 +36,16 @@ const FALLBACK = {
   homeNeedsHttps: 'A home screen app on iPhone connects only through the Tailscale HTTPS address. On the same Wi-Fi, open the QR link in Safari and use it there.',
   revoked: 'This phone was disconnected. Show a new QR code in the app to connect again.',
   offline: 'Cannot reach the computer. Check that it is on and on the same network.',
-  pairAgain: 'This phone was connected with a QR code for a Wi-Fi (HTTP) address, so it cannot allow permission asks or write to sessions. To do both, show a new QR code for the Tailscale HTTPS address in the app and scan it.',
+  pairAgain: 'This phone was connected through an address without HTTPS (Wi-Fi or a Tailscale IP), or before an update, so it is not heard through this address and cannot allow permission asks, write to sessions or add a memo. Show a new QR code for the Tailscale HTTPS address in the app and scan it.',
 }
 const say = (key, vars = {}) => String(words[`mobile.page.${key}`] ?? FALLBACK[key] ?? '').replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ''))
 
-// Over Tailscale (HTTPS, or a 100.64.0.0/10 address) the page cannot have been swapped on the
-// way, and only then may it allow a permission ask or write to a session (bridge/mobile.ts).
-const strong = () => isSecureContext || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(location.hostname) || location.hostname === 'localhost'
-// The phone must also have been paired through such an address: a key that went out in a link to
-// a plain HTTP address may have been read on the way, so the bridge refuses it both (pairedStrong).
+// Over the Tailscale HTTPS address the page cannot have been swapped on the way, and only then may
+// it allow a permission ask, write to a session or add a memo (bridge/mobile.ts). A Tailscale IP
+// address is plain HTTP: with the phone's Tailscale off, the network it is on can answer for it.
+const strong = () => isSecureContext && location.protocol === 'https:'
+// The phone must also have been paired through that address: a key that went out in a link to
+// a plain HTTP address may have been read on the way, so the bridge refuses it all three (pairedStrong).
 const mayStrong = () => strong() && view?.pairedStrong !== false
 const strongWhy = () => say(strong() ? 'pairAgain' : 'needStrong')
 // The longest memo or message: the bridge refuses a request much larger (bridge/mobile.ts API_MAX).
@@ -146,6 +147,7 @@ async function act(method, path, body, done) {
   try {
     const result = await api(method, path, body)
     if (result.json?.strong) return flash(say(result.json.pairAgain ? 'pairAgain' : 'needStrong'), true)
+    if (result.json?.hidden) return flash(say('hiddenChars'), true)
     if (result.status >= 400) return flash(say('failed', { error: result.json?.error ?? result.status }), true)
     if (done) flash(done)
   } catch (error) {
@@ -173,7 +175,11 @@ async function refresh() {
     if (!words.lang) await loadWords()
     try {
       const result = await api('GET', '/mobile/view')
-      if (result.status < 400) {
+      // Paired over plain HTTP and opened through the HTTPS address: the bridge does not hear it here.
+      if (result.json?.strong) {
+        view = null
+        state = 'weak'
+      } else if (result.status < 400) {
         view = result.json
         state = 'ready'
         // Something new while the page is open: a buzz (where phones allow it) and the count in the title.
@@ -222,14 +228,14 @@ function render(soft = false) {
 }
 
 function draw() {
-  if (state === 'unpaired' || state === 'revoked') {
+  if (state === 'unpaired' || state === 'revoked' || state === 'weak') {
     return [
       el(
         'div',
         { className: 'welcome' },
         el('img', { src: 'icon.png', alt: '' }),
         el('h1', {}, 'Switchboard'),
-        el('p', {}, say(state === 'revoked' ? 'revoked' : 'notPaired')),
+        el('p', {}, state === 'weak' ? strongWhy() : say(state === 'revoked' ? 'revoked' : 'notPaired')),
         strong() ? drawCode() : standalone() ? el('p', { className: 'small' }, say('homeNeedsHttps')) : null,
       ),
       notice ? el('div', { className: `notice ${notice.bad ? 'bad' : ''}` }, notice.text) : null,
@@ -383,7 +389,10 @@ function drawDecisions() {
             ),
           )
         : null,
-      el('textarea', { placeholder: say('memo'), value: memo, maxLength: TEXT_MAX, oninput: e => memos.set(q.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
+      // A memo goes into the session's prompt, as a message would: the same address only.
+      mayStrong()
+        ? el('textarea', { placeholder: say('memo'), value: memo, maxLength: TEXT_MAX, oninput: e => memos.set(q.id, e.target.value), onblur: () => renderLater && setTimeout(render) })
+        : el('p', { className: 'small' }, strongWhy()),
       el(
         'div',
         { className: 'actions' },
@@ -393,7 +402,7 @@ function drawDecisions() {
             className: 'btn primary',
             onclick: () => {
               const choice = picks.get(q.id) ?? ''
-              const text = (memos.get(q.id) ?? '').trim()
+              const text = mayStrong() ? (memos.get(q.id) ?? '').trim() : ''
               if (!choice && !text) return flash(say('needChoice'), true)
               picks.delete(q.id)
               memos.delete(q.id)
@@ -410,22 +419,16 @@ function drawDecisions() {
 
 function drawApprovals() {
   if (view.approvals.length === 0) return empty('noApprovals')
-  return view.approvals.map(a =>
-    el(
-      'section',
-      { className: 'card' },
-      el('div', { className: 'meta' }, el('span', { className: 'chip accent' }, a.project), el('span', { className: 'chip' }, a.tool)),
-      el('pre', {}, a.summary),
-      a.reason ? el('p', { className: 'small' }, say('reason', { reason: a.reason })) : null,
-      a.cwd ? el('p', { className: 'small' }, a.cwd) : null,
-      el(
-        'div',
-        { className: 'actions' },
-        el(
+  return view.approvals.map(a => {
+    // Allowing runs the command: the first tap only arms the button for five seconds. A command
+    // with characters that hide or reorder text (shown by the bridge as [U+...]) is allowed
+    // in the app or the terminal only.
+    const allow = a.hidden
+      ? null
+      : el(
           'button',
           {
             className: `btn ${armed === a.id ? 'armed' : 'allow'}`,
-            // Allowing runs the command: the first tap only arms the button for five seconds.
             onclick: () => {
               if (!mayStrong()) return flash(strongWhy(), true)
               if (armed !== a.id) {
@@ -439,13 +442,20 @@ function drawApprovals() {
             },
           },
           armed === a.id ? say('allowAgain') : say('allow'),
-        ),
-        el('button', { className: 'btn deny', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }) }, say('deny')),
-      ),
+        )
+    return el(
+      'section',
+      { className: 'card' },
+      el('div', { className: 'meta' }, el('span', { className: 'chip accent' }, a.project), el('span', { className: 'chip' }, a.tool)),
+      el('pre', {}, a.summary),
+      a.hidden ? el('p', { className: 'small warn' }, say('hiddenChars')) : null,
+      a.reason ? el('p', { className: 'small' }, say('reason', { reason: a.reason })) : null,
+      a.cwd ? el('p', { className: 'small' }, a.cwd) : null,
+      el('div', { className: 'actions' }, allow, el('button', { className: 'btn deny', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }) }, say('deny'))),
       el('div', { className: 'actions' }, el('button', { className: 'btn', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'terminal' }) }, say('terminal'))),
       el('p', { className: 'small' }, mayStrong() ? say('terminalHint') : strong() ? say('pairAgain') : say('allowNeedsStrong')),
-    ),
-  )
+    )
+  })
 }
 
 function drawTasks() {
@@ -531,7 +541,7 @@ function eventsLink() {
 }
 
 function listen() {
-  if (!pairing) return
+  if (!pairing || state === 'weak') return
   const events = new EventSource(eventsLink())
   let soon = 0
   events.addEventListener('changed', () => {

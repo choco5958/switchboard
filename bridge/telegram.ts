@@ -15,6 +15,7 @@ import { tIn, type Lang } from '../src/shared/i18n/index.ts'
 export const TELEGRAM_API = 'https://api.telegram.org'
 const PAIR_MS = 10 * 60_000
 const PAIR_TRIES = 5
+const PAIR_CHATS = 1000
 const POLL_SECONDS = 25
 
 export type TelegramQuestion = {
@@ -58,12 +59,21 @@ export type TelegramDeps = {
 
 export type TelegramApproval = { id: number; project: string; tool: string; summary: string; cwd: string; reason: string; status: string }
 
+// Characters that change how a command looks without changing what runs: zero-width ones, and
+// the controls that reorder text (bidi). Where a command is shown away from the app (Telegram,
+// the phone page) each shows as [U+...], and a command with any is allowed in the app or the
+// terminal only.
+const HIDDEN = /[\u061C\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/
+export const hasHidden = (text: string): boolean => HIDDEN.test(text)
+export const showHidden = (text: string): string =>
+  text.replace(new RegExp(HIDDEN.source, 'g'), c => `[U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}]`)
+
 // A permission ask as it goes out: what would run and where. Allow asks once more (approvalConfirm).
 // Telegram may allow only what it shows whole: a summary that masking changed (a value that
-// looks like a secret, which may also be a command reading one) or one too long is answered
-// in the app or the terminal.
+// looks like a secret, which may also be a command reading one), one too long or one with
+// hidden characters (hasHidden) is answered in the app or the terminal.
 export function allowsHere(a: TelegramApproval): boolean {
-  return a.summary.length <= SUMMARY_SHOWN && maskSecrets(a.summary) === a.summary
+  return a.summary.length <= SUMMARY_SHOWN && maskSecrets(a.summary) === a.summary && !hasHidden(a.summary)
 }
 const SUMMARY_SHOWN = 3000
 
@@ -74,7 +84,7 @@ export function approvalMessage(a: TelegramApproval, lang: Lang): { text: string
     tIn(lang, 'telegram.approvalTool', { tool: a.tool }),
     a.cwd ? tIn(lang, 'telegram.approvalCwd', { cwd: a.cwd }) : '',
     '',
-    a.summary.length > SUMMARY_SHOWN ? `${a.summary.slice(0, SUMMARY_SHOWN - 1)}…` : a.summary,
+    showHidden(a.summary.length > SUMMARY_SHOWN ? `${a.summary.slice(0, SUMMARY_SHOWN - 1)}…` : a.summary),
     a.reason ? `\n${a.reason}` : '',
     here ? '' : `\n${tIn(lang, 'telegram.allowElsewhere')}`,
   ].filter((line, i) => line !== '' || i === 3).join('\n')
@@ -132,7 +142,9 @@ export function createTelegram(deps: TelegramDeps) {
   let bot = ''
   let pairCode = ''
   let pairUntil = 0
-  let pairFails = 0
+  // Wrong codes per chat: a chat that sent PAIR_TRIES is not heard for the rest of the code's
+  // life, and the code stays open for the person (128 bits, nobody guesses it).
+  const pairFails = new Map<number, number>()
 
   const token = () => deps.secret('telegram.token')
   const chat = () => Number(deps.secret('telegram.chat')) || 0
@@ -176,7 +188,7 @@ export function createTelegram(deps: TelegramDeps) {
 
   const approvalClosedText = (a: TelegramApproval, decision: string, where: 'telegram' | 'elsewhere') =>
     maskSecrets(
-      [tIn(deps.lang(), 'telegram.approvalHead', { project: a.project, id: a.id }), tIn(deps.lang(), 'telegram.approvalTool', { tool: a.tool }), '', a.summary.slice(0, 1500), '',
+      [tIn(deps.lang(), 'telegram.approvalHead', { project: a.project, id: a.id }), tIn(deps.lang(), 'telegram.approvalTool', { tool: a.tool }), '', showHidden(a.summary.slice(0, 1500)), '',
         say(`telegram.approvalDone.${decision === 'allow' ? 'allow' : decision === 'deny' ? 'deny' : decision === 'terminal' ? 'terminal' : 'expired'}` as 'telegram.approvalDone.allow'),
         where === 'elsewhere' && decision !== 'expired' ? say('telegram.elsewhere') : '',
       ].filter((line, i, all) => !(i === all.length - 1 && line === '')).join('\n'),
@@ -203,13 +215,18 @@ export function createTelegram(deps: TelegramDeps) {
     if (message?.text?.startsWith('/start')) {
       const code = message.text.split(/\s+/)[1] ?? ''
       if (message.chat.type !== 'private') return
-      if (!pairCode || code !== pairCode || Date.now() > pairUntil) {
-        // A few wrong tries end the code, so it cannot be guessed.
-        if (pairCode && ++pairFails >= PAIR_TRIES) pairCode = ''
+      const fails = pairFails.get(message.chat.id) ?? 0
+      if (!pairCode || fails >= PAIR_TRIES || code !== pairCode || Date.now() > pairUntil) {
+        if (pairCode && fails < PAIR_TRIES) {
+          pairFails.set(message.chat.id, fails + 1)
+          // Many chats trying: the oldest count goes (the code itself cannot be guessed).
+          if (pairFails.size > PAIR_CHATS) pairFails.delete(pairFails.keys().next().value!)
+        }
         await call('sendMessage', { chat_id: message.chat.id, text: say('telegram.badCode') })
         return
       }
       pairCode = ''
+      pairFails.clear()
       deps.setSecret('telegram.chat', String(message.chat.id))
       deps.setSecret('telegram.user', String(message.from?.id ?? message.chat.id))
       deps.setSecret('telegram.name', message.chat.first_name ?? message.chat.username ?? '')
@@ -258,7 +275,7 @@ export function createTelegram(deps: TelegramDeps) {
           await call('editMessageText', {
             chat_id: chat(),
             message_id: messageId,
-            text: maskSecrets(`${say('telegram.approvalSure')}\n\n${a.tool}\n${a.summary}`),
+            text: maskSecrets(`${say('telegram.approvalSure')}\n\n${a.tool}\n${showHidden(a.summary)}`),
             reply_markup: { inline_keyboard: [[{ text: say('telegram.allowSure'), callback_data: `P:${a.id}:allow` }, { text: say('telegram.back'), callback_data: `p:${a.id}:back` }]] },
           })
           return
@@ -391,7 +408,7 @@ export function createTelegram(deps: TelegramDeps) {
       // 128 bits, in the characters Telegram's start link takes.
       pairCode = randomBytes(16).toString('base64url')
       pairUntil = Date.now() + PAIR_MS
-      pairFails = 0
+      pairFails.clear()
       return { code: pairCode, link: bot ? `https://t.me/${bot}?start=${pairCode}` : '' }
     },
     unpair: () => {

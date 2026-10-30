@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, listen } from './server.ts'
-import { createTelegram, questionMessage, replyAnswer } from './telegram.ts'
+import { allowsHere, approvalMessage, createTelegram, hasHidden, questionMessage, replyAnswer, showHidden } from './telegram.ts'
 
 // A fake Telegram: getMe, sendMessage, editMessageText and answerCallbackQuery are recorded;
 // getUpdates hands out what the test queued, then holds briefly as long polling does.
@@ -184,13 +184,18 @@ test('Telegram refuses to allow what it cannot show whole, buttons of another me
   await call('POST', `/approvals/${masked}/answer`, { decision: 'deny' })
   await call('POST', `/approvals/${plain}/answer`, { decision: 'deny' })
 
-  // Five wrong codes end the code: the right one then pairs nobody.
+  // Five wrong codes end the code for that chat only: the right one then pairs it no more, and
+  // the person's own chat still pairs with it.
   const { json: pair } = await call('POST', '/telegram/pair')
   assert.ok(pair.code.length >= 20)
   const before = sent('sendMessage').filter(c => /맞지 않거나/.test(c.body.text ?? '')).length
   for (let i = 0; i < 5; i++) queued.push({ message: { message_id: 300 + i, chat: { id: 77, type: 'private' }, from: { id: 77 }, text: `/start guess${i}` } })
   queued.push({ message: { message_id: 310, chat: { id: 77, type: 'private' }, from: { id: 77 }, text: `/start ${pair.code}` } })
   await until(() => sent('sendMessage').filter(c => /맞지 않거나/.test(c.body.text ?? '')).length >= before + 6)
+  assert.equal((bridge.db.prepare("select value from secrets where key = 'telegram.chat'").get() as { value: string }).value, '42')
+  const paired = sent('sendMessage').filter(c => c.body.chat_id === 42 && /연결되었습니다/.test(c.body.text ?? '')).length
+  queued.push({ message: { message_id: 311, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: `/start ${pair.code}` } })
+  await until(() => sent('sendMessage').filter(c => c.body.chat_id === 42 && /연결되었습니다/.test(c.body.text ?? '')).length > paired)
   assert.equal((bridge.db.prepare("select value from secrets where key = 'telegram.chat'").get() as { value: string }).value, '42')
 })
 
@@ -253,4 +258,16 @@ test('a new token never leaves two polling loops, even when the old one slept af
   const after = polls
   await new Promise(resolve => setTimeout(resolve, 100))
   assert.equal(polls, after)
+})
+
+test('a command with characters that hide or reorder text shows them, and is allowed elsewhere only', () => {
+  const a = { id: 7, project: 'p', tool: 'Bash', summary: 'echo safe‮# txt.exe', cwd: '', reason: '', status: 'pending' }
+  assert.equal(hasHidden(a.summary), true)
+  assert.equal(allowsHere(a), false)
+  const { text, keyboard } = approvalMessage(a, 'ko')
+  assert.match(text, /echo safe\[U\+202E\]# txt\.exe/)
+  assert.ok(!keyboard.flat().some(b => b.callback_data.endsWith(':allow')))
+  for (const c of ['​', '‏', '⁦', '⁩', '﻿']) assert.equal(hasHidden(`ls${c}`), true, c.codePointAt(0)!.toString(16))
+  assert.equal(showHidden('a​b⁧c'), 'a[U+200B]b[U+2067]c')
+  assert.equal(allowsHere({ ...a, summary: 'ls -la 한글 é' }), true)
 })
