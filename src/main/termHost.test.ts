@@ -203,7 +203,8 @@ describe.skipIf(!unix)('the terminal host', () => {
     pids.add((await connected('build-typing')).pid)
     // cat stands in for the CLI: it is the program in front and prints back what it gets.
     await hosts.spawn({ id: 'run2-t1', file: '/bin/cat', args: [], cwd: dir, env: { PATH: '/usr/bin:/bin' }, cols: 80, rows: 24, meta: { project: 'p', cwd: dir, title: 'codex', claude: false, agent: 'codex', shell: '/bin/zsh', bins: ['cat'] } })
-    await wait(() => seen.fg === 'cat')
+    // Linux names the program by its path (/bin/cat), macOS by its name.
+    await wait(() => seen.fg.split('/').pop() === 'cat')
     const target: TypingTarget = {
       alive: true,
       shell: '/bin/zsh',
