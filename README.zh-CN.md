@@ -39,25 +39,29 @@
 
 <table>
 <tr>
+<td width="50%"><img src="docs/decision-en.jpg" alt="待决定"></td>
+<td width="50%"><img src="docs/task-en.jpg" alt="任务与进度图"></td>
+</tr>
+<tr>
 <td width="50%" valign="top">
-<img src="docs/decision-en.jpg" alt="待决定">
 <h3>🗳️ 一个键做决定</h3>
 会话提交选项、推荐以及推荐理由。用 <code>a</code>、<code>b</code> 选择，用 <code>Enter</code> 发送。也可以暂缓，或附上备注回答。
 </td>
 <td width="50%" valign="top">
-<img src="docs/task-en.jpg" alt="任务与进度图">
 <h3>📊 工作阶段与进度图</h3>
 画出需求、设计、实现、完成各阶段以及每个节点的进度。实时查看子代理进行到哪一步。
 </td>
 </tr>
 <tr>
+<td width="50%"><img src="docs/picker-en.jpg" alt="代理选择"></td>
+<td width="50%"><img src="docs/palette-en.jpg" alt="查找"></td>
+</tr>
+<tr>
 <td width="50%" valign="top">
-<img src="docs/picker-en.jpg" alt="代理选择">
 <h3>🧩 沿用你习惯的代理</h3>
 在停靠栏的 ▾ 中选择已安装的 CLI 打开。不改动各 CLI 的配置文件，最后选择的代理会成为默认。
 </td>
 <td width="50%" valign="top">
-<img src="docs/palette-en.jpg" alt="查找">
 <h3>⌘K 随处直达</h3>
 直接查找并打开任务、问题和项目。项目可以归入文件夹并折叠。
 </td>

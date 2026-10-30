@@ -39,25 +39,29 @@ Switchboard에서는 세션이 결정 질문을 큐에 올려 두고 다른 일�
 
 <table>
 <tr>
+<td width="50%"><img src="docs/decision-ko.jpg" alt="결정 대기"></td>
+<td width="50%"><img src="docs/task-ko.jpg" alt="작업과 진행 그래프"></td>
+</tr>
+<tr>
 <td width="50%" valign="top">
-<img src="docs/decision-ko.jpg" alt="결정 대기">
 <h3>🗳️ 결정은 키 하나로</h3>
 세션이 선택지와 추천, 추천 이유를 올립니다. <code>a</code>, <code>b</code>로 고르고 <code>Enter</code>로 보냅니다. 보류하거나 메모를 붙여 답할 수도 있습니다.
 </td>
 <td width="50%" valign="top">
-<img src="docs/task-ko.jpg" alt="작업과 진행 그래프">
 <h3>📊 작업 단계와 진행 그래프</h3>
 요구, 설계, 작업, 완료 단계와 노드별 진행이 그려집니다. 서브에이전트가 어디까지 왔는지 실시간으로 봅니다.
 </td>
 </tr>
 <tr>
+<td width="50%"><img src="docs/picker-ko.jpg" alt="에이전트 선택창"></td>
+<td width="50%"><img src="docs/palette-ko.jpg" alt="찾기"></td>
+</tr>
+<tr>
 <td width="50%" valign="top">
-<img src="docs/picker-ko.jpg" alt="에이전트 선택창">
 <h3>🧩 쓰던 에이전트를 그대로</h3>
 도크의 ▾에서 설치된 CLI를 골라 엽니다. 각 CLI의 설정 파일은 건드리지 않고, 마지막에 고른 에이전트가 기본이 됩니다.
 </td>
 <td width="50%" valign="top">
-<img src="docs/palette-ko.jpg" alt="찾기">
 <h3>⌘K 로 어디든</h3>
 작업, 질문, 프로젝트를 바로 찾아 엽니다. 프로젝트는 폴더로 묶고 접어 둡니다.
 </td>

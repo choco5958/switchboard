@@ -39,25 +39,29 @@ In Switchboard, a session posts its question to a decision queue and keeps worki
 
 <table>
 <tr>
+<td width="50%"><img src="docs/decision-en.jpg" alt="Decision queue"></td>
+<td width="50%"><img src="docs/task-en.jpg" alt="Task stages and progress graph"></td>
+</tr>
+<tr>
 <td width="50%" valign="top">
-<img src="docs/decision-en.jpg" alt="Decision queue">
 <h3>🗳️ Decide with one key</h3>
 Sessions post options, a recommendation and the reason for it. Pick with <code>a</code>, <code>b</code> and send with <code>Enter</code>. You can also hold a question or answer with a note.
 </td>
 <td width="50%" valign="top">
-<img src="docs/task-en.jpg" alt="Task stages and progress graph">
 <h3>📊 Stages and a live progress graph</h3>
 Requirements, design, work and done stages, with progress per node. See how far each subagent has got, as it happens.
 </td>
 </tr>
 <tr>
+<td width="50%"><img src="docs/picker-en.jpg" alt="Agent picker"></td>
+<td width="50%"><img src="docs/palette-en.jpg" alt="Find"></td>
+</tr>
+<tr>
 <td width="50%" valign="top">
-<img src="docs/picker-en.jpg" alt="Agent picker">
 <h3>🧩 Bring the agents you use</h3>
 Pick an installed CLI from ▾ in the dock. Each CLI's own config files are left alone, and the last agent you picked becomes the default.
 </td>
 <td width="50%" valign="top">
-<img src="docs/palette-en.jpg" alt="Find">
 <h3>⌘K to anything</h3>
 Jump to any task, question or project. Group projects into folders and fold them away.
 </td>

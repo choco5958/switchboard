@@ -39,25 +39,29 @@ Switchboard では、セッションが判断の質問をキューに載せて�
 
 <table>
 <tr>
+<td width="50%"><img src="docs/decision-en.jpg" alt="判断待ち"></td>
+<td width="50%"><img src="docs/task-en.jpg" alt="タスクと進行グラフ"></td>
+</tr>
+<tr>
 <td width="50%" valign="top">
-<img src="docs/decision-en.jpg" alt="判断待ち">
 <h3>🗳️ 判断はキーひとつで</h3>
 セッションが選択肢、おすすめ、その理由を載せます。<code>a</code>、<code>b</code> で選び <code>Enter</code> で送ります。保留やメモ付きの回答もできます。
 </td>
 <td width="50%" valign="top">
-<img src="docs/task-en.jpg" alt="タスクと進行グラフ">
 <h3>📊 作業段階と進行グラフ</h3>
 要件、設計、作業、完了の段階とノードごとの進行が描かれます。サブエージェントがどこまで進んだかをリアルタイムで見られます。
 </td>
 </tr>
 <tr>
+<td width="50%"><img src="docs/picker-en.jpg" alt="エージェントの選択"></td>
+<td width="50%"><img src="docs/palette-en.jpg" alt="検索"></td>
+</tr>
+<tr>
 <td width="50%" valign="top">
-<img src="docs/picker-en.jpg" alt="エージェントの選択">
 <h3>🧩 使っているエージェントをそのまま</h3>
 ドックの ▾ からインストール済みの CLI を選んで開きます。各 CLI の設定ファイルには触れず、最後に選んだエージェントが既定になります。
 </td>
 <td width="50%" valign="top">
-<img src="docs/palette-en.jpg" alt="検索">
 <h3>⌘K でどこへでも</h3>
 タスク、質問、プロジェクトをすぐに探して開きます。プロジェクトはフォルダーにまとめて折りたためます。
 </td>
