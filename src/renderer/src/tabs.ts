@@ -21,6 +21,23 @@ export function tabKey(tab: Tab): string {
   return 'id' in tab ? `${tab.kind}:${tab.id}` : tab.kind
 }
 
+// The one rail button lit: the one last picked while what it shows is still on screen (its tab
+// active, or its sidebar section open), else the active tab's button, else the open section's.
+// A section and a tab can both be up at once (questions beside the home tab), and only one may light.
+export type RailItem<Id extends string> = { icon: Id; section?: string; tab?: Tab }
+
+export function railActive<Id extends string>(
+  items: readonly RailItem<Id>[],
+  view: { picked: Id | null; active: string; section: string; sidebarOpen: boolean },
+): Id | null {
+  const showing = (item: RailItem<Id>) => (item.tab ? tabKey(item.tab) === view.active : view.sidebarOpen && item.section === view.section)
+  const picked = items.find(item => item.icon === view.picked)
+  if (picked && showing(picked)) return picked.icon
+  const byTab = items.find(item => item.tab && tabKey(item.tab) === view.active)
+  if (byTab) return byTab.icon
+  return (view.sidebarOpen && items.find(item => item.section === view.section)?.icon) || null
+}
+
 export function openTab(tabs: Tabs, tab: Tab): Tabs {
   const key = tabKey(tab)
   const open = tabs.open.some(t => tabKey(t) === key) ? tabs.open : [...tabs.open, tab]

@@ -23,7 +23,7 @@ import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
 import { stalledSessions } from '../../shared/stall'
 import { limitedUntil } from '../../shared/limit'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
-import { HOME, activeTab, closeTab, openTab, pruneTabs, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
+import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
 import { applyTheme } from './theme'
 import { LOCALE_TAG, resolveLang, setLang, stageLabel, t, type Key } from '../../shared/i18n'
 
@@ -111,6 +111,7 @@ export function App() {
   }, [connected])
   const [tabs, setTabs] = useState<Tabs>(loadTabs)
   const [section, setSection] = useState<Section>('home')
+  const [railPick, setRailPick] = useState<IconName | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [palette, setPalette] = useState(false)
   const [scope, setScope] = useState<string | null>(loadScope)
@@ -299,6 +300,7 @@ export function App() {
   const latestSession = useMemo(() => pickSession(state.sessions, scope), [state.sessions, scope])
   const showDev = devMenuShown(state.settings)
   const rail = RAIL.filter(r => !r.dev || showDev)
+  const railOn = railActive(rail, { picked: railPick, active: tabs.active, section, sidebarOpen })
 
   // A folder a terminal opened in becomes a project of its own in the switcher.
   const addProject = useCallback(
@@ -487,6 +489,7 @@ export function App() {
           onSearch={() => setPalette(true)}
           onReport={() => void ask('report')}
           onQuestions={() => {
+            setRailPick('question')
             setSection('questions')
             setSidebarOpen(true)
           }}
@@ -498,8 +501,10 @@ export function App() {
               key={item.label}
               title={railLabel(item.label)}
               data-rail={item.icon}
-              className={`rail-button ${(item.section && item.section === section && sidebarOpen) || (item.tab && tabKey(item.tab) === tabs.active) ? 'on' : ''}`}
+              className={`rail-button ${item.icon === railOn ? 'on' : ''}`}
+              aria-current={item.icon === railOn ? 'page' : undefined}
               onClick={() => {
+                setRailPick(item.icon)
                 if (item.section) {
                   setSidebarOpen(item.section === section ? !sidebarOpen : true)
                   setSection(item.section)
@@ -699,6 +704,7 @@ export function App() {
             scope={scope}
             onShow={() => {
               open({ kind: 'debug' })
+              setRailPick('debug')
               setSection('debug')
               setSidebarOpen(true)
             }}

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { HOME, activeTab, closeTab, openTab, pruneTabs, restoreTabs, tabKey, type Tabs } from './tabs'
+import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, restoreTabs, tabKey, type Tabs } from './tabs'
 
 const start: Tabs = { open: [HOME], active: 'home' }
 
@@ -35,4 +35,24 @@ test('saved tabs restore with home first and a valid active tab', () => {
   const restored = restoreTabs({ open: [{ kind: 'task', id: 4 }], active: 'gone' })
   expect(restored.open.map(tabKey)).toEqual(['home', 'task:4'])
   expect(restored.active).toBe('home')
+})
+
+test('lights one rail button at a time', () => {
+  const rail = [
+    { icon: 'home', section: 'home', tab: HOME },
+    { icon: 'question', section: 'questions' },
+    { icon: 'settings', tab: { kind: 'settings' as const } },
+  ]
+  const view = { picked: null, active: 'home', section: 'home', sidebarOpen: true }
+  expect(railActive(rail, view)).toBe('home')
+  // Questions opened in the sidebar beside the home tab: only questions lights.
+  expect(railActive(rail, { ...view, picked: 'question', section: 'questions' })).toBe('question')
+  // Settings picked while the questions section stays open.
+  expect(railActive(rail, { ...view, picked: 'settings', active: 'settings', section: 'questions' })).toBe('settings')
+  // A task tab opened from the sidebar: the open section lights.
+  expect(railActive(rail, { ...view, picked: 'settings', active: 'task:3', section: 'questions' })).toBe('question')
+  // The sidebar closed on a task tab: nothing lights.
+  expect(railActive(rail, { ...view, picked: 'question', active: 'task:3', section: 'questions', sidebarOpen: false })).toBe(null)
+  // A pick whose section was closed gives way to the active tab.
+  expect(railActive(rail, { ...view, picked: 'question', section: 'questions', sidebarOpen: false })).toBe('home')
 })
