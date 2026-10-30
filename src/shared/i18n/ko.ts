@@ -93,6 +93,9 @@ export const ko = {
   'palette.groupQuestion': '질문',
   'palette.groupScreen': '화면',
   'palette.groupAction': '할 일',
+  'palette.groupProject': '프로젝트',
+  'palette.goProject': '{name} 프로젝트로 가기',
+  'palette.allProjects': '모든 프로젝트 보기',
   'palette.qPending': '답 기다림',
   'palette.qHeld': '보류',
   'palette.qAnswered': '답함',
@@ -352,7 +355,7 @@ export const ko = {
   'question.keys': '{a}, {b} 또는 {one}, {two}로 고르기, {enter} 보내기, {h} 두 번 눌러 보류, {m} 메모',
   'question.toTask': '{task} 작업으로',
   // Palette
-  'palette.placeholder': '작업, 질문, 화면, 할 일 찾기',
+  'palette.placeholder': '작업, 질문, 프로젝트, 화면, 할 일 찾기',
   'palette.empty': '맞는 것이 없습니다.',
   'palette.more': '{n}개가 더 있습니다. 검색어를 더 적으면 좁혀집니다.',
   // Terminals

@@ -1,4 +1,5 @@
-import type { BridgeState } from '../../../shared/types'
+import { useMemo } from 'react'
+import type { BridgeState, GraphNode } from '../../../shared/types'
 import { taskStateLabel, isRunning, taskState } from '../../../shared/projects'
 import { stageLabel, t } from '../../../shared/i18n'
 import { tx } from '../tx'
@@ -54,6 +55,16 @@ export function HomePage({
   onPickFolder: () => void
   onAnswerApproval: (id: number, decision: 'allow' | 'deny' | 'terminal') => void
 }) {
+  // Each card's nodes, grouped once per state rather than filtered once per card.
+  const nodesOf = useMemo(() => {
+    const byTask = new Map<number, GraphNode[]>()
+    for (const n of state.nodes) {
+      const list = byTask.get(n.task_id)
+      if (list) list.push(n)
+      else byTask.set(n.task_id, [n])
+    }
+    return byTask
+  }, [state.nodes])
   const running = state.tasks.filter(isRunning)
   const pending = state.questions.filter(q => q.status === 'pending')
   const agents = state.agents.filter(a => a.status === 'running')
@@ -89,7 +100,7 @@ export function HomePage({
       {asks}
       <div className="home-grid">
         {state.tasks.map(task => {
-          const nodes = state.nodes.filter(n => n.task_id === task.id)
+          const nodes = nodesOf.get(task.id) ?? []
           const done = nodes.filter(n => n.status === '끝').length
           const status = taskState(task)
           return (

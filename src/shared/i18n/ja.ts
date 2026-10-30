@@ -94,6 +94,9 @@ export const ja: Dict = {
   'palette.groupQuestion': '質問',
   'palette.groupScreen': '画面',
   'palette.groupAction': '操作',
+  'palette.groupProject': 'プロジェクト',
+  'palette.goProject': '{name} に移動',
+  'palette.allProjects': 'すべてのプロジェクトを表示',
   'palette.qPending': '回答待ち',
   'palette.qHeld': '保留',
   'palette.qAnswered': '回答済み',
@@ -353,7 +356,7 @@ export const ja: Dict = {
   'question.keys': '{a}、{b} または {one}、{two} で選択、{enter} で送信、{h} を 2 回押して保留、{m} メモ',
   'question.toTask': 'タスク「{task}」へ',
   // Palette
-  'palette.placeholder': 'タスク、質問、画面、操作を検索',
+  'palette.placeholder': 'タスク、質問、プロジェクト、画面、操作を検索',
   'palette.empty': '一致するものがありません。',
   'palette.more': 'ほかに {n} 件あります。検索語を足すと絞り込めます。',
   // Terminals

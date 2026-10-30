@@ -6,7 +6,7 @@ import { PropsPanel } from './PropsPanel'
 import { QuestionCard } from './QuestionCard'
 import { TaskView } from './TaskView'
 import { TopBar } from './TopBar'
-import { attentionOf, nextAfter, queueOf, reachOf, tasksByProject, waitingFirst, type Attention } from './model'
+import { nextAfter, queueOf, reachOf, taskFacts, tasksByProject, waitingFirst, type Attention } from './model'
 import { ArchivePage } from './pages/ArchivePage'
 import { DebugPage } from './pages/DebugPage'
 import { DebugPanel } from './pages/DebugPanel'
@@ -311,24 +311,20 @@ export function App() {
     () => new Set(state.sessions.filter(s => limitedUntil(s.usage, s.last_seen, clockNow) !== null).map(s => s.id)),
     [state.sessions, clockNow],
   )
-  const openQuestionsOf = (task: Task) =>
-    state.questions.filter(q => q.status !== 'answered' && q.session_id === task.session_id && q.task_title === task.title).length
-  const attentionOfTask = (task: Task): Attention | null =>
-    attentionOf({
-      openQuestions: openQuestionsOf(task),
-      stalled: stalled.has(task.session_id),
-      limited: limited.has(task.session_id),
-      offline: reachOf(state.sessions.find(s => s.id === task.session_id), state.live ?? []) === 'gone',
-      running: isRunning(task),
-    })
-  const waitingTasks = waitingFirst(view.tasks, attentionOfTask)
+  // Counted once per bridge state, not once per task on every render (model.ts taskFacts).
+  const facts = useMemo(
+    () => taskFacts({ tasks: state.tasks, questions: state.questions, nodes: state.nodes, sessions: state.sessions, live: state.live }, stalled, limited, isRunning),
+    [state.tasks, state.questions, state.nodes, state.sessions, state.live, stalled, limited],
+  )
+  const attentionOfTask = (task: Task): Attention | null => facts.get(task.id)?.attention ?? null
+  const waitingTasks = useMemo(() => waitingFirst(view.tasks, task => facts.get(task.id)?.attention ?? null), [view.tasks, facts])
   const taskItem = (task: Task, showProject: boolean) => (
     <TaskItem
       key={task.id}
       task={task}
       active={tabs.active === `task:${task.id}`}
-      openQuestions={openQuestionsOf(task)}
-      nodeCount={state.nodes.filter(n => n.task_id === task.id).length}
+      openQuestions={facts.get(task.id)?.openQuestions ?? 0}
+      nodeCount={facts.get(task.id)?.nodeCount ?? 0}
       agent={tags[task.session_id]}
       attention={attentionOfTask(task)}
       project={showProject ? task.project : undefined}
@@ -433,8 +429,19 @@ export function App() {
   const offline = connected === false && !loaded
   const sessionHint = latestSession ? t('app.sessionHint', { id: latestSession.id.slice(0, 8), project: latestSession.project }) : undefined
 
-  const paletteItems: PaletteItem[] = [
+  // Built only while the palette is open; a busy bridge redraws the app many times a second.
+  const paletteItems = (): PaletteItem[] => [
     ...state.tasks.map(task => ({ id: `t${task.id}`, group: t('palette.groupTask'), label: task.title, hint: `${task.project}, ${stageLabel(task.stage)}`, run: () => openTask(task.id) })),
+    ...(scope !== null ? [{ id: 'r*', group: t('palette.groupProject'), label: t('palette.allProjects'), run: () => setScope(null) }] : []),
+    ...projects
+      .filter(p => p.name !== scope)
+      .map(p => ({
+        id: `r${p.name}`,
+        group: t('palette.groupProject'),
+        label: t('palette.goProject', { name: p.name }),
+        hint: p.cwd ? p.cwd.replace(/^\/Users\/[^/]+/, '~') : undefined,
+        run: () => setScope(p.name),
+      })),
     ...state.questions.map(q => ({
       id: `q${q.id}`,
       group: t('palette.groupQuestion'),
@@ -806,7 +813,7 @@ export function App() {
           showOthers={showOtherAgents(state.settings[SHOW_OTHER_AGENTS_KEY])}
         />
 
-        {palette && <Palette items={paletteItems} onClose={() => setPalette(false)} />}
+        {palette && <Palette items={paletteItems()} onClose={() => setPalette(false)} />}
         <PropsPanel tab={active} state={state} node={pickedNode} />
         <Toast toasts={toasts} onDismiss={dismiss} />
       </div>

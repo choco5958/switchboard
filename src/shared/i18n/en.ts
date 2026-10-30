@@ -94,6 +94,9 @@ export const en: Dict = {
   'palette.groupQuestion': 'Question',
   'palette.groupScreen': 'View',
   'palette.groupAction': 'Action',
+  'palette.groupProject': 'Project',
+  'palette.goProject': 'Go to {name}',
+  'palette.allProjects': 'Show all projects',
   'palette.qPending': 'Awaiting answer',
   'palette.qHeld': 'On hold',
   'palette.qAnswered': 'Answered',
@@ -353,7 +356,7 @@ export const en: Dict = {
   'question.keys': '{a}, {b} or {one}, {two} to pick, {enter} to send, {h} twice to hold, {m} memo',
   'question.toTask': 'Go to task {task}',
   // Palette
-  'palette.placeholder': 'Search tasks, questions, views and actions',
+  'palette.placeholder': 'Search tasks, questions, projects, views and actions',
   'palette.empty': 'No matches.',
   'palette.more': '{n} more. Type more to narrow the list.',
   // Terminals

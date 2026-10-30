@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Agent, CommandKind, GraphNode, LogEvent, Question, Task, WorktreeCheck } from '../../shared/types'
 import { WorkerLane } from './WorkerLane'
 import { ago, clock, layoutGraph, reviewLoops, stageCounts, stations } from './model'
@@ -36,10 +36,14 @@ export function TaskView({
 }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const selectedNode = nodes.find(n => n.key === selectedKey)
-  // The properties panel shows the selected node; it clears when this task closes.
+  // The properties panel shows the selected node; it clears when this task closes. Every bridge
+  // push brings a new copy of the same node, so it is sent again only when its content changed.
+  const latestNode = useRef(selectedNode)
+  latestNode.current = selectedNode
+  const selectedText = selectedNode ? JSON.stringify(selectedNode) : ''
   useEffect(() => {
-    onSelectNode?.(selectedNode ?? null)
-  }, [selectedNode, onSelectNode])
+    onSelectNode?.(latestNode.current ?? null)
+  }, [selectedText, onSelectNode])
   useEffect(() => () => onSelectNode?.(null), [onSelectNode])
   const layout = layoutGraph(nodes)
   const width = PAD * 2 + layout.cols * COL_W + Math.max(0, layout.cols - 1) * COL_GAP

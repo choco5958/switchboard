@@ -94,6 +94,9 @@ export const zhCN: Dict = {
   'palette.groupQuestion': '问题',
   'palette.groupScreen': '页面',
   'palette.groupAction': '操作',
+  'palette.groupProject': '项目',
+  'palette.goProject': '转到 {name}',
+  'palette.allProjects': '显示全部项目',
   'palette.qPending': '等待回答',
   'palette.qHeld': '暂缓',
   'palette.qAnswered': '已回答',
@@ -353,7 +356,7 @@ export const zhCN: Dict = {
   'question.keys': '用 {a}、{b} 或 {one}、{two} 选择，{enter} 发送，按两次 {h} 暂缓，{m} 备注',
   'question.toTask': '前往任务“{task}”',
   // Palette
-  'palette.placeholder': '搜索任务、问题、页面和操作',
+  'palette.placeholder': '搜索任务、问题、项目、页面和操作',
   'palette.empty': '没有匹配项。',
   'palette.more': '还有 {n} 项。多输入一些文字可以缩小范围。',
   // Terminals
