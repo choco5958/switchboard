@@ -32,14 +32,38 @@ export function normalizeUrl(url: string): string {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
 }
 
+// The command runs in a shell (`sh -l -c`) and a session can name it (open_in_ide). A newline
+// or another control character would hide more lines behind the one the confirmation shows,
+// so none may be in the command or its folder; tabs alone stay. The lengths are caps far past
+// any real start command or path.
+export const COMMAND_MAX = 2000
+export const REPO_MAX = 1024
+const CONTROL = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/
+
+// Why a folder or a command may not run, or null when it may.
+export function runProblem(field: 'repo' | 'command', value: string): string | null {
+  if (CONTROL.test(value)) return t('devForm.controlChars')
+  const max = field === 'repo' ? REPO_MAX : COMMAND_MAX
+  if (value.trim().length > max) return t('devForm.tooLong', { max })
+  return null
+}
+
+// A command long enough, or with a run of blanks wide enough, that its end may sit out of
+// sight in the confirmation: the dialog says to read it to the end.
+export function longCommand(command: string): boolean {
+  return command.length > 200 || /\s{8,}/.test(command)
+}
+
 // Problems with a draft by field, in the words the form shows under each one.
 // Empty means it can be saved.
 export function fieldErrors(draft: DevDraft, others: DevTarget[] = [], selfId = ''): Partial<Record<keyof DevDraft, string>> {
   const errors: Partial<Record<keyof DevDraft, string>> = {}
   if (!draft.name.trim()) errors.name = t('devForm.name')
   if (!draft.repo.trim()) errors.repo = t('devForm.repo')
+  else if (runProblem('repo', draft.repo)) errors.repo = runProblem('repo', draft.repo)!
   else if (!draft.repo.trim().startsWith('/') && !draft.repo.trim().startsWith('~/')) errors.repo = t('devForm.repoAbsolute')
   if (!draft.command.trim()) errors.command = t('devForm.command')
+  else if (runProblem('command', draft.command)) errors.command = runProblem('command', draft.command)!
   if (!draft.url.trim()) errors.url = t('devForm.url')
   else {
     let ok = true

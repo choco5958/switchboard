@@ -7,7 +7,8 @@ import { connect } from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { DevGit, DevResult, DevStatus, DevTarget } from '../shared/types'
-import { appendLines, portOf } from '../shared/devtargets'
+import { appendLines, longCommand, portOf, runProblem } from '../shared/devtargets'
+import { terminalEnv } from '../shared/projects'
 import { killStale, removePid, stopGroup, writePid } from './procgroups'
 import { t } from '../shared/i18n'
 import { loginShell } from './shell'
@@ -143,7 +144,8 @@ export function registerDevServers(ipcMain: IpcMain, onChange: (event: { id: str
       defaultId: 1,
       cancelId: 1,
       message: t('devMain.confirmTitle'),
-      detail: t('devMain.confirmDetail', { command, path: cwd }),
+      // The warning comes first: blanks in a long command cannot push it out of sight.
+      detail: [longCommand(command) ? t('devMain.confirmLong', { length: command.length }) : '', t('devMain.confirmDetail', { command, path: cwd })].filter(Boolean).join('\n\n'),
     }
     const answer = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
     if (answer.response !== 0) return false
@@ -156,13 +158,18 @@ export function registerDevServers(ipcMain: IpcMain, onChange: (event: { id: str
     const current = servers.get(target.id)
     if (current?.alive) return { ok: true, out: t('devMain.alreadyUp') }
     const cwd = home(target.repo)
+    // A target saved before the form checked these is refused here too.
+    const problem = runProblem('repo', target.repo) ?? runProblem('command', target.command)
+    if (problem) return { ok: false, out: problem }
     if (!existsSync(cwd)) return { ok: false, out: t('devMain.noRepo', { path: cwd }) }
     if (!(await confirmed(cwd, target.command))) return { ok: false, out: t('devMain.notConfirmed') }
     const shell = loginShell()
     const child = spawn(shell.file, shell.command(target.command), {
       cwd,
       detached: true,
-      env: { ...process.env, FORCE_COLOR: '0', PYTHONUNBUFFERED: '1' },
+      windowsHide: true,
+      // The terminals' environment: nothing of Electron's, Orca's or a parent Claude Code session's.
+      env: { ...terminalEnv(process.env), FORCE_COLOR: '0', PYTHONUNBUFFERED: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const one: Running = { child, startedAt: Date.now(), lines: [`$ ${target.command}`], rest: '', exitCode: null, alive: true }

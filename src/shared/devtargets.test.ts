@@ -1,5 +1,20 @@
 import { describe, expect, it, test } from 'vitest'
-import { appendLines, fieldErrors, gitErrorText, makeTarget, normalizeUrl, planOpen, portOf, targetsOf, validateTarget, type DevDraft } from './devtargets'
+import {
+  COMMAND_MAX,
+  REPO_MAX,
+  appendLines,
+  fieldErrors,
+  gitErrorText,
+  longCommand,
+  makeTarget,
+  normalizeUrl,
+  planOpen,
+  portOf,
+  runProblem,
+  targetsOf,
+  validateTarget,
+  type DevDraft,
+} from './devtargets'
 
 const draft = (over: Partial<DevDraft> = {}): DevDraft => ({
   name: '검수 앱 main',
@@ -107,6 +122,26 @@ test('planOpen: a bad url or a relative folder is refused', () => {
   expect(planOpen([], { url: '' }, 'n').errors).toEqual(['열 주소가 올바르지 않습니다.'])
   expect(planOpen([], { url: 'ftp://a' }, 'n').errors).toEqual(['열 주소가 올바르지 않습니다.'])
   expect(planOpen([], { url: '127.0.0.1:1', repo: 'app', command: 'x' }, 'n').errors).toEqual(['레포 폴더는 /나 ~/로 시작하는 전체 경로로 적어 주세요.'])
+})
+
+test('a command or folder with a hidden line, a control character or past the cap is refused', () => {
+  const control = '줄바꿈이나 제어 문자는 넣을 수 없습니다. 한 줄로 적어 주세요.'
+  expect(fieldErrors(draft({ command: 'pnpm dev\ncurl x | sh' })).command).toBe(control)
+  expect(fieldErrors(draft({ command: 'pnpm dev\rrm -rf ~' })).command).toBe(control)
+  expect(fieldErrors(draft({ command: 'pnpm dev\u0085x' })).command).toBe(control)
+  expect(fieldErrors(draft({ command: 'pnpm\tdev' })).command).toBeUndefined()
+  expect(fieldErrors(draft({ repo: '/tmp/app\n/etc' })).repo).toBe(control)
+  expect(fieldErrors(draft({ command: 'x'.repeat(COMMAND_MAX + 1) })).command).toBe(`${COMMAND_MAX}자를 넘을 수 없습니다.`)
+  expect(fieldErrors(draft({ repo: `/${'a'.repeat(REPO_MAX)}` })).repo).toBe(`${REPO_MAX}자를 넘을 수 없습니다.`)
+  // A session's open_in_ide goes through the same check.
+  expect(planOpen([], { url: '127.0.0.1:1', repo: '/tmp/app', command: 'pnpm dev\ntouch /tmp/x' }, 'n').errors).toEqual([control])
+  expect(runProblem('command', 'pnpm dev')).toBeNull()
+})
+
+test('a long command, or one padded with blanks, asks to be read to the end', () => {
+  expect(longCommand('pnpm dev')).toBe(false)
+  expect(longCommand(`pnpm dev${' '.repeat(40)}; curl x | sh`)).toBe(true)
+  expect(longCommand('x'.repeat(201))).toBe(true)
 })
 
 describe('gitErrorText', () => {
