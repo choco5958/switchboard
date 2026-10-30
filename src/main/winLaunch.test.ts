@@ -17,7 +17,11 @@ afterAll(() => {
   if (dir) rmSync(dir, { recursive: true, force: true })
 })
 if (windows) {
-  writeFileSync(join(dir, 'echoargs.js'), 'process.stdout.write(JSON.stringify(process.argv.slice(2)))')
+  // Non-ASCII goes out as \u escapes, so the console code page cannot change it on the way.
+  writeFileSync(
+    join(dir, 'echoargs.js'),
+    "process.stdout.write(JSON.stringify(process.argv.slice(2)).replace(/[\\u0080-\\uffff]/g, c => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')))",
+  )
   writeFileSync(join(dir, 'fakecli.cmd'), '@node "%~dp0echoargs.js" %*\r\n')
 }
 
@@ -42,6 +46,13 @@ for (const preset of PRESETS.filter(p => p.mcp)) {
     expect(argsSeen(line)).toEqual(meant)
   })
 }
+
+test.runIf(windows)('a typographic single quote in a path stays in the argument and ends nothing', () => {
+  const quoted = { ...server, args: ['C:\\Users\\Jane\u2019s PC\\mcp\\server.ts', '--x', "\u2018a'b\u201b"] }
+  const preset = PRESETS.find(p => p.id === 'codex')!
+  const meant = preset.mcp!(quoted, file).args ?? []
+  expect(argsSeen(presetLaunch({ ...preset, bin: 'fakecli' }, quoted, file, 'win32').line)).toEqual(meant)
+})
 
 test.runIf(windows)('the Claude line finds the .cmd beside a .ps1 and keeps a folder with spaces as one word', () => {
   writeFileSync(join(dir, 'fakecli.ps1'), 'Write-Output "the ps1 ran"')

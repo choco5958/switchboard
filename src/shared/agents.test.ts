@@ -9,6 +9,7 @@ import {
   fillTemplate,
   presetLaunch,
   presetOf,
+  psQuote,
   shellWord,
   showOtherAgents,
   validateCustom,
@@ -129,6 +130,15 @@ describe('badges', () => {
 
   it('a shell word stays bare only when the shell would read it as it is', () => {
     expect([shellWord('-c'), shellWord('a b'), shellWord('x"y')]).toEqual(['-c', "'a b'", `'x"y'`])
+  })
+
+  it("PowerShell's typographic single quotes are doubled like the plain one", () => {
+    expect(shellWord("it's", 'win32')).toBe("'it''s'")
+    expect(shellWord('C:\\Users\\Jane\u2019s PC\\mod', 'win32')).toBe("'C:\\Users\\Jane\u2019\u2019s PC\\mod'")
+    expect(psQuote('\u2018a\u2019 \u201ab\u201b "c"')).toBe("'\u2018\u2018a\u2019\u2019 \u201a\u201ab\u201b\u201b \\\"c\\\"'")
+    // A folder with one in it cannot close the string and run what follows.
+    const line = fillTemplate('--all {server}', { command: 'C:\\x\u2019; calc; \u2019\\node.exe', args: [] }, 'f.json', 'win32')
+    expect(line).toBe("--all 'C:\\x\u2019\u2019; calc; \u2019\u2019\\node.exe'")
   })
 })
 

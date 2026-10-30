@@ -37,7 +37,13 @@ const jsonArg = (value: unknown) => json(value).replace(/ /g, '\\u0020')
 // something bare, and a double quote reaches the program only written as \".
 export function shellWord(word: string, platform: string = process.platform): string {
   if (platform !== 'win32') return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : shellQuote(word)
-  return /^[A-Za-z0-9_%+=:./\\-]+$/.test(word) ? word : `'${word.replace(/'/g, "''").replace(/"/g, '\\"')}'`
+  return /^[A-Za-z0-9_%+=:./\\-]+$/.test(word) ? word : psQuote(word)
+}
+
+// A PowerShell single-quoted string. PowerShell also ends one at the typographic single
+// quotes U+2018 to U+201B, so each of those is doubled like the plain one.
+export function psQuote(value: string): string {
+  return `'${value.replace(/['‘-‛]/g, quote => quote + quote).replace(/"/g, '\\"')}'`
 }
 
 // How a launch line starts the CLI. PowerShell would pick an npm shim's .ps1, which the
@@ -191,7 +197,7 @@ export function fillTemplate(template: string, server: McpServer, configFile: st
   const config = jsonArg({ mcpServers: { [MCP_NAME]: { command: server.command, args: server.args } } })
   const word = (value: string) => shellWord(value, platform)
   // Always quoted: these hold spaces or JSON.
-  const quoted = (value: string) => (platform === 'win32' ? `'${value.replace(/'/g, "''").replace(/"/g, '\\"')}'` : shellQuote(value))
+  const quoted = (value: string) => (platform === 'win32' ? psQuote(value) : shellQuote(value))
   const values: Record<(typeof PLACEHOLDERS)[number], string> = {
     server: quoted([server.command, ...server.args].join(' ')),
     command: word(server.command),
