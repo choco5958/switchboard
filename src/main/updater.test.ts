@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { installsUpdates, stopBridgeNow } from './updater'
+
+// The real modules would install Electron's binary while the tests run, and two workers doing
+// that at once collide (CI). These tests touch neither.
+vi.mock('electron', () => ({ app: {}, Notification: class {}, shell: {} }))
+vi.mock('electron-updater', () => ({ default: { autoUpdater: {} } }))
 
 describe('updates', () => {
   it('only Windows and the Linux AppImage install updates themselves', () => {

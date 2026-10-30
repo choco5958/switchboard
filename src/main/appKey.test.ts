@@ -1,8 +1,12 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { loadAppKey, realEncryption, type KeyStorage } from './appKey'
+
+// The real module would install Electron's binary while the tests run, and two workers doing
+// that at once collide (CI). Every test here passes its own storage.
+vi.mock('electron', () => ({ safeStorage: {} }))
 
 const dir = mkdtempSync(join(tmpdir(), 'sb-key-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
