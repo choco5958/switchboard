@@ -2283,6 +2283,9 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       }
       const commands = pendingCommands(sessionId).map(c => ({ id: c.id, kind: c.kind, payload: JSON.parse(c.payload) as Json }))
       const usable = commands.filter(c => PROMPT_COMMANDS.includes(c.kind) && !(c.kind === 'message' && str(c.payload.agentId)))
+      // With `hold` the commands it can type stay open too, and the caller closes each one after
+      // typing it (/commands/<id>/done): one it could not type is still here for the next take.
+      const marked = body.hold === true ? commands.filter(c => !usable.includes(c)) : commands
       // Everything handed over is marked at once: a crash midway would give some of it again.
       atomic(() => {
         for (const q of answers) {
@@ -2293,14 +2296,14 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
           stmt('update outbox set delivered = 1 where id = ?').run(m.id)
           logEvent(sessionId, '전달', say('bridge.event.injected', { kind: eventKindLabel(m.kind, langNow()) }), m.task_title)
         }
-        for (const c of commands) {
+        for (const c of marked) {
           const result = usable.includes(c) ? { ok: true } : { error: say('bridge.agentCommand') }
           stmt('update commands set done_at = coalesce(done_at, ?), result = ? where id = ?').run(now(), JSON.stringify(result), c.id)
         }
       })
       if (answers.length > 0) changed('questions')
       if (messages.length > 0) changed('outbox')
-      if (commands.length > 0) changed('commands')
+      if (marked.length > 0) changed('commands')
       return send(res, 200, { items: items.map(({ id, text }) => ({ id, text })), commands: usable })
     }
 

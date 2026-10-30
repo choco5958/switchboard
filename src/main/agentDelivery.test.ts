@@ -109,7 +109,7 @@ describe('typing for agent CLIs in app terminals', () => {
     delivery.stop()
   })
 
-  it('a command taken while the CLI starts printing is kept and typed on the next try', async () => {
+  it('a command taken while the CLI starts printing stays open on the bridge and is typed on the next try', async () => {
     await call('POST', '/sessions', { id: 'cx-busy', cwd: '/work/app', agent: 'codex', terminal: 'k-t3' })
     const { target, written } = fakeTerminal()
     let clock = QUIET_MS * 10
@@ -127,12 +127,16 @@ describe('typing for agent CLIs in app terminals', () => {
     await new Promise(resolve => setTimeout(resolve, 300))
     expect(takes).toBe(1)
     expect(written).toEqual([])
-    // The bridge counts it done already; only the app still has it.
-    const open = (await call('GET', '/state')).json.commands as { session_id: string; done_at: number | null }[]
-    expect(open.filter(c => c.session_id === 'cx-busy' && c.done_at === null)).toEqual([])
+    // Not typed: still open on the bridge, so an app that closed now would lose nothing.
+    const openNow = async () =>
+      ((await call('GET', '/state')).json.commands as { session_id: string; done_at: number | null }[]).filter(c => c.session_id === 'cx-busy' && c.done_at === null)
+    expect(await openNow()).toHaveLength(1)
     clock += QUIET_MS
     await new Promise(resolve => setTimeout(resolve, 1200))
     expect(written[0]).toContain('테스트를 다시 돌려 주세요')
+    // Typed once, then closed.
+    expect(written.filter(w => w.includes('테스트를 다시 돌려 주세요'))).toHaveLength(1)
+    expect(await openNow()).toEqual([])
     delivery.stop()
   })
 

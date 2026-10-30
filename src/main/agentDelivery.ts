@@ -34,8 +34,6 @@ type Command = { id: number; kind: string; payload?: unknown }
 
 // menuSince: when a menu on screen started holding typing back; told: the person heard of it.
 // dirty: something arrived while a flush was under way, so another one follows it.
-// carried: commands taken but not typed. The bridge marks a command done when it hands it
-// over, even with `hold`, so the app keeps it here and types it with the next prompt.
 type Sub = {
   key: string
   req: ClientRequest | null
@@ -45,7 +43,6 @@ type Sub = {
   closed: boolean
   menuSince: number
   told: boolean
-  carried: Command[]
 }
 
 // Sessions the app types for: not Claude Code, in a terminal of this app that is still open.
@@ -93,18 +90,17 @@ export function startAgentDelivery(options: DeliveryOptions) {
       // stays undelivered, for the session's next start (codex resume and the like).
       const reply = await options.call('POST', '/deliveries/take', { sessionId, hold: true })
       const items = (reply.json.items ?? []) as { id: string }[]
-      const taken = reply.ok && Array.isArray(reply.json.commands) ? (reply.json.commands as Command[]) : []
-      const commands = [...sub.carried, ...taken]
+      // With `hold` the bridge keeps these open until they are typed and closed here.
+      const commands = reply.ok && Array.isArray(reply.json.commands) ? (reply.json.commands as Command[]) : []
       // Checked again: the CLI may have started printing or shown a menu during the take.
       const still = options.terminal(sub.key)
       const ready = reply.ok && still !== undefined && typingBlock(still, now()) === null
       if (ready && typePrompt(still, takenText({ items: reply.json.items, commands }, lang()))) {
-        sub.carried = []
         for (const item of items) await options.call('POST', `/deliveries/${item.id}/ack`)
+        for (const command of commands) await options.call('POST', `/commands/${command.id}/done`, { result: { ok: true } })
       } else {
-        // Not typed: a cancel now finds the items still waiting, as they are; the commands
-        // wait here, and another try follows.
-        sub.carried = commands
+        // Not typed: a cancel now finds the items and the commands still waiting, as they are,
+        // and another try follows.
         if (reply.ok && items.length > 0) await options.call('POST', '/deliveries/unhold', { ids: items.map(item => item.id) })
         if (reply.ok && (items.length > 0 || commands.length > 0)) sub.dirty = true
       }
@@ -170,7 +166,7 @@ export function startAgentDelivery(options: DeliveryOptions) {
     for (const id of [...subs.keys()]) if (!wanted.has(id) || subs.get(id)?.key !== wanted.get(id)) close(id)
     for (const [id, key] of wanted) {
       if (subs.has(id)) continue
-      const sub: Sub = { key, req: null, timer: null, busy: false, dirty: false, closed: false, menuSince: 0, told: false, carried: [] }
+      const sub: Sub = { key, req: null, timer: null, busy: false, dirty: false, closed: false, menuSince: 0, told: false }
       subs.set(id, sub)
       listen(id, sub)
     }

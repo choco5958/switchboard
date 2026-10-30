@@ -661,6 +661,22 @@ describe('agent CLIs other than Claude Code', () => {
     assert.equal(state.questions.find((one: { id: number }) => one.id === q.id).delivered, 1)
     assert.equal((await call('POST', '/deliveries/take', { sessionId: 'nobody' })).status, 404)
   })
+
+  test('with hold, a prompt command stays open until the caller closes it after typing', async () => {
+    await call('POST', '/sessions', { id: 'cx4', cwd: '/work/cli-app', agent: 'codex' })
+    const report = (await call('POST', '/commands', { sessionId: 'cx4', kind: 'report' })).json.id
+    const pause = (await call('POST', '/commands', { sessionId: 'cx4', kind: 'pause', payload: { agentId: 'x' } })).json.id
+    const first = (await call('POST', '/deliveries/take', { sessionId: 'cx4', hold: true })).json
+    assert.deepEqual(first.commands.map((c: { id: number }) => c.id), [report])
+    // One it cannot type is closed at once, with the reason.
+    assert.ok((await call('GET', `/commands/${pause}`)).json.result.error)
+    assert.equal((await call('GET', `/commands/${report}`)).json.done_at, null)
+    // Not typed (the terminal closed): the next take hands it over again.
+    const second = (await call('POST', '/deliveries/take', { sessionId: 'cx4', hold: true })).json
+    assert.deepEqual(second.commands.map((c: { id: number }) => c.id), [report])
+    await call('POST', `/commands/${report}/done`, { result: { ok: true } })
+    assert.deepEqual((await call('POST', '/deliveries/take', { sessionId: 'cx4', hold: true })).json.commands, [])
+  })
 })
 
 describe('messages between sessions', () => {
