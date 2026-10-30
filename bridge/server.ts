@@ -658,22 +658,25 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const group = to.length > 1 && expectsReply ? `g${now()}-${Math.random().toString(36).slice(2, 8)}` : ''
     const ids: string[] = []
     let root = chain
-    for (const recipient of to) {
-      const row = db
-        .prepare(
-          `insert into outbox (session_id, kind, text, created_at, from_session, reply_to, expects_reply, group_key, request_key, chain)
-           values (?, '세션메시지', ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(recipient, clipText(text), now(), from, replyTo, expectsReply ? 1 : 0, group, requestKey, expectsReply ? root : null)
-      const id = Number(row.lastInsertRowid)
-      if (expectsReply && root === null) {
-        root = id
-        db.prepare('update outbox set chain = ? where id = ?').run(id, id)
+    // A request that starts a run names itself right after its insert: never one without the other.
+    atomic(() => {
+      for (const recipient of to) {
+        const row = db
+          .prepare(
+            `insert into outbox (session_id, kind, text, created_at, from_session, reply_to, expects_reply, group_key, request_key, chain)
+             values (?, '세션메시지', ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(recipient, clipText(text), now(), from, replyTo, expectsReply ? 1 : 0, group, requestKey, expectsReply ? root : null)
+        const id = Number(row.lastInsertRowid)
+        if (expectsReply && root === null) {
+          root = id
+          db.prepare('update outbox set chain = ? where id = ?').run(id, id)
+        }
+        ids.push(`m${id}`)
       }
-      ids.push(`m${id}`)
-    }
-    const names = to.map(sessionLabel).join(', ')
-    logEvent(from, '세션메시지', `→ ${names}: ${text.split('\n')[0]?.slice(0, 160) ?? ''}`)
+      const names = to.map(sessionLabel).join(', ')
+      logEvent(from, '세션메시지', `→ ${names}: ${text.split('\n')[0]?.slice(0, 160) ?? ''}`)
+    })
     changed('outbox')
     for (const recipient of to) pushDeliveries(recipient)
     // The reply may release answers the sender of the request held back (heldReply).
@@ -728,11 +731,14 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         }
         continue
       }
-      const row = db
-        .prepare("insert into outbox (session_id, kind, text, created_at, expects_reply, routine_run) values (?, '예약', '', ?, 1, ?)")
-        .run(sessionId, now(), run.id)
-      db.prepare("update routine_runs set status = 'sent', session_id = ?, message_id = ? where id = ?").run(sessionId, Number(row.lastInsertRowid), run.id)
-      logEvent(sessionId, '예약', say('bridge.event.routineSent', { name: run.name }))
+      // The prompt and its run marked sent, together: a run left waiting would send it twice.
+      atomic(() => {
+        const row = db
+          .prepare("insert into outbox (session_id, kind, text, created_at, expects_reply, routine_run) values (?, '예약', '', ?, 1, ?)")
+          .run(sessionId, now(), run.id)
+        db.prepare("update routine_runs set status = 'sent', session_id = ?, message_id = ? where id = ?").run(sessionId, Number(row.lastInsertRowid), run.id)
+        logEvent(sessionId, '예약', say('bridge.event.routineSent', { name: run.name }))
+      })
       changed('routines')
       pushDeliveries(sessionId)
     }
@@ -1433,27 +1439,30 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const existing = taskByTitle(sessionId, title)
       if (existing && str(body.status) !== '보관') revive(existing.id)
       const t = now()
-      db.prepare(
-        `insert into tasks (session_id, project, title, stage, status, now, created_at, updated_at)
-         values (?, ?, ?, coalesce(nullif(?, ''), '요구'), coalesce(nullif(?, ''), '하는 중'), ?, ?, ?)
-         on conflict (session_id, title) do update set
-           stage = coalesce(nullif(?, ''), tasks.stage),
-           status = coalesce(nullif(?, ''), tasks.status),
-           now = coalesce(?, tasks.now),
-           updated_at = excluded.updated_at`,
-      ).run(
-        sessionId, projectOf(sessionId), title, stage, str(body.status), str(body.now), t, t,
-        stage, str(body.status), typeof body.now === 'string' ? body.now : null,
-      )
-      const saved = taskByTitle(sessionId, title)!
-      numberTask(saved.id)
-      for (const field of TASK_FIELDS) {
-        if (typeof body[field] === 'string') db.prepare(`update tasks set ${field} = ? where id = ?`).run(body[field], saved.id)
-      }
-      if (str(body.status) === '보관') db.prepare('update tasks set archived_at = coalesce(archived_at, ?) where id = ?').run(t, saved.id)
-      logEvent(sessionId, '작업', `${title}: ${[stage && stageLabel(stage, langNow()), str(body.now)].filter(Boolean).join(', ') || say('bridge.event.updated')}`, title)
+      // The row, its number, its summary fields and its archive time land together.
+      const row = atomic(() => {
+        db.prepare(
+          `insert into tasks (session_id, project, title, stage, status, now, created_at, updated_at)
+           values (?, ?, ?, coalesce(nullif(?, ''), '요구'), coalesce(nullif(?, ''), '하는 중'), ?, ?, ?)
+           on conflict (session_id, title) do update set
+             stage = coalesce(nullif(?, ''), tasks.stage),
+             status = coalesce(nullif(?, ''), tasks.status),
+             now = coalesce(?, tasks.now),
+             updated_at = excluded.updated_at`,
+        ).run(
+          sessionId, projectOf(sessionId), title, stage, str(body.status), str(body.now), t, t,
+          stage, str(body.status), typeof body.now === 'string' ? body.now : null,
+        )
+        const saved = taskByTitle(sessionId, title)!
+        numberTask(saved.id)
+        for (const field of TASK_FIELDS) {
+          if (typeof body[field] === 'string') db.prepare(`update tasks set ${field} = ? where id = ?`).run(body[field], saved.id)
+        }
+        if (str(body.status) === '보관') db.prepare('update tasks set archived_at = coalesce(archived_at, ?) where id = ?').run(t, saved.id)
+        logEvent(sessionId, '작업', `${title}: ${[stage && stageLabel(stage, langNow()), str(body.now)].filter(Boolean).join(', ') || say('bridge.event.updated')}`, title)
+        return db.prepare('select * from tasks where session_id = ? and title = ?').get(sessionId, title)
+      })
       changed('tasks')
-      const row = db.prepare('select * from tasks where session_id = ? and title = ?').get(sessionId, title)
       return send(res, 200, row)
     }
 
@@ -1907,20 +1916,23 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
           now(),
         )
       const byRecipient = new Map<string, OutboxRow[]>()
-      for (const row of rows as OutboxRow[]) {
-        if (row.answered || row.cancelled) {
-          results[`m${row.id}`] = 'done'
-          continue
+      // Each request closed with its note to the recipient, all of them or none.
+      atomic(() => {
+        for (const row of rows as OutboxRow[]) {
+          if (row.answered || row.cancelled) {
+            results[`m${row.id}`] = 'done'
+            continue
+          }
+          // One the app is typing in now has reached the session as much as a delivered one.
+          const reached = Boolean(row.delivered) || isHeld(row.id)
+          db.prepare('update outbox set cancelled = 1, answered = 1, delivered = 1 where id = ?').run(row.id)
+          results[`m${row.id}`] = reached ? 'noted' : 'queued'
+          if (reached) noteCancel(row)
+          byRecipient.set(row.session_id, [...(byRecipient.get(row.session_id) ?? []), row])
+          logEvent(from, '세션메시지', say('bridge.event.peerCancelled', { id: row.id, recipient: sessionLabel(row.session_id) }))
         }
-        // One the app is typing in now has reached the session as much as a delivered one.
-        const reached = Boolean(row.delivered) || isHeld(row.id)
-        holding.delete(row.id)
-        db.prepare('update outbox set cancelled = 1, answered = 1, delivered = 1 where id = ?').run(row.id)
-        results[`m${row.id}`] = reached ? 'noted' : 'queued'
-        if (reached) noteCancel(row)
-        byRecipient.set(row.session_id, [...(byRecipient.get(row.session_id) ?? []), row])
-        logEvent(from, '세션메시지', say('bridge.event.peerCancelled', { id: row.id, recipient: sessionLabel(row.session_id) }))
-      }
+      })
+      for (const list of byRecipient.values()) for (const row of list) holding.delete(row.id)
       changed('outbox')
       // The mod drops what it holds and stops a turn made of these alone (it answers in a moment).
       const asked: { command: number; rows: OutboxRow[] }[] = []
@@ -2184,7 +2196,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     if (method === 'POST' && path === '/deliveries/take') {
       const body = await readJson(req)
       const sessionId = str(body.sessionId)
-      if (!db.prepare('select 1 from sessions where id = ?').get(sessionId)) {
+      if (!stmt('select 1 from sessions where id = ?').get(sessionId)) {
         return send(res, 404, { error: say('bridge.noSessionFound', { id: sessionId }) })
       }
       const limited = limitedSession(sessionId)
@@ -2201,20 +2213,23 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         answers.length = 0
         messages.length = 0
       }
-      for (const q of answers) {
-        db.prepare('update questions set delivered = 1 where id = ?').run(q.id)
-        logEvent(sessionId, '전달', say('bridge.event.answerInjected', { id: q.id }), q.task_title)
-      }
-      for (const m of messages) {
-        db.prepare('update outbox set delivered = 1 where id = ?').run(m.id)
-        logEvent(sessionId, '전달', say('bridge.event.injected', { kind: eventKindLabel(m.kind, langNow()) }), m.task_title)
-      }
       const commands = pendingCommands(sessionId).map(c => ({ id: c.id, kind: c.kind, payload: JSON.parse(c.payload) as Json }))
       const usable = commands.filter(c => PROMPT_COMMANDS.includes(c.kind) && !(c.kind === 'message' && str(c.payload.agentId)))
-      for (const c of commands) {
-        const result = usable.includes(c) ? { ok: true } : { error: say('bridge.agentCommand') }
-        db.prepare('update commands set done_at = coalesce(done_at, ?), result = ? where id = ?').run(now(), JSON.stringify(result), c.id)
-      }
+      // Everything handed over is marked at once: a crash midway would give some of it again.
+      atomic(() => {
+        for (const q of answers) {
+          stmt('update questions set delivered = 1 where id = ?').run(q.id)
+          logEvent(sessionId, '전달', say('bridge.event.answerInjected', { id: q.id }), q.task_title)
+        }
+        for (const m of messages) {
+          stmt('update outbox set delivered = 1 where id = ?').run(m.id)
+          logEvent(sessionId, '전달', say('bridge.event.injected', { kind: eventKindLabel(m.kind, langNow()) }), m.task_title)
+        }
+        for (const c of commands) {
+          const result = usable.includes(c) ? { ok: true } : { error: say('bridge.agentCommand') }
+          stmt('update commands set done_at = coalesce(done_at, ?), result = ? where id = ?').run(now(), JSON.stringify(result), c.id)
+        }
+      })
       if (answers.length > 0) changed('questions')
       if (messages.length > 0) changed('outbox')
       if (commands.length > 0) changed('commands')

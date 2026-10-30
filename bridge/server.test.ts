@@ -1333,3 +1333,56 @@ describe('retention and the size of /state', () => {
     assert.equal((await call('GET', '/state')).json.activity['mem-1'], undefined)
   })
 })
+
+// A trigger makes a later statement of a route fail, as a crash between statements would:
+// the earlier ones of the same route must not stay.
+describe('writes that belong together', () => {
+  const failing = (name: string, sql: string) => {
+    bridge.db.exec(`create trigger ${name} ${sql} begin select raise(abort, 'boom'); end`)
+    return () => bridge.db.exec(`drop trigger ${name}`)
+  }
+  const count = (sql: string, ...args: (string | number)[]) => (bridge.db.prepare(sql).get(...args) as { n: number }).n
+
+  test('a request that starts a run is never kept without its chain', async () => {
+    for (const id of ['tx-a', 'tx-b']) await call('POST', '/sessions', { id, cwd: `/w/${id}` })
+    const drop = failing('tx_chain', "before update of chain on outbox when new.from_session = 'tx-a'")
+    const sent = await call('POST', '/messages', { sessionId: 'tx-a', to: ['tx-b'], text: '빌드 봐줘' })
+    drop()
+    assert.equal(sent.status, 400)
+    assert.equal(count("select count(*) n from outbox where from_session = 'tx-a'"), 0)
+  })
+
+  test('taking deliveries marks all of them or none', async () => {
+    await call('POST', '/sessions', { id: 'tx-t', cwd: '/w/tx-t' })
+    const { json: q } = await call('POST', '/questions', { sessionId: 'tx-t', question: '진행?', options: [{ key: 'a', label: '예' }] })
+    await call('POST', `/questions/${q.id}/answer`, { choice: 'a' })
+    await call('POST', '/outbox', { sessionId: 'tx-t', text: '화면 코멘트' })
+    await call('POST', '/commands', { sessionId: 'tx-t', kind: 'report' })
+    const drop = failing('tx_take', "before update of done_at on commands when new.session_id = 'tx-t'")
+    assert.equal((await call('POST', '/deliveries/take', { sessionId: 'tx-t' })).status, 400)
+    drop()
+    assert.equal(count('select delivered n from questions where id = ?', q.id), 0)
+    assert.equal(count("select count(*) n from outbox where session_id = 'tx-t' and delivered = 0"), 1)
+    assert.equal((await call('POST', '/deliveries/take', { sessionId: 'tx-t' })).json.items.length, 2)
+  })
+
+  test('a cancel closes each request together with its note', async () => {
+    for (const id of ['tx-c', 'tx-r']) await call('POST', '/sessions', { id, cwd: `/w/${id}` })
+    const { json: sent } = await call('POST', '/messages', { sessionId: 'tx-c', to: ['tx-r'], text: '로그 정리' })
+    await call('POST', '/deliveries/take', { sessionId: 'tx-r' })
+    const drop = failing('tx_cancel', "before insert on outbox when new.session_id = 'tx-r' and new.piggyback = 1")
+    assert.equal((await call('POST', '/messages/cancel', { sessionId: 'tx-c', ids: sent.ids })).status, 400)
+    drop()
+    assert.equal(count('select cancelled n from outbox where id = ?', Number(sent.ids[0].slice(1))), 0)
+    await call('POST', '/messages/cancel', { sessionId: 'tx-c', ids: sent.ids })
+    await call('POST', '/deliveries/take', { sessionId: 'tx-r' })
+  })
+
+  test('a new task is not kept without the summary fields it came with', async () => {
+    await call('POST', '/sessions', { id: 'tx-k', cwd: '/w/tx-k' })
+    const drop = failing('tx_task', "before update of why on tasks when new.why = 'boom'")
+    assert.equal((await call('POST', '/tasks', { sessionId: 'tx-k', title: '반쪽 작업', why: 'boom' })).status, 400)
+    drop()
+    assert.equal(count("select count(*) n from tasks where session_id = 'tx-k'"), 0)
+  })
+})
