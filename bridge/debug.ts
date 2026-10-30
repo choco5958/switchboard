@@ -42,6 +42,7 @@ export type DebugContext = {
   db: DatabaseSync
   watchers: Set<ServerResponse> // the IDE's /stream
   deliveryWatchers: Map<string, Set<ServerResponse>> // each mod's /deliveries, by session
+  readJson: (req: IncomingMessage) => Promise<Json> // the server's, with its body cap (BODY_MAX)
 }
 
 // The last open request, for an IDE that (re)connects after the session asked.
@@ -61,15 +62,6 @@ let seq = 0
 
 type Json = Record<string, unknown>
 
-async function readJson(req: IncomingMessage): Promise<Json> {
-  const chunks: Buffer[] = []
-  for await (const chunk of req) chunks.push(chunk as Buffer)
-  if (chunks.length === 0) return {}
-  const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('body must be a JSON object')
-  return parsed as Json
-}
-
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify(body))
@@ -88,7 +80,7 @@ function emit(ctx: DebugContext, data: Json): void {
 
 // Handles the request when it is one of these routes; false sends it on to the 404.
 export async function debugRoutes(ctx: DebugContext, req: IncomingMessage, res: ServerResponse, method: string, path: string, url: URL): Promise<boolean> {
-  const { db } = ctx
+  const { db, readJson } = ctx
   if (!ready.has(db)) {
     db.exec(SCHEMA)
     // Added after the first release: the page's console and failed requests with a comment.

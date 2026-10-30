@@ -2091,7 +2091,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     }
 
     // Dynamic debugging (bridge/debug.ts): screen comments, open_in_ide, live sessions.
-    if (await debugRoutes({ db, watchers, deliveryWatchers }, req, res, method, path, url)) return
+    if (await debugRoutes({ db, watchers, deliveryWatchers, readJson }, req, res, method, path, url)) return
 
     return send(res, 404, { error: say('bridge.noRoute', { method, path }) })
   }

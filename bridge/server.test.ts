@@ -965,6 +965,9 @@ describe('hardening', () => {
   test('a body over the limit is refused', async () => {
     assert.notEqual(await raw('POST', '/outbox', `{"sessionId":"x","text":"${'a'.repeat(9 * 1024 * 1024)}"}`), 200)
     assert.equal((await call('GET', '/health')).status, 200)
+    // The debugging routes (bridge/debug.ts) read with the same cap.
+    assert.notEqual(await raw('POST', '/comments', `{"url":"http://127.0.0.1:1/big","text":"${'a'.repeat(9 * 1024 * 1024)}"}`), 200)
+    assert.equal((await call('GET', `/comments?url=${encodeURIComponent('http://127.0.0.1:1/big')}`)).json.comments.length, 0)
   })
 
   test('a long agent description does not stall the bridge', async () => {
