@@ -38,12 +38,18 @@ export function LinearPage({ sessions }: { sessions: Session[] }) {
   const targetId = (sessions.some(s => s.id === target) ? target : pickSession(sessions, null)?.id) ?? ''
 
   useEffect(() => {
+    // A filter changed before the last list came back: that late answer is for the old filter.
+    let stale = false
     setLoading(true)
     void window.ide.linearList(filter).then(reply => {
+      if (stale) return
       setIssues(reply.issues)
       setError(reply.error ?? '')
       setLoading(false)
     })
+    return () => {
+      stale = true
+    }
   }, [filter])
 
   const send = async (issue: LinearIssue) => {
