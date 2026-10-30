@@ -70,7 +70,7 @@ export function pendingLine(q: PendingQuestion, lang: Lang = 'ko'): string {
 // session.end, and the store has a 4 MiB limit.
 export function staleKeys(keys: readonly string[], seen: Readonly<Record<string, number>>, at: number, maxAge: number): string[] {
   return keys.filter(key => {
-    const match = /^(sent|commands|agents|queued):(.+)$/.exec(key)
+    const match = /^(sent|commands|agents|queued|token):(.+)$/.exec(key)
     const last = match ? seen[match[2] ?? ''] : undefined
     return last !== undefined && at - last > maxAge
   })

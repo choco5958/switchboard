@@ -1,4 +1,4 @@
-import { request, type ClientRequest } from 'node:http'
+import { request, type Agent, type ClientRequest } from 'node:http'
 import { parseFrame, takenText } from '../../mod/hooks/batch.ts'
 import type { Reply, Session } from '../shared/types'
 import { getLang, type Lang } from '../shared/i18n'
@@ -16,8 +16,10 @@ const RECONNECT_MS = 3000
 
 export type DeliveryOptions = {
   // Where the bridge is, read at each connection (bridge/endpoint.ts); `socketPath` alone in tests.
+  // The app's (bridgeClient.ts streamTarget) carries its key and the connection the bridge proved
+  // it on; `done` lets that connection go once the stream ends.
   socketPath?: string
-  target?: () => RequestTarget
+  target?: () => Promise<{ where: RequestTarget & { agent?: Agent }; done: () => void }>
   call: (method: string, path: string, body?: unknown) => Promise<Reply>
   terminal: (key: string) => TypingTarget | undefined
   now?: () => number
@@ -137,7 +139,13 @@ export function startAgentDelivery(options: DeliveryOptions) {
   }
 
   const listen = (sessionId: string, sub: Sub) => {
-    const where = options.target?.() ?? { socketPath: options.socketPath, headers: {} }
+    sub.req = null
+    const found = options.target?.() ?? Promise.resolve({ where: { socketPath: options.socketPath, headers: {} }, done: () => undefined })
+    void found.then(({ where, done }) => open(sessionId, sub, where, done), () => undefined)
+  }
+
+  const open = (sessionId: string, sub: Sub, where: RequestTarget & { agent?: Agent }, done: () => void) => {
+    if (sub.closed) return done()
     const req = request({ ...where, path: `/deliveries?session=${encodeURIComponent(sessionId)}` }, res => {
       let buffer = ''
       res.setEncoding('utf8')
@@ -157,6 +165,7 @@ export function startAgentDelivery(options: DeliveryOptions) {
     function lost() {
       if (gone) return
       gone = true
+      done()
       sub.req = null
       if (!sub.closed) setTimeout(() => !sub.closed && !sub.req && listen(sessionId, sub), RECONNECT_MS).unref?.()
     }

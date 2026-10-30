@@ -97,6 +97,19 @@ export function bridgeClient(target: () => RequestTarget, key: () => string) {
       }
     },
 
+    // Where a long request goes (agentDelivery.ts's delivery stream): with the key, on the
+    // connection the bridge proved it on, or without it when the bridge did not prove it.
+    // `done` lets that connection go.
+    async streamTarget(): Promise<{ where: RequestTarget & { agent?: Agent }; done: () => void }> {
+      const where = target()
+      const agent = new OneConnection()
+      if ((await prove(where, key(), agent)) === null) {
+        agent.destroy()
+        return { where, done: () => undefined }
+      }
+      return { where: { ...where, agent, headers: { ...where.headers, [APP_HEADER]: key() } }, done: () => agent.destroy() }
+    },
+
     // The pid of the bridge serving now, when it proves the key: the one the app may stop.
     async provenPid(): Promise<number | null> {
       const agent = new OneConnection()

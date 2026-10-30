@@ -108,14 +108,16 @@ export function clipText(text: string): string {
   return text.length > PEER_TEXT_MAX ? `${text.slice(0, PEER_TEXT_MAX - 1)}…` : text
 }
 
-// A request typed in the shell (switchboard send): the person waits there for the result.
-export function shellText(row: { id: number; text: string }, lang: Lang, autoReply: boolean): string {
-  return [
-    tIn(lang, 'peer.shellHead', { id: row.id }),
-    tIn(lang, autoReply ? 'peer.shellAuto' : 'peer.shellReply', { id: row.id }),
-    tIn(lang, 'peer.body'),
-    row.text,
-  ].join('\n')
+// What came in without the app's key (switchboard send, or any program of the same user, a
+// session's shell too): it may be the person or another session, so it never says the person
+// sent it, and it is fenced and read as collaborator input like a message between sessions.
+// `expects_reply`: a request the shell waits on (send --wait); without it, information (--info).
+export function shellText(row: { id: number; text: string; expects_reply: number }, lang: Lang, autoReply: boolean, fence = newFence()): string {
+  const lines = [tIn(lang, 'peer.shellHead', { id: row.id }), tIn(lang, 'peer.shellCollaborator')]
+  if (row.expects_reply) lines.push(tIn(lang, autoReply ? 'peer.shellAuto' : 'peer.shellReply', { id: row.id }))
+  else lines.push(tIn(lang, 'peer.infoRules'))
+  lines.push(tIn(lang, 'peer.shellFenceRule'), tIn(lang, 'peer.bodyFenced', { fence }), row.text, tIn(lang, 'peer.bodyEnd', { fence }))
+  return lines.join('\n')
 }
 
 function hhmm(at: number): string {
@@ -129,10 +131,11 @@ export function routineText(name: string, prompt: string, scheduledFor: number, 
   return [tIn(lang, 'peer.routineHead', { name, time: hhmm(scheduledFor) }), tIn(lang, 'peer.routineRules'), tIn(lang, 'peer.body'), prompt].join('\n')
 }
 
-// await_event: the event a session waited for came (switchboard fire).
-export function waitText(wait: { id: number; note: string; payload: string }, lang: Lang): string {
+// await_event: the event a session waited for came (switchboard fire). What came with it is
+// whatever the shell command carried, so it is fenced like a message.
+export function waitText(wait: { id: number; note: string; payload: string }, lang: Lang, fence = newFence()): string {
   const lines = [tIn(lang, 'peer.waitHead', { id: wait.id }), tIn(lang, 'peer.waitNote', { note: wait.note })]
-  if (wait.payload) lines.push(tIn(lang, 'peer.waitPayload'), wait.payload)
+  if (wait.payload) lines.push(tIn(lang, 'peer.waitPayload'), tIn(lang, 'peer.waitFenceRule'), tIn(lang, 'peer.bodyFenced', { fence }), wait.payload, tIn(lang, 'peer.bodyEnd', { fence }))
   lines.push(tIn(lang, 'peer.waitGo'))
   return lines.join('\n')
 }

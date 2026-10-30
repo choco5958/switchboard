@@ -122,6 +122,16 @@ describe('the MCP server against a test bridge', () => {
     assert.equal(state.tasks.find((t: { title: string }) => t.title === 'MCP 작업').session_id, session.id)
 
     assert.match((await c.tool('check_answers')).text, /새로 온 답이나 메시지가 없습니다/)
+    // The session took a token at registration: a program that knows its id cannot take its answers.
+    const stranger = await new Promise<number>((resolve, reject) => {
+      const req = request({ socketPath, method: 'POST', path: '/deliveries/take', headers: { 'content-type': 'application/json' } }, res => {
+        res.resume()
+        resolve(res.statusCode ?? 0)
+      })
+      req.on('error', reject)
+      req.end(JSON.stringify({ sessionId: session.id }))
+    })
+    assert.equal(stranger, 403)
     // The route the app's answer button uses.
     assert.equal((await call('POST', `/questions/${id}/answer`, { choice: 'b', memo: '오른쪽이 가깝다' })).status, 200)
     const got = await c.tool('check_answers')
@@ -276,6 +286,26 @@ describe('pieces of the MCP server', () => {
     const reply = (await session.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'plan_nodes', arguments: { task: 't', nodes: [{ key: 'a', title: 'x' }] } } }))!
     assert.equal((reply.result as any).content[0].text, '노드 1개를 올렸습니다.')
     assert.deepEqual(calls, ['down /sessions', 'up /sessions', 'up /state', 'up /nodes'])
+  })
+
+  test('the token the bridge gives at registration goes with every later call, and with registering again', async () => {
+    const seen: string[] = []
+    const session = createSession(
+      { agent: 'codex', terminal: '', cwd: '/w', socket: '/none', home: '/none' },
+      {
+        call: async (_method, path, body, headers = {}): Promise<Reply> => {
+          seen.push(`${path} ${headers['x-switchboard-session'] ?? '-'}${path === '/sessions' ? ` ${String((body as { token?: unknown }).token)}` : ''}`)
+          // The bridge answers 404 for /deliveries/take once (a new database): the session registers again.
+          if (path === '/deliveries/take' && seen.filter(s => s.startsWith('/deliveries/take')).length === 1) return { ok: false, status: 404, json: {} }
+          return { ok: true, status: 200, json: path === '/sessions' ? { id: 'x', token: 'tk1' } : { items: [], settings: { lang: 'en' } } }
+        },
+        startBridge: async () => true,
+        run: async () => ({ code: 1, stdout: '', stderr: '' }),
+        log: () => undefined,
+      },
+    )
+    await session.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'check_answers', arguments: {} } })
+    assert.deepEqual(seen, ['/sessions - true', '/state -', '/deliveries/take tk1', '/sessions tk1 true', '/state -', '/deliveries/take tk1'])
   })
 
   test('every tool has a description and an object schema', () => {

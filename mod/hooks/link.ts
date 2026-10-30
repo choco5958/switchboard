@@ -53,11 +53,17 @@ export async function bridgeFetch($: Engine, path: string, init: Init = {}) {
   return $.http.fetch(`http://127.0.0.1:${link.port}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${link.token}` } })
 }
 
-// The curl command that holds the delivery stream open.
-export async function streamArgv($: Engine, path: string): Promise<string[]> {
+// The header this session proves itself with on its own routes (bridge/endpoint.ts SESSION_HEADER).
+export const SESSION_HEADER = 'x-switchboard-session'
+
+// The curl command that holds the delivery stream open. `headerOnStdin`: curl reads a header
+// (the session's token) from its standard input, never from its command line, which any
+// program of the same user can list.
+export async function streamArgv($: Engine, path: string, headerOnStdin = false): Promise<string[]> {
   const link = await linkOf($)
-  if (link.kind === 'socket') return ['curl', '-sN', '--unix-socket', link.path, `http://bridge${path}`]
-  return ['curl', '-sN', '-K', `${await homeOf($)}/.claude-ide/bridge.curl`, `http://127.0.0.1:${link.port}${path}`]
+  const header = headerOnStdin ? ['-H', '@-'] : []
+  if (link.kind === 'socket') return ['curl', '-sN', ...header, '--unix-socket', link.path, `http://bridge${path}`]
+  return ['curl', '-sN', ...header, '-K', `${await homeOf($)}/.claude-ide/bridge.curl`, `http://127.0.0.1:${link.port}${path}`]
 }
 
 // How to start the bridge: start-bridge.json (the installed app and `pnpm run setup` write

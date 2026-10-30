@@ -59,6 +59,17 @@ describe.skipIf(!unix)('the app key goes only to a bridge that proves it holds i
         one.server.close()
       }
       expect(await bridgeClient(() => requestTarget({ kind: 'socket', path: join(dir, 'none.sock') }), () => KEY).call('GET', '/state')).toMatchObject({ ok: false, status: 0 })
+
+      // The delivery stream's target: the key only for the bridge that proved it.
+      const stream = await own.streamTarget()
+      expect(stream.where.headers).toMatchObject({ 'x-switchboard-app': KEY })
+      expect(stream.where.agent).toBeDefined()
+      stream.done()
+      const fake2 = await listener(join(dir, 'fake2.sock'))
+      const unproven = await bridgeClient(() => requestTarget({ kind: 'socket', path: join(dir, 'fake2.sock') }), () => KEY).streamTarget()
+      expect(JSON.stringify(unproven.where)).not.toContain(KEY)
+      expect(fake2.got()).not.toContain(KEY)
+      fake2.server.close()
     } finally {
       bridge.close()
     }
