@@ -533,15 +533,39 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   let shuttingDown = false
 
   // A permission ask answered once, from wherever it was first.
-  const answerApproval = (row: ApprovalRow, decision: 'allow' | 'deny' | 'terminal' | 'expired', via: string): boolean => {
+  const answerApproval = (row: ApprovalRow, decision: 'allow' | 'deny' | 'terminal' | 'expired', via: string, event?: Key): boolean => {
     const result = db.prepare("update approvals set status = ?, via = ?, answered_at = ? where id = ? and status = 'pending'").run(decision, via, now(), row.id)
     if (result.changes === 0) return false
-    const key = ({ allow: 'bridge.event.approvalAllow', deny: 'bridge.event.approvalDeny', terminal: 'bridge.event.approvalTerminal', expired: 'bridge.event.approvalExpired' } as const)[decision]
+    const key = event ?? ({ allow: 'bridge.event.approvalAllow', deny: 'bridge.event.approvalDeny', terminal: 'bridge.event.approvalTerminal', expired: 'bridge.event.approvalExpired' } as const)[decision]
     logEvent(row.session_id, '권한', say(key, { id: row.id, tool: row.tool }))
     changed('approvals')
     if (via !== 'telegram') telegram.approvalClosed(row, decision)
+    approvalSeen.delete(row.id)
+    for (const wake of approvalWaiters.get(row.id) ?? []) wake()
     return true
   }
+
+  // The mod's hook waits on an ask with long polls (GET /approvals/:id?wait=ms), one after
+  // another; an answer wakes the poll at once. An ask nobody polls for APPROVAL_STALE_MS has no
+  // hook behind it any more (the mod gave up, its session or the bridge before this one went
+  // away), so an answer could reach nothing: it expires. Asks found at the start get that long
+  // for their mods to come back.
+  const APPROVAL_STALE_MS = 90_000
+  const APPROVAL_POLL_MAX_MS = 25_000
+  const approvalWaiters = new Map<number, Set<() => void>>()
+  const approvalSeen = new Map<number, number>()
+  const approvalsFrom = now()
+  const sweepApprovals = () => {
+    if (shuttingDown) return clearInterval(approvalSweep)
+    const at = now()
+    for (const row of db.prepare("select * from approvals where status = 'pending'").all() as ApprovalRow[]) {
+      if ((approvalWaiters.get(row.id)?.size ?? 0) > 0) continue
+      const seen = approvalSeen.get(row.id) ?? Math.max(row.created_at, approvalsFrom)
+      if (at - seen > APPROVAL_STALE_MS) answerApproval(row, 'expired', '', 'bridge.event.approvalStale')
+    }
+  }
+  const approvalSweep = setInterval(sweepApprovals, 30_000)
+  approvalSweep.unref()
 
   // The person's presence at the desk, from the app (POST /presence): away when the app is
   // closed, its report is old, or it says so (screen locked, idle). Telegram writes only then.
@@ -1151,12 +1175,48 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (away()) void notifyPhones({ title: say('mobile.push.approval', { tool, project: projectOf(sessionId) }), body: '', tag: `a${id}`, tab: 'approvals' })
       return send(res, 200, { id })
     }
-    const approvalOne = path.match(/^\/approvals\/(\d+)(\/answer)?$/)
+    const approvalOne = path.match(/^\/approvals\/(\d+)(\/answer|\/abandon)?$/)
     if (approvalOne) {
       const row = db.prepare('select * from approvals where id = ?').get(Number(approvalOne[1])) as ApprovalRow | undefined
       if (!row) return send(res, 404, { error: say('bridge.notFound') })
-      if (method === 'GET' && !approvalOne[2]) return send(res, 200, { id: row.id, status: row.status })
-      if (method === 'POST' && approvalOne[2]) {
+      // `wait`: answers once the ask is answered or that many milliseconds (at most
+      // APPROVAL_POLL_MAX_MS) went by, whichever is first. `waitMs` tells the mod this bridge waits.
+      if (method === 'GET' && !approvalOne[2]) {
+        const waitMs = Math.min(Math.max(Number(url.searchParams.get('wait')) || 0, 0), APPROVAL_POLL_MAX_MS)
+        const reply = () => {
+          approvalSeen.set(row.id, now())
+          const status = (db.prepare('select status from approvals where id = ?').get(row.id) as { status: string } | undefined)?.status ?? row.status
+          send(res, 200, { id: row.id, status, waitMs })
+        }
+        if (row.status !== 'pending' || waitMs === 0) return reply()
+        approvalSeen.set(row.id, now())
+        const waiters = approvalWaiters.get(row.id) ?? new Set<() => void>()
+        approvalWaiters.set(row.id, waiters)
+        let done = false
+        const finish = (answer: boolean) => {
+          if (done) return
+          done = true
+          clearTimeout(timer)
+          waiters.delete(wake)
+          if (waiters.size === 0) approvalWaiters.delete(row.id)
+          if (answer && !shuttingDown) reply()
+        }
+        const wake = () => finish(true)
+        const timer = setTimeout(wake, waitMs)
+        timer.unref()
+        waiters.add(wake)
+        res.on('close', () => finish(false))
+        return
+      }
+      // The mod's hook stopped waiting (its time ran out, or the bridge was out of reach):
+      // an answer now would reach nothing, so the ask leaves the queue.
+      if (method === 'POST' && approvalOne[2] === '/abandon') {
+        const body = await readJson(req)
+        if (str(body.sessionId) !== row.session_id) return send(res, 403, { error: say('bridge.notFound') })
+        answerApproval(row, 'expired', '', 'bridge.event.approvalStale')
+        return send(res, 200, { id: row.id, status: (db.prepare('select status from approvals where id = ?').get(row.id) as { status: string }).status })
+      }
+      if (method === 'POST' && approvalOne[2] === '/answer') {
         const body = await readJson(req)
         const decision = str(body.decision)
         if (!['allow', 'deny', 'terminal'].includes(decision)) return send(res, 400, { error: say('bridge.needAnswer') })

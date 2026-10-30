@@ -7,6 +7,7 @@ import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
 import { bridgeFetch, startArgv, streamArgv } from './link.ts'
 import { BROWSER_TOOLS, cancelText, peersText, sentText, toolDefs, type Peer } from './tools.ts'
+import { waitApproval } from './approval.ts'
 
 // The mod connects this Claude Code session to the Switchboard bridge:
 // questions and task state go out over the bridge's socket (TCP on Windows: link.ts),
@@ -685,13 +686,18 @@ export const register: Register = on => {
     }).catch(() => undefined)
     if (!posted?.ok) return verdict
     const id = String(posted.json.id)
-    for (let waited = 0; waited < APPROVAL_WAIT_MS; waited += 1000) {
-      await $.clock.sleep(1000)
-      const status = (await call($, 'GET', `/approvals/${id}`).catch(() => undefined))?.json.status
-      if (status === 'allow') return { decision: 'allow', reason: t(currentLang(), 'mod.allowedRemote', { id }) }
-      if (status === 'deny') return { decision: 'deny', reason: t(currentLang(), 'mod.deniedRemote', { id }) }
-      if (status === 'terminal' || status === 'expired' || status === undefined) return verdict
-    }
+    // Long polls, never a sleep: the wait stays out of the hook's 10 s (approval.ts).
+    const answer = await waitApproval({
+      until: (await $.clock.now()) + APPROVAL_WAIT_MS,
+      now: () => $.clock.now(),
+      poll: waitMs => call($, 'GET', `/approvals/${id}?wait=${waitMs}`),
+      aborted: () => next.signal.aborted,
+      reconnect: () => ensureBridge($),
+      sleep: ms => $.clock.sleep(ms, { signal: next.signal }),
+      abandon: () => call($, 'POST', `/approvals/${id}/abandon`, { sessionId }),
+    })
+    if (answer === 'allow') return { decision: 'allow', reason: t(currentLang(), 'mod.allowedRemote', { id }) }
+    if (answer === 'deny') return { decision: 'deny', reason: t(currentLang(), 'mod.deniedRemote', { id }) }
     return verdict
   }).catch(($, e, next) => next(e))
 

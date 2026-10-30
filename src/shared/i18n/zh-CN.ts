@@ -733,6 +733,7 @@ export const zhCN: Dict = {
   'bridge.event.approvalDeny': '已拒绝 A{id} {tool}',
   'bridge.event.approvalTerminal': 'A{id} {tool} 已转到终端',
   'bridge.event.approvalExpired': 'A{id} {tool} 随会话结束而过期',
+  'bridge.event.approvalStale': 'A{id} {tool} 已过期：没有会话在等待答复',
   'eventKind.approval': '权限',
   'bridge.event.routineSent': '已送入定时提示「{name}」',
   'bridge.waitLimit': '已有 {max} 个未关闭的等待。请用 close_wait 关闭已完成的等待',
