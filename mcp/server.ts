@@ -218,6 +218,9 @@ export function createSession(options: Options, deps: Deps) {
 
   // What a tool call returns to the agent: its text, and whether it failed. The texts are the mod's.
   async function callTool(name: string, a: Json): Promise<{ text: string; isError?: boolean }> {
+    // One key per tool call: call() sends it again after a lost connection, and the bridge
+    // gives a request it already stored back instead of storing it twice.
+    const requestKey = randomUUID()
     if (name === 'ask_decision') {
       const reply = await call('POST', '/questions', {
         sessionId,
@@ -227,6 +230,7 @@ export function createSession(options: Options, deps: Deps) {
         options: a.options,
         recommend: a.recommend,
         reason: a.reason,
+        requestKey,
       })
       if (!reply.ok) return { text: say('mcp.askFailed', { error: errorText(reply) }), isError: true }
       return { text: `${say(reply.json.duplicate ? 'tool.askedAgain' : 'tool.asked', { id: String(reply.json.id) })} ${say(options.terminal ? 'mcp.askInside' : 'mcp.askOutside')}` }
@@ -243,7 +247,7 @@ export function createSession(options: Options, deps: Deps) {
     }
     if (name === 'send_to_session') {
       const expectsReply = !a.replyTo && a.expectsReply !== false
-      const reply = await call('POST', '/messages', { sessionId, to: a.to, text: a.text, replyTo: a.replyTo, expectsReply })
+      const reply = await call('POST', '/messages', { sessionId, to: a.to, text: a.text, replyTo: a.replyTo, expectsReply, requestKey })
       if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
       return { text: sentText(reply.json, expectsReply, lang) }
     }
@@ -306,7 +310,9 @@ export function createSession(options: Options, deps: Deps) {
     const ok = (result: unknown): Response | undefined => (isRequest ? { jsonrpc: '2.0', id, result } : undefined)
     const error = (code: number, text: string): Response | undefined =>
       isRequest ? { jsonrpc: '2.0', id, error: { code, message: text } } : undefined
-    const method = message.method ?? ''
+    // A message without a method is no request at all (JSON-RPC 2.0: Invalid Request, id null when unknown).
+    if (typeof message.method !== 'string') return { jsonrpc: '2.0', id, error: { code: -32600, message: say('mcp.badRequest') } }
+    const method = message.method
     if (method === 'initialize') {
       const asked = text(message.params?.protocolVersion)
       await ready()
@@ -365,6 +371,8 @@ export async function answerLine(line: string, handle: (m: Message) => Promise<R
       ? handle(m as Message)
       : Promise.resolve<Response>({ jsonrpc: '2.0', id: null, error: { code: -32600, message: t(lang, 'mcp.badRequest') } })
   if (Array.isArray(parsed)) {
+    // An empty batch is one Invalid Request, not an empty array (JSON-RPC 2.0).
+    if (parsed.length === 0) return { jsonrpc: '2.0', id: null, error: { code: -32600, message: t(lang, 'mcp.badRequest') } }
     const replies = (await Promise.all(parsed.map(one))).filter(Boolean)
     return replies.length > 0 ? replies : undefined
   }

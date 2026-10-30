@@ -745,6 +745,7 @@ export const ja: Dict = {
   'bridge.event.approvalDeny': 'A{id} {tool} を拒否',
   'bridge.event.approvalTerminal': 'A{id} {tool} をターミナルへ回した',
   'bridge.event.approvalExpired': 'A{id} {tool} はセッション終了で期限切れ',
+  'bridge.event.approvalStale': 'A{id} {tool} は答えを待つセッションがなく期限切れ',
   'eventKind.approval': '権限',
   'bridge.event.routineSent': '予約プロンプト「{name}」を入れた',
   'bridge.waitLimit': '開いている待機がすでに {max} 件あります。終わった待機は close_wait で閉じてください',

@@ -16,7 +16,7 @@ import { onTerminalsChange, openClaudeIn, registerTerminals, typingTarget } from
 import { registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
-import { copyRuntime, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
+import { buildId, copyRuntime, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
 import { startUpdates } from './updater'
 import { APP_HEADER, requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
 import { ROUTINE_FAIL_LIMIT } from '../../bridge/schedule.ts'
@@ -52,6 +52,10 @@ const ipcMain = guardIpc(rawIpcMain, event => isAppUrl(event.senderFrame?.url, A
 
 // The app's key for the person-only routes (src/main/appKey.ts), read once the app is ready.
 let appKey = ''
+// This build of the installed app (runtime.ts buildId), known once prepareRuntime has run: the
+// bridge it starts says it, and a bridge of any other build is replaced.
+let build = ''
+const ownBuild = () => build || app.getVersion()
 
 // A bridge of the app's own: run on the app's Node, the key on its standard input. One a mod
 // or the switchboard command started has no key, and one of another version is out of date;
@@ -65,7 +69,7 @@ async function launchBridge(): Promise<boolean> {
       detached: true,
       windowsHide: true,
       stdio: ['pipe', log, log],
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_VERSION: app.isPackaged ? app.getVersion() : '', SWITCHBOARD_APP_KEY_STDIN: '1' },
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_VERSION: app.isPackaged ? ownBuild() : '', SWITCHBOARD_APP_KEY_STDIN: '1' },
     })
   } finally {
     // The child has its own copy of the descriptor; this one would stay open for every start.
@@ -122,7 +126,7 @@ const startBridge = sharedStart(startBridgeOnce)
 async function startBridgeOnce(): Promise<boolean> {
   const health = await call('GET', '/health')
   if (health.ok) {
-    const outdated = app.isPackaged && staleBridge(health.json, app.getVersion()) !== null
+    const outdated = app.isPackaged && staleBridge(health.json, ownBuild()) !== null
     if (!outdated && (await call('GET', '/app/check')).ok) return true
     const where = resolveEndpoint()
     const pid = typeof health.json.pid === 'number' ? health.json.pid : where.kind === 'socket' ? await oldBridgePid(where.path) : null
@@ -157,10 +161,12 @@ async function offerApplicationsFolder(): Promise<void> {
 async function prepareRuntime(): Promise<void> {
   if (!app.isPackaged) return
   try {
-    useNodeRoot(copyRuntime(nodeRoot(), homedir(), app.getVersion()))
+    const id = buildId(nodeRoot(), app.getVersion())
+    useNodeRoot(copyRuntime(nodeRoot(), homedir(), id))
+    build = id
     // An AppImage runs from a folder mounted for this run only; the file itself stays.
-    writeRuntime({ execPath: process.env.APPIMAGE ?? process.execPath, root: nodeRoot(), home: homedir(), version: app.getVersion() })
-    pruneRuntimes(homedir(), app.getVersion())
+    writeRuntime({ execPath: process.env.APPIMAGE ?? process.execPath, root: nodeRoot(), home: homedir(), version: id })
+    pruneRuntimes(homedir(), id)
   } catch (error) {
     console.error('could not write the launchers:', error)
   }

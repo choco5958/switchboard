@@ -744,6 +744,7 @@ export const ko = {
   'bridge.event.approvalDeny': 'A{id} {tool} 거부',
   'bridge.event.approvalTerminal': 'A{id} {tool} 터미널에서 답하기로 넘김',
   'bridge.event.approvalExpired': 'A{id} {tool} 세션이 끝나 만료',
+  'bridge.event.approvalStale': 'A{id} {tool} 답을 기다리는 세션이 없어 만료',
   'eventKind.approval': '권한',
   'bridge.event.routineSent': '예약 프롬프트 \'{name}\'을(를) 넣음',
   'bridge.waitLimit': '열린 대기가 이미 {max}개입니다. 끝난 대기를 close_wait로 닫으세요',

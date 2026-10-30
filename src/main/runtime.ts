@@ -1,14 +1,15 @@
 // The installed app carries the Node side of Switchboard (bridge, MCP server, mod, the
 // switchboard command) under Resources/node, and runs it with its own executable in Node
 // mode (ELECTRON_RUN_AS_NODE), so the person needs no Node of their own. Each start copies
-// those files to ~/.claude-ide/runtime/<version> (an AppImage's own folder is gone once it
+// those files to ~/.claude-ide/runtime/<build> (an AppImage's own folder is gone once it
 // quits, and the mod writes its types beside itself) and writes the small launchers the
 // mod, other CLIs and shells call, pointing at this copy of the app: a moved or updated app
 // fixes them by starting once. A run from the repo (pnpm dev) leaves them to `pnpm run setup`.
 
 import { execFile } from 'node:child_process'
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, posix, win32 } from 'node:path'
+import { createHash } from 'node:crypto'
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, posix, relative, win32 } from 'node:path'
 
 export type RuntimeFile = { path: string; content: string; mode: number }
 
@@ -75,10 +76,34 @@ export function writeRuntime(input: RuntimeInput): void {
   chmodSync(join(input.home, '.claude-ide'), 0o700)
 }
 
-// The copy of Resources/node for this version, made once; other versions' copies go.
-export function copyRuntime(source: string, home: string, version: string): string {
+// What the Node side is, file by file: two builds of one version with any file changed (a
+// rebuild, a test build) differ, so each gets its own copy and replaces the other's bridge.
+export function contentHash(dir: string): string {
+  const hash = createHash('sha256')
+  const walk = (at: string): void => {
+    for (const entry of readdirSync(at, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      const path = join(at, entry.name)
+      if (entry.isDirectory()) walk(path)
+      else if (entry.isFile()) {
+        hash.update(`${relative(dir, path).split('\\').join('/')}\0`)
+        hash.update(readFileSync(path))
+        hash.update('\0')
+      }
+    }
+  }
+  walk(dir)
+  return hash.digest('hex').slice(0, 12)
+}
+
+// The name of this build: its version and what its Node side holds (contentHash).
+export function buildId(source: string, version: string): string {
+  return `${version}-${contentHash(source)}`
+}
+
+// The copy of Resources/node for this build, made once; other builds' copies go (pruneRuntimes).
+export function copyRuntime(source: string, home: string, build: string): string {
   const base = join(home, '.claude-ide', 'runtime')
-  const target = join(base, version)
+  const target = join(base, build)
   if (!existsSync(target)) {
     const partial = `${target}.partial`
     rmSync(partial, { recursive: true, force: true })
@@ -88,12 +113,12 @@ export function copyRuntime(source: string, home: string, version: string): stri
   return target
 }
 
-// Other versions' copies, once this one is in use. Each on its own: a file another program
+// Other builds' copies, once this one is in use. Each on its own: a file another program
 // holds open (Windows) keeps that folder for the next start, and nothing else stops.
-export function pruneRuntimes(home: string, version: string): void {
+export function pruneRuntimes(home: string, build: string): void {
   const base = join(home, '.claude-ide', 'runtime')
   for (const name of readdirSync(base)) {
-    if (name === version) continue
+    if (name === build) continue
     try {
       rmSync(join(base, name), { recursive: true, force: true })
     } catch {
@@ -102,10 +127,11 @@ export function pruneRuntimes(home: string, version: string): void {
   }
 }
 
-// The bridge a start finds running may be from before an update; the app replaces it.
-export function staleBridge(health: Record<string, unknown>, version: string): number | null {
+// The bridge a start finds running may be from before an update, or a rebuild of the same
+// version: it says its build (SWITCHBOARD_VERSION, buildId), and the app replaces one not its own.
+export function staleBridge(health: Record<string, unknown>, build: string): number | null {
   const pid = typeof health.pid === 'number' ? health.pid : null
-  return pid !== null && health.version !== version ? pid : null
+  return pid !== null && health.version !== build ? pid : null
 }
 
 type Run = (file: string, args: string[]) => Promise<string>

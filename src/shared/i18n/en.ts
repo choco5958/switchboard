@@ -745,6 +745,7 @@ export const en: Dict = {
   'bridge.event.approvalDeny': 'A{id} {tool} denied',
   'bridge.event.approvalTerminal': 'A{id} {tool} handed to the terminal',
   'bridge.event.approvalExpired': 'A{id} {tool} expired with its session',
+  'bridge.event.approvalStale': 'A{id} {tool} expired: no session was waiting for the answer',
   'eventKind.approval': 'Permission',
   'bridge.event.routineSent': 'Put in scheduled prompt \'{name}\'',
   'bridge.waitLimit': 'There are {max} open waits already. Close finished ones with close_wait',

@@ -6,12 +6,43 @@ on:
   push:
     tags: ['v*']
 
+# Read-only unless a job says otherwise: only the jobs that write the release may.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  # Before anything is made: the tag names the version every part says, and the checks pass.
+  preflight:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: The tag matches package.json, the MCP server and the mod
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          app=$(node -p "require('./package.json').version")
+          mcp=$(sed -n "s/^const VERSION = '\(.*\)'$/\1/p" mcp/server.ts)
+          mod=$(node -p "require('./mod/.claude-plugin/plugin.json').version")
+          echo "tag $tag, package.json $app, mcp/server.ts $mcp, mod/.claude-plugin/plugin.json $mod"
+          if [ "$tag" != "$app" ] || [ "$tag" != "$mcp" ] || [ "$tag" != "$mod" ]; then
+            echo "::error::$GITHUB_REF_NAME does not match every version above"
+            exit 1
+          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  release:
+    needs: preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Create the release
@@ -22,6 +53,10 @@ jobs:
 
   build:
     needs: release
+    # electron-builder uploads its own installers and update files (latest*.yml) to the draft
+    # release (--publish always), so each build job writes the release too.
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -56,6 +91,8 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Publish the release
         env:
