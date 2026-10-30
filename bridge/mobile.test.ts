@@ -2,7 +2,7 @@ import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createCipheriv, createDecipheriv, createECDH, createPublicKey, randomBytes, verify } from 'node:crypto'
 import { createServer, request } from 'node:http'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, listen } from './server.ts'
@@ -10,6 +10,7 @@ import { clientOf, createMobile, mobileAddresses, mobileRouteAllowed, needsStron
 import { DatabaseSync } from 'node:sqlite'
 import { encryptPush, pushAllowed, sendPush, validSubscription, vapidAuth, makeVapidKeys } from './push.ts'
 import { fromB64, fromUtf8, open, seal, toB64, utf8 } from './mobile/aead.js'
+import { en } from '../src/shared/i18n/en.ts'
 
 describe('the cipher the phone and the bridge share', () => {
   test('RFC 8439 2.8.2: the same ciphertext and tag', () => {
@@ -896,5 +897,19 @@ describe('a paired phone', () => {
     assert.equal(off.listening, false)
     await assert.rejects(http('GET', '/'))
     port = (await call('POST', '/mobile', { enabled: true, port: 0 })).json.port
+  })
+})
+
+describe('the phone page before its words arrive', () => {
+  test('its fallback words are the English dictionary word for word, and the page says each one', () => {
+    const page = readFileSync(new URL('./mobile/app.js', import.meta.url), 'utf8')
+    const block = /const FALLBACK = (\{[\s\S]*?\n\})/.exec(page)?.[1]
+    assert.ok(block, 'no FALLBACK block in app.js')
+    const fallback = new Function(`return ${block}`)() as Record<string, string>
+    const words = en as Record<string, string>
+    for (const [key, value] of Object.entries(fallback)) {
+      assert.equal(value, words[`mobile.page.${key}`], `mobile.page.${key}`)
+      assert.ok(page.includes(`'${key}'`), `${key} is never said`)
+    }
   })
 })

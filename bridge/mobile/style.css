@@ -135,3 +135,9 @@ footer { padding: 4px 0 0; text-align: center; color: var(--quiet); font-size: 1
   font: 600 20px/1.2 var(--mono); letter-spacing: 3px; text-align: center; text-transform: uppercase;
 }
 .notify .btn { width: 100%; }
+/* "More" under a reason: a small text button that opens the longer why below it. */
+.more {
+  display: inline-flex; align-items: center; min-height: 32px; padding: 4px 0; border: 0; background: none;
+  color: var(--text); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px;
+}
+.why p { margin: 4px 0; }

@@ -29,13 +29,19 @@ const picks = new Map()
 const memos = new Map()
 const drafts = new Map()
 
-// Until the words arrive (the computer may be out of reach), the few the first screens need.
+// Until the words arrive (the computer may be out of reach), the few the first screens need: the
+// English of src/shared/i18n/en.ts word for word (bridge/mobile.test.ts holds them to it).
 const FALLBACK = {
-  notPaired: 'Scan the QR code in Switchboard on your computer (Settings > Phone access).',
+  notPaired: "This phone is not connected yet. In the Switchboard app on the computer, open Settings > Phone access, show a QR code and scan it with this phone's camera.",
   homeNeedsHttps: 'A home screen app on iPhone connects only through the Tailscale HTTPS address. On the same Wi-Fi, open the QR link in Safari and use it there.',
-  revoked: 'This phone was disconnected. Show a new QR code in the app to connect again.',
-  offline: 'Cannot reach the computer. Check that it is on and on the same network.',
-  pairAgain: 'This phone was connected through an address without HTTPS (Wi-Fi or a Tailscale IP), or before an update, so it is not heard through this address and cannot allow permission asks, write to sessions or add a memo. Show a new QR code for the Tailscale HTTPS address in the app and scan it.',
+  revoked: 'This phone was disconnected. To connect again, show a new QR code in the app.',
+  offline: 'Cannot reach the computer. Check that it is on and that the phone is on the same Wi-Fi (or Tailscale). If the computer-name address does not open, show the QR code again for the IP address.',
+  pairAgain: 'This phone was connected through an address without HTTPS, or before an update, so it cannot be used through this address. Show a new QR code for the Tailscale HTTPS address in the app and scan it.',
+  pairAgainMore: 'A phone connected through a Wi-Fi address or a Tailscale IP also cannot allow permission asks, write to sessions or add a memo.',
+  more: 'More',
+  less: 'Less',
+  deny: 'Deny',
+  terminal: 'Answer in the terminal',
   linkOn: 'Connected to the computer',
   linkOff: 'Cannot reach the computer',
   linkWait: 'Checking the connection',
@@ -51,6 +57,32 @@ const strong = () => isSecureContext && location.protocol === 'https:'
 // a plain HTTP address may have been read on the way, so the bridge refuses it all three (pairedStrong).
 const mayStrong = () => strong() && view?.pairedStrong !== false
 const strongWhy = () => say(strong() ? 'pairAgain' : 'needStrong')
+// The same reason as a block: "pair again" carries its longer why behind a small toggle, open or
+// closed for every place at once and kept across redraws. `where` keeps each toggle's focus key apart.
+let whyOpen = false
+function strongWhyBlock(className, where) {
+  if (!strong()) return el('p', { className }, say('needStrong'))
+  return el(
+    'div',
+    { className: 'why' },
+    el('p', { className }, say('pairAgain')),
+    el(
+      'button',
+      {
+        type: 'button',
+        className: 'more',
+        'aria-expanded': String(whyOpen),
+        'data-key': `why:${where}`,
+        onclick: () => {
+          whyOpen = !whyOpen
+          render()
+        },
+      },
+      say(whyOpen ? 'less' : 'more'),
+    ),
+    whyOpen ? el('p', { className: 'small' }, say('pairAgainMore')) : null,
+  )
+}
 // The longest memo or message: the bridge refuses a request much larger (bridge/mobile.ts API_MAX).
 const TEXT_MAX = 4000
 
@@ -266,7 +298,7 @@ function draw() {
         { className: 'welcome' },
         el('img', { src: 'icon.png', alt: '' }),
         el('h1', {}, 'Switchboard'),
-        el('p', {}, state === 'weak' ? strongWhy() : say(state === 'revoked' ? 'revoked' : 'notPaired')),
+        state === 'weak' ? strongWhyBlock('', 'welcome') : el('p', {}, say(state === 'revoked' ? 'revoked' : 'notPaired')),
         strong() ? drawCode() : standalone() ? el('p', { className: 'small' }, say('homeNeedsHttps')) : null,
       ),
     ]
@@ -444,7 +476,7 @@ function drawDecisions() {
             el('label', { className: 'field', htmlFor: `memo-${q.id}` }, say('memo')),
             el('textarea', { id: `memo-${q.id}`, 'data-key': `memo:${q.id}`, value: memo, maxLength: TEXT_MAX, oninput: e => memos.set(q.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
           ]
-        : el('p', { className: 'small' }, strongWhy()),
+        : strongWhyBlock('small', `memo:${q.id}`),
       el(
         'div',
         { className: 'actions' },
@@ -507,7 +539,7 @@ function drawApprovals() {
       a.cwd ? el('p', { className: 'small' }, a.cwd) : null,
       el('div', { className: 'actions' }, allow, el('button', { className: 'btn deny', 'data-key': `deny:${a.id}`, onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }) }, say('deny'))),
       el('div', { className: 'actions' }, el('button', { className: 'btn', 'data-key': `terminal:${a.id}`, onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'terminal' }) }, say('terminal'))),
-      el('p', { className: 'small' }, mayStrong() ? say('terminalHint') : strong() ? say('pairAgain') : say('allowNeedsStrong')),
+      mayStrong() ? el('p', { className: 'small' }, say('terminalHint')) : strong() ? strongWhyBlock('small', `approval:${a.id}`) : el('p', { className: 'small' }, say('allowNeedsStrong')),
     )
   })
 }
@@ -544,7 +576,7 @@ function drawSessions() {
       el('span', { className: 'chip' }, s.live ? say('live') : say('notLive')),
     )
     if (target !== s.id) return [row]
-    if (!mayStrong()) return [row, el('div', { className: 'composer' }, el('p', { className: 'small' }, strongWhy()))]
+    if (!mayStrong()) return [row, el('div', { className: 'composer' }, strongWhyBlock('small', `session:${s.id}`))]
     const composer = el(
       'div',
       { className: 'composer' },
