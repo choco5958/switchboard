@@ -720,4 +720,18 @@ h3 { font-size: 12px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .approval-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
 .dock-tab.add.add-warn { color: var(--warn); }
+.dock-split { display: flex; }
+.dock-split .dock-tab.add:first-child { padding-right: 4px; }
+.dock-tab.dock-pick { padding: 5px 6px; color: var(--quiet); }
+.dock-tab.dock-pick.on, .dock-tab.dock-pick:hover { color: var(--text); }
+.agent-picker { min-width: 300px; max-height: min(420px, 60vh); overflow-y: auto; }
+.agent-filter { margin: 2px 2px 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.agent-picker .agent-row { align-items: center; }
+.agent-picker .agent-row.on { background: var(--panel-2); }
+.agent-picker .agent-row.missing { opacity: 0.55; }
+.agent-default { padding: 0 6px; border: 1px solid var(--accent); border-radius: 8px; color: var(--accent); }
+.agent-via { color: var(--quiet); white-space: nowrap; }
+.agent-via.warn { color: var(--warn); }
+.agent-none { margin: 4px 8px; }
+.agent-picker .agent-more { justify-content: flex-start; color: var(--quiet); }
 .settings-toc { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 16px; }

@@ -25,7 +25,7 @@ import { limitedUntil } from '../../shared/limit'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
 import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, railPickFor, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
 import { applyTheme } from './theme'
-import { installSettingSaver, postSetting, settle, withPending, type Pending } from './settings'
+import { installSettingSaver, postSetting, saveSetting, settle, withPending, type Pending } from './settings'
 import { LOCALE_TAG, resolveLang, setLang, stageLabel, t, type Key } from '../../shared/i18n'
 
 const EMPTY: BridgeState = {
@@ -811,6 +811,8 @@ export function App() {
           stalledTerms={stalledTerms}
           customs={customs}
           showOthers={showOtherAgents(state.settings[SHOW_OTHER_AGENTS_KEY])}
+          defaultAgent={typeof state.settings.defaultAgent === 'string' ? state.settings.defaultAgent : undefined}
+          onDefaultAgent={kind => void saveSetting('defaultAgent', kind)}
         />
 
         {palette && <Palette items={paletteItems()} onClose={() => setPalette(false)} />}

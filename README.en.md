@@ -63,7 +63,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 ## Quick start
 
 1. Get the installer for your system from [Releases](https://github.com/choco5958/switchboard/releases/latest) and open it. Details are under [Install](#install).
-2. Open a session with an agent button in the dock at the bottom, such as `+ Claude`, `+ Codex` or `+ Gemini`, and give it work as usual.
+2. Open a session with `+ Claude` in the dock at the bottom, or pick another agent such as Codex or Gemini from the ▾ beside it, and give it work as usual.
 3. When a decision comes in, answer with a key. The session carries on from there.
 
 ## Features
@@ -100,7 +100,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 
 ### Terminals and the shell
 
-- **Built-in terminals**: `+ Claude` in the dock at the bottom opens Claude Code with the mod connected, buttons such as `+ Codex` or `+ Gemini` open that CLI with the connection server, and `+ Shell` opens a plain shell.
+- **Built-in terminals**: the dock's `+` button opens the agent you opened last. The ▾ beside it lists the installed agents with how each connects (mod, connection server, terminal only), and you can type to find one. `+ Shell` opens a plain shell.
 - **Other coding CLIs**: Codex, Gemini CLI, Qwen Code, GitHub Copilot CLI, OpenCode, Goose and Amp also connect to the decision queue and task reports. The app attaches its MCP server through launch options, so each CLI's config files stay untouched. Cursor CLI, Grok, Kimi and Crush open as plain terminals, and any other CLI can be registered in Settings. Only installed CLIs appear in the dock.
 - **`switchboard` command**: hand a session work from a shell or script and get the result back, with the outcome also reported as an exit code.
 - **Session-side pane**: type `/switchboard` in Claude Code to see this session's task flow and open decisions in a side pane.
@@ -223,7 +223,7 @@ Sessions started after the install connect to the bridge. If the bridge is not r
 
 ## Usage
 
-1. Start the app and click `+ Claude` or another agent button in the dock. The first time, choose a project folder with `+ Project` at the top left.
+1. Start the app and click `+ Claude` in the dock, or pick another agent from the ▾ beside it. The first time, choose a project folder with `+ Project` at the top left.
 2. Give the agent work as usual. The tool descriptions say when to use them, so the session posts its task on its own and asks when it needs a decision.
 3. A number on the question-mark icon on the left means a decision or a permission ask is waiting; permission asks also show on the home screen. Open it and answer with a key.
 
