@@ -21,7 +21,7 @@ Claude Code、Codex、Gemini CLI 会话会向你请求决定、彼此委派工�
 
 <br>
 
-<p align="center"><a href="https://github.com/choco5958/switchboard/blob/main/docs/intro-en.mp4"><img src="docs/intro-en.png" width="720" alt="介绍视频 (54 秒，英文)"></a></p>
+<p align="center"><a href="https://github.com/choco5958/switchboard/blob/main/docs/intro-en.mp4"><img src="docs/intro-en.png" width="720" alt="介绍视频 (58 秒，英文)"></a></p>
 
 ![主页: 按项目分组的任务、待决定、工作日志](docs/screenshot-home.png)
 

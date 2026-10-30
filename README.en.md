@@ -21,7 +21,7 @@ Claude Code, Codex and Gemini CLI sessions ask you for decisions, hand work to e
 
 <br>
 
-<p align="center"><a href="https://github.com/choco5958/switchboard/blob/main/docs/intro-en.mp4"><img src="docs/intro-en.png" width="720" alt="Switchboard intro video (54s)"></a></p>
+<p align="center"><a href="https://github.com/choco5958/switchboard/blob/main/docs/intro-en.mp4"><img src="docs/intro-en.png" width="720" alt="Switchboard intro video (58s)"></a></p>
 
 ![Home: tasks by project, decision queue, work log](docs/screenshot-home.png)
 
