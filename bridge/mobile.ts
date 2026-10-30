@@ -9,22 +9,26 @@
 // asked nor answered, and cannot answer in the person's place. A request carries its time
 // and a nonce used once, so a recorded one cannot be sent again. Whoever controls the
 // network could still serve another page in this one's place, so over plain HTTP a phone
-// cannot allow a permission ask or write to a session (needsStrong): that takes Tailscale.
+// cannot allow a permission ask, write to a session or add a memo to a decision (needsStrong):
+// that takes the Tailscale HTTPS address. A Tailscale IP address is plain HTTP too: with the
+// phone's Tailscale off, the network it is on can answer for that address.
 // The same goes for a phone whose key went out in a link to a plain HTTP address: a swapped
-// page could have read it, so such a phone may not do either even when it later comes in
-// over Tailscale (or Funnel, which anyone can reach). Only a phone paired through an HTTPS or
-// Tailscale address, or with a code claimed over one, may.
+// page could have read it, so such a phone may not do either, and it is not heard at all
+// through Tailscale HTTPS or Funnel (which anyone can reach), only from the network itself.
+// Only a phone paired through the HTTPS address, or with a code claimed over it, may.
 
 import { execFile, execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { createServer, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
+import { maskSecrets } from '../src/shared/pageLog.ts'
 import { fromB64, fromUtf8, open, seal, toB64, utf8 } from './mobile/aead.js'
 import { sendPush, validSubscription, type PushMessage, type Subscription, type VapidKeys } from './push.ts'
+import { hasHidden, showHidden } from './telegram.ts'
 
 export const MOBILE_PORT = 47390
 // How far a request's time may be from the bridge's (the page corrects its clock with GET /time).
@@ -192,8 +196,23 @@ export async function setTailscaleServe(on: boolean, port: number, run: Run = ru
   return { ok: result.ok, error: result.ok ? '' : result.out.trim().split('\n').slice(-3).join(' ').slice(0, 300) }
 }
 
+// What the person last chose for the HTTPS address, kept with the phone settings: the bridge
+// turns it off whenever the phone page stops (tailscaled would otherwise go on sending the
+// address to whatever takes the port next) and on again when the page starts.
+export type TailscaleMode = 'off' | 'serve' | 'funnel'
+
+// A promise that gives up after `ms`: a bridge on its way out waits no longer for Tailscale.
+const within = <T>(ms: number, promise: Promise<T>, fallback: T): Promise<T> =>
+  new Promise(resolve => {
+    const timer = setTimeout(() => resolve(fallback), ms)
+    void promise.then(
+      value => (clearTimeout(timer), resolve(value)),
+      () => (clearTimeout(timer), resolve(fallback)),
+    )
+  })
+
 export type Inner = (method: string, path: string, body: unknown) => Promise<{ status: number; json: unknown }>
-// `strong`: paired through an HTTPS or Tailscale address, so it may allow and write (needsStrong).
+// `strong`: paired through the HTTPS address, so it may allow and write (needsStrong).
 // `code`: its pairing code still works.
 export type Device = { id: number; name: string; created_at: number; last_seen: number | null; strong: boolean; code: boolean }
 export type MobileStatus = { listening: boolean; port: number; error: string; lan: boolean; addresses: MobileAddress[]; devices: Device[]; tailscale: TailscaleState }
@@ -224,29 +243,53 @@ const FAIL_SENDERS = 1000
 const OPEN_PER_SENDER = 8
 // Connections one address on the network may hold, before it sends a request at all.
 const SOCKETS_PER_ADDRESS = 16
-// Pairing codes tried in a minute, by one sender and by everyone: guessing one of 32^8 stays hopeless.
-const CLAIMS_PER_SENDER = 5
-const CLAIMS_PER_MINUTE = 30
+// Connections in all, and requests open at once from senders that have not shown a phone's key
+// within PROVEN_MS: strangers (through Funnel all from 127.0.0.1) fill those, never the rest.
+const CONNECTIONS = 256
+const UNPROVEN_OPEN = 48
+const PROVEN_MS = 60 * 60_000
+// Wrong pairing codes: a sender (an IPv6 one by its /48) gets CLAIMS_FREE, then waits a minute,
+// twice that after the next, up to an hour. Senders that already guessed wrong share
+// CLAIMS_AGAIN tries a minute; a first try is never refused for what others did, so strangers
+// cannot keep the person's phone from pairing, and one of 32^8 codes stays out of reach.
+const CLAIMS_FREE = 5
+const CLAIM_WAIT_MS = 60_000
+const CLAIM_WAIT_MAX = 60 * 60_000
+const CLAIMS_AGAIN = 30
 // How often the Tailscale name is looked up again, for the Host check (never on a request).
 const DOMAIN_MS = 5 * 60_000
 // A phone paired with the QR code or the code has this long to come once; after that the pairing goes.
 const PAIR_MS = 10 * 60_000
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+// How long a start tries for a port still held, as by the bridge an update replaces.
+const BIND_MS = 10_000
+// How long a bridge on its way out waits to turn Tailscale HTTPS off.
+const SHUTDOWN_MS = 8_000
 
-// A request whose page cannot have been swapped on the way: it came through Tailscale HTTPS
-// (which forwards from this computer) or over Tailscale itself (WireGuard). Plain HTTP on the
-// Wi-Fi is encrypted by the page, but whoever controls that network can serve another page.
-export function strongTransport(raw: string): boolean {
-  const address = raw.replace(/^::ffff:/, '').toLowerCase()
-  const v4 = address.match(/^(\d+)\.(\d+)\.\d+\.\d+$/)
-  if (v4) return Number(v4[1]) === 127 || (Number(v4[1]) === 100 && Number(v4[2]) >= 64 && Number(v4[2]) <= 127)
-  return address === '::1' || address.startsWith('fd7a:115c:a1e0:')
+const loopback = (address: string) => /^(::ffff:)?127\./.test(address) || address === '::1'
+// A Host header's name: no port, no brackets, lower case.
+const hostName = (host: string | undefined) => (host ?? '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase()
+
+// A request whose page cannot have been swapped on the way: it came through Tailscale HTTPS or
+// Funnel, from a page served over TLS. tailscale serve forwards from this computer, sets
+// X-Forwarded-Proto to https and keeps the Host the phone asked for, this computer's Tailscale
+// HTTPS name. Another tunnel pointed at this port (cloudflared, ngrok) brings its own name,
+// and a local program that never saw TLS is no better than plain HTTP. Plain HTTP, to a Wi-Fi or
+// a Tailscale IP address, is encrypted by the page, but whoever controls the network the phone
+// is on can serve another page.
+export function strongTransport(address: string, headers: IncomingHttpHeaders, domain: string): boolean {
+  return loopback(address) && domain !== '' && headers['x-forwarded-proto'] === 'https' && hostName(headers.host) === domain.toLowerCase()
 }
 
-// What only a phone on such a connection may do: allow a permission ask, and write to a session.
+// What only a phone on such a connection may do: allow a permission ask, write to a session, and
+// add words of its own to a decision's answer (they go into the session's prompt as well).
 export function needsStrong(method: string, path: string, body: unknown): boolean {
   if (method !== 'POST') return false
   if (path === '/outbox') return true
+  if (/^\/questions\/\d+\/answer$/.test(path)) {
+    const memo = (body as { memo?: unknown } | null)?.memo
+    return memo !== undefined && memo !== null && !(typeof memo === 'string' && memo.trim() === '')
+  }
   return /^\/approvals\/\d+\/answer$/.test(path) && (body as { decision?: unknown } | null)?.decision === 'allow'
 }
 
@@ -254,21 +297,21 @@ export function needsStrong(method: string, path: string, body: unknown): boolea
 // this computer and name the real sender in X-Forwarded-For; counting by 127.0.0.1 would let one
 // stranger's bad requests shut every phone out.
 export function clientOf(address: string, forwarded: string | string[] | undefined): string {
-  const loopback = /^(::ffff:)?127\./.test(address) || address === '::1'
   const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim()
-  return loopback && first ? first : address
+  return loopback(address) && first ? first : address
 }
 
 // The key failures and limits are counted under: an IPv6 sender by its /64, which one home or
-// phone holds whole (counting each address alone would let it go on under the next one).
-export function rateKey(address: string): string {
+// phone holds whole (counting each address alone would let it go on under the next one), or by
+// its /48 (`groups` 3), a whole site's.
+export function rateKey(address: string, groups = 4): string {
   const plain = address.replace(/^::ffff:(?=\d+\.)/i, '').split('%')[0]!.toLowerCase()
   if (!plain.includes(':')) return plain
   const [head = '', tail = ''] = plain.split('::')
   const left = head ? head.split(':') : []
   const right = tail ? tail.split(':') : []
-  const groups = plain.includes('::') ? [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left
-  return `${groups.slice(0, 4).map(g => g.replace(/^0+(?=.)/, '')).join(':')}::/64`
+  const all = plain.includes('::') ? [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left
+  return `${all.slice(0, groups).map(g => g.replace(/^0+(?=.)/, '')).join(':')}::/${groups * 16}`
 }
 
 // At most `max` per key in a minute: true while under it (each call counts).
@@ -304,6 +347,14 @@ export function createMobile(options: {
   changed?: () => void
   // How long a body may take (BODY_MS), shorter in tests.
   bodyMs?: number
+  // How long a start tries for a port in use (BIND_MS), shorter in tests.
+  bindMs?: number
+  // A permission ask's command, for the check that a phone allows only what it was shown whole.
+  summaryOf?: (approval: number) => string | null
+  // The HTTPS address's mode as found at a start, when the settings did not have it yet.
+  keepTailscale?: (mode: TailscaleMode) => void
+  // The sender's network address (tests stand in for a phone on the Wi-Fi).
+  addressOf?: (req: IncomingMessage) => string
 }) {
   const { db } = options
   const now = options.now ?? Date.now
@@ -316,8 +367,12 @@ export function createMobile(options: {
   )`)
   // The phone's Web Push subscription (push.ts), when it turned notifications on.
   // `strong`: how it was paired (Device). Phones paired before it was kept count as plain HTTP.
+  // `via`: the address it was paired through. Before it was kept a Tailscale IP address counted
+  // as strong too, and which address a phone used is not known: every phone paired then counts
+  // as plain HTTP, and is told to pair again through the HTTPS address (mobile/app.js pairAgain).
   const have = (db.prepare('pragma table_info(mobile_devices)').all() as { name: string }[]).map(c => c.name)
-  for (const [name, type] of [['push', 'text'], ['strong', 'integer not null default 0']]) if (!have.includes(name!)) db.exec(`alter table mobile_devices add column ${name} ${type}`)
+  for (const [name, type] of [['push', 'text'], ['strong', 'integer not null default 0'], ['via', 'text']]) if (!have.includes(name!)) db.exec(`alter table mobile_devices add column ${name} ${type}`)
+  if (!have.includes('via')) db.exec('update mobile_devices set strong = 0')
   // Nonces seen in the last SKEW_MS, per phone: a request sent again is refused.
   const seen = new Map<number, Map<string, number>>()
   const streams = new Set<{ res: ServerResponse; device: number }>()
@@ -326,8 +381,12 @@ export function createMobile(options: {
   // Requests open per sender, and connections per network address (OPEN_PER_SENDER, SOCKETS_PER_ADDRESS).
   const openRequests = new Map<string, number>()
   const sockets = new Map<string, number>()
-  const claimsBy = perMinute(CLAIMS_PER_SENDER, now)
-  const claimsAll = perMinute(CLAIMS_PER_MINUTE, now)
+  // Senders a phone's key came from lately, and requests open from all the others (UNPROVEN_OPEN).
+  const proven = new Map<string, number>()
+  let unproven = 0
+  // Wrong pairing codes by sender (CLAIMS_FREE), and the tries those senders share (CLAIMS_AGAIN).
+  const claimFails = new Map<string, { count: number; until: number; last: number }>()
+  const claimsAgain = perMinute(CLAIMS_AGAIN, now)
   // Pairing codes for a phone that cannot scan into the browser it will use (an iPhone's home
   // screen app keeps its own storage): code -> device, until it is used, its phone comes with
   // the QR code instead, or PAIR_MS passes.
@@ -349,6 +408,7 @@ export function createMobile(options: {
   let domainTimer: ReturnType<typeof setInterval> | undefined
   const run = options.run ?? runFile
   const tailscaleAt = options.tailscale === undefined ? tailscaleBin() : options.tailscale
+  const addressOf = options.addressOf ?? ((req: IncomingMessage) => req.socket.remoteAddress ?? '')
 
   // Pairings nobody used within PAIR_MS, and their codes, go.
   const prune = () => {
@@ -405,6 +465,36 @@ export function createMobile(options: {
         }
       }
       failures.delete(drop)
+    }
+  }
+
+  // A sender that just showed a phone's key keeps room when strangers fill UNPROVEN_OPEN.
+  const prove = (who: string) => {
+    proven.delete(who)
+    proven.set(who, now())
+    while (proven.size > FAIL_SENDERS) proven.delete(proven.keys().next().value!)
+  }
+  const isProven = (who: string) => now() - (proven.get(who) ?? -Infinity) < PROVEN_MS
+
+  // A wrong pairing code: the sender's wait grows (CLAIMS_FREE, CLAIM_WAIT_MS). Counts an hour
+  // old go; past FAIL_SENDERS senders the oldest that waits for nothing goes first.
+  const claimFailed = (claimant: string) => {
+    const entry = claimFails.get(claimant) ?? { count: 0, until: 0, last: 0 }
+    entry.count++
+    entry.last = now()
+    if (entry.count >= CLAIMS_FREE) entry.until = now() + Math.min(CLAIM_WAIT_MS * 2 ** (entry.count - CLAIMS_FREE), CLAIM_WAIT_MAX)
+    claimFails.delete(claimant)
+    claimFails.set(claimant, entry)
+    for (const [key, old] of claimFails) if (now() - old.last > CLAIM_WAIT_MAX && old.until < now()) claimFails.delete(key)
+    while (claimFails.size > FAIL_SENDERS) {
+      let drop = claimFails.keys().next().value!
+      for (const [key, old] of claimFails) {
+        if (old.until < now()) {
+          drop = key
+          break
+        }
+      }
+      claimFails.delete(drop)
     }
   }
 
@@ -482,18 +572,34 @@ export function createMobile(options: {
     const method = String(inner.method)
     const path = String(inner.path)
     const body = inner.body ?? {}
+    const strongHere = strongTransport(address, req.headers, httpsDomain)
+    const strongPhone = strongDevice(device)
+    if (strongPhone || !loopback(address)) prove(who)
     // `pairAgain`: the connection is fine, but this phone was paired over plain HTTP.
+    const allowing = path.match(/^\/approvals\/(\d+)\/answer$/)
     let result =
-      path === '/push-key' || path === '/push'
-        ? pushRoute(device, method, path, body)
-        : !mobileRouteAllowed(method, path)
-          ? { status: 403, json: { error: 'not allowed' } }
-          : needsStrong(method, path, body) && !(strongTransport(address) && strongDevice(device))
-            ? { status: 403, json: { error: 'strong', strong: true, pairAgain: strongTransport(address) } }
-            : await options.inner(method, path, body)
-    // The page shows what this phone may do before it tries.
+      // A phone paired over plain HTTP is heard from the network only: its key may have been read
+      // on the way, and through Tailscale HTTPS or Funnel anyone could be sending it.
+      !strongPhone && loopback(address)
+        ? { status: 403, json: { error: 'strong', strong: true, pairAgain: strongHere } }
+        : path === '/push-key' || path === '/push'
+          ? pushRoute(device, method, path, body)
+          : !mobileRouteAllowed(method, path)
+            ? { status: 403, json: { error: 'not allowed' } }
+            : needsStrong(method, path, body) && !(strongHere && strongPhone)
+              ? { status: 403, json: { error: 'strong', strong: true, pairAgain: strongHere } }
+              : allowing && (body as { decision?: unknown }).decision === 'allow' && hasHidden(options.summaryOf?.(Number(allowing[1])) ?? '')
+                ? { status: 403, json: { error: 'hidden', hidden: true } }
+                : await options.inner(method, path, body)
+    // The page shows what this phone may do before it tries. A permission ask's characters that
+    // hide or reorder text show as [U+...]; one that has any is allowed in the app or the terminal
+    // only. A phone that may not allow here sees no secret in a command either.
     if (method === 'GET' && path === '/mobile/view' && result.status === 200 && result.json !== null && typeof result.json === 'object') {
-      result = { ...result, json: { ...result.json, pairedStrong: strongDevice(device) } }
+      const view = result.json as { approvals?: { summary?: unknown; cwd?: unknown }[] }
+      const mayAllow = strongHere && strongPhone
+      const shown = (text: unknown) => showHidden(mayAllow ? String(text ?? '') : maskSecrets(String(text ?? '')))
+      const approvals = Array.isArray(view.approvals) ? view.approvals.map(a => ({ ...a, summary: shown(a.summary), cwd: shown(a.cwd), hidden: hasHidden(String(a.summary ?? '')) })) : view.approvals
+      result = { ...result, json: { ...view, approvals, pairedStrong: strongPhone } }
     }
     const answerNonce = randomBytes(12)
     const sealed = seal(key, answerNonce, utf8(JSON.stringify(result)), resAad(device, nonce))
@@ -503,33 +609,38 @@ export function createMobile(options: {
   // Names this server answers to: an address, this Mac's Bonjour name, the Tailscale HTTPS
   // name, localhost. A page that rebinds a name of its own to this computer sends that name.
   const hostAllowed = (host: string | undefined): boolean => {
-    const name = (host ?? '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase()
+    const name = hostName(host)
     if (!name) return false
     if (/^\d+\.\d+\.\d+\.\d+$/.test(name) || name.includes(':')) return privateAddress(name)
     return name === 'localhost' || name === bonjourName()?.toLowerCase() || (httpsDomain !== '' && name === httpsDomain.toLowerCase())
   }
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const address = req.socket.remoteAddress ?? ''
+    const address = addressOf(req)
     if (!privateAddress(address)) return reply(res, 403, { error: 'forbidden' })
-    const who = rateKey(clientOf(address, req.headers['x-forwarded-for']))
+    const sender = clientOf(address, req.headers['x-forwarded-for'])
+    const who = rateKey(sender)
     if (blocked(who)) return reply(res, 429, { error: 'too many failed requests' })
     // The Tailscale name is known from status() and a timer: a request never runs a command.
     if (!hostAllowed(req.headers.host)) {
       failed(who)
       return reply(res, 403, { error: 'forbidden' })
     }
-    // Slow requests from one sender (through Funnel, all from 127.0.0.1) would hold every connection.
+    // Slow requests from one sender (through Funnel, all from 127.0.0.1) would hold every connection,
+    // and those of many strangers together would leave none for the person's phones.
     const already = openRequests.get(who) ?? 0
-    if (already >= OPEN_PER_SENDER) {
+    const stranger = !isProven(who)
+    if (already >= OPEN_PER_SENDER || (stranger && unproven >= UNPROVEN_OPEN)) {
       res.shouldKeepAlive = false
       return reply(res, 429, { error: 'too many requests' })
     }
     openRequests.set(who, already + 1)
+    if (stranger) unproven++
     res.once('close', () => {
       const left = (openRequests.get(who) ?? 1) - 1
       if (left > 0) openRequests.set(who, left)
       else openRequests.delete(who)
+      if (stranger) unproven--
     })
     const url = new URL(req.url ?? '/', 'http://phone')
     const method = req.method ?? 'GET'
@@ -550,6 +661,9 @@ export function createMobile(options: {
         failed(who)
         return reply(res, 401, { error: 'unknown device' })
       }
+      // As in api(): a phone paired over plain HTTP, from the network only.
+      if (!strongDevice(opened.device) && loopback(address)) return reply(res, 403, { error: 'strong' })
+      prove(who)
       arrived(opened.device)
       const mine = [...streams].filter(s => s.device === opened.device)
       for (const old of mine.slice(0, Math.max(0, mine.length - STREAMS_PER_DEVICE + 1))) endStream(old)
@@ -564,11 +678,14 @@ export function createMobile(options: {
       })
       return
     }
-    // A pairing code typed on the phone: over a connection where the answer cannot be read on the way.
-    // Tries are limited per sender and for everyone, and a wrong one never takes anyone else's code.
+    // A pairing code typed on the phone: through the HTTPS address only, where neither the answer
+    // can be read on the way nor the page that keeps it be swapped. Wrong tries make their sender
+    // wait longer each time (claimFailed), and a wrong one never takes anyone else's code.
     if (method === 'POST' && url.pathname === '/claim') {
-      if (!strongTransport(address)) return reply(res, 403, { error: 'strong', strong: true })
-      if (!claimsBy(who) || !claimsAll('')) return reply(res, 429, { error: 'too many codes' })
+      if (!strongTransport(address, req.headers, httpsDomain)) return reply(res, 403, { error: 'strong', strong: true })
+      const claimant = rateKey(sender, 3)
+      const before = claimFails.get(claimant)
+      if (before && (before.until > now() || !claimsAgain(''))) return reply(res, 429, { error: 'too many codes' })
       if (tooLarge(req, CLAIM_MAX)) {
         failed(who)
         res.shouldKeepAlive = false
@@ -587,12 +704,13 @@ export function createMobile(options: {
       // A phone already came with the QR code: its key is in use, and stays with that phone.
       if (!entry || !row || row.last_seen !== null) {
         failed(who)
+        claimFailed(claimant)
         return reply(res, 404, { error: 'no such code' })
       }
       // A new key, handed over this connection only: the one in the QR code may have gone out in a
       // link to a plain HTTP address, and must not become one that may allow.
       const key = toB64(randomBytes(32))
-      db.prepare('update mobile_devices set key = ?, strong = 1 where id = ?').run(key, entry.device)
+      db.prepare("update mobile_devices set key = ?, strong = 1, via = 'claim' where id = ?").run(key, entry.device)
       seen.delete(entry.device)
       options.changed?.()
       return reply(res, 200, { id: entry.device, key })
@@ -601,8 +719,17 @@ export function createMobile(options: {
     return reply(res, 404, { error: 'not found' })
   }
 
-  const stopNow = (): Promise<void> =>
-    new Promise(resolve => {
+  // Tailscale HTTPS off, when it goes to this port: what takes the port next would get the
+  // person's HTTPS address, and with it the keys its pages keep.
+  const tailscaleOff = async (at: number) => {
+    if (at > 0 && (await tailscaleState(at, run, tailscaleAt)).served) await setTailscaleServe(false, at, run, tailscaleAt)
+  }
+
+  // `offTailscale`: phones were turned off, or the bridge is on its way out. Off before the port
+  // is let go, so the address never reaches it once it is free.
+  const stopNow = async (offTailscale = false): Promise<void> => {
+    if (offTailscale && server) await tailscaleOff(port).catch(() => {})
+    await new Promise<void>(resolve => {
       clearInterval(domainTimer)
       for (const s of [...streams]) endStream(s)
       if (!server) return resolve()
@@ -612,8 +739,11 @@ export function createMobile(options: {
       closing.closeAllConnections()
       closing.close(() => resolve())
     })
+  }
 
-  const startNow = async (wanted: number, overLan: boolean): Promise<void> => {
+  // `mode`: the HTTPS address as the person last left it, turned on again here (a bridge that
+  // stopped turned it off); undefined when the settings do not have it yet.
+  const startNow = async (wanted: number, overLan: boolean, mode?: TailscaleMode): Promise<void> => {
     await stopNow()
     error = ''
     lan = overLan
@@ -625,12 +755,12 @@ export function createMobile(options: {
         else res.end()
       })
     })
-    next.maxConnections = 64
+    next.maxConnections = CONNECTIONS
     // One address on the network holding many connections. Not 127.0.0.1: Tailscale HTTPS brings
     // every phone from there, and its requests are counted per sender in handle().
     next.on('connection', socket => {
       const raw = socket.remoteAddress ?? ''
-      if (/^(::ffff:)?127\./.test(raw) || raw === '::1') return
+      if (loopback(raw)) return
       const from = rateKey(raw)
       const count = (sockets.get(from) ?? 0) + 1
       if (count > SOCKETS_PER_ADDRESS) return void socket.destroy()
@@ -641,24 +771,41 @@ export function createMobile(options: {
         else sockets.delete(from)
       })
     })
-    await new Promise<void>(resolve => {
-      next.once('error', (e: NodeJS.ErrnoException) => {
-        error = e.code === 'EADDRINUSE' ? `port ${wanted} is in use` : e.message
-        resolve()
+    // A port still held a moment, as by the bridge an update replaces (it turns Tailscale HTTPS
+    // off before it lets go), is tried again for a few seconds.
+    const until = Date.now() + (options.bindMs ?? BIND_MS)
+    for (;;) {
+      const code = await new Promise<string>(resolve => {
+        const failed = (e: NodeJS.ErrnoException) => {
+          error = e.code === 'EADDRINUSE' ? `port ${wanted} is in use` : e.message
+          resolve(e.code ?? 'error')
+        }
+        next.once('error', failed)
+        // This computer only, when the phone comes through Tailscale HTTPS (which forwards to 127.0.0.1).
+        next.listen(wanted, overLan ? '0.0.0.0' : '127.0.0.1', () => {
+          next.off('error', failed)
+          server = next
+          error = ''
+          const where = next.address()
+          port = typeof where === 'object' && where ? where.port : wanted
+          resolve('')
+        })
       })
-      // This computer only, when the phone comes through Tailscale HTTPS (which forwards to 127.0.0.1).
-      next.listen(wanted, overLan ? '0.0.0.0' : '127.0.0.1', () => {
-        server = next
-        const where = next.address()
-        port = typeof where === 'object' && where ? where.port : wanted
-        resolve()
-      })
-    })
-    if (!server) return
+      if (code !== 'EADDRINUSE' || Date.now() >= until) break
+      await new Promise(resolve => setTimeout(resolve, 250))
+    }
+    // Another program has the port: Tailscale HTTPS would bring the person's phones to it.
+    if (!server) return void (await tailscaleOff(wanted).catch(() => {}))
+    const found = await tailscaleState(port, run, tailscaleAt)
+    httpsDomain = found.domain
+    if (mode === undefined && found.domain) options.keepTailscale?.(found.served ? (found.funnel ? 'funnel' : 'serve') : 'off')
+    // Funnel only while the tailnet allows it: asked without that, the command waits instead of failing.
+    if (mode !== undefined && mode !== 'off' && found.domain && !found.served && !found.busy) {
+      await setTailscaleServe(true, port, run, tailscaleAt, mode === 'funnel' && found.funnelAllowed).catch(() => {})
+    }
     const lookUp = async () => {
       httpsDomain = (await tailscaleState(port, run, tailscaleAt)).domain
     }
-    await lookUp()
     domainTimer = setInterval(() => void lookUp().catch(() => {}), DOMAIN_MS)
     domainTimer.unref()
   }
@@ -668,8 +815,11 @@ export function createMobile(options: {
   const queued = (step: () => Promise<void>): Promise<void> => (queue = queue.then(step, step))
 
   return {
-    start: (wanted: number, overLan = true) => queued(() => startNow(wanted, overLan)),
-    stop: () => queued(stopNow),
+    start: (wanted: number, overLan = true, mode?: TailscaleMode) => queued(() => startNow(wanted, overLan, mode)),
+    // `offTailscale`: phones turned off, so Tailscale HTTPS goes off too (start turns it on again).
+    stop: (offTailscale = false) => queued(() => stopNow(offTailscale)),
+    // The bridge is on its way out: as stop(true), waiting no longer than SHUTDOWN_MS.
+    shutdown: () => within(SHUTDOWN_MS, queued(() => stopNow(true)), undefined),
     status: async (): Promise<MobileStatus> => {
       await queue
       prune()
@@ -680,14 +830,14 @@ export function createMobile(options: {
     },
     tailscale: (on: boolean, funnel = false) => setTailscaleServe(on, port, run, tailscaleAt, funnel),
     // A new phone: its id and key go into the QR code the app shows once, and a code for a
-    // phone that types it instead. `kind`: the address the QR code links to; only an HTTPS or
-    // Tailscale one keeps the key off a network where the page could be swapped.
+    // phone that types it instead. `kind`: the address the QR code links to; only the HTTPS one
+    // keeps the key off a network where the page could be swapped.
     pair: (name: string, kind: MobileAddress['kind'] = 'lan'): { id: number; key: string; code: string } => {
       prune()
       const key = toB64(randomBytes(32))
-      const strong = kind === 'https' || kind === 'tailscale' ? 1 : 0
+      const strong = kind === 'https' ? 1 : 0
       const id = Number(
-        db.prepare('insert into mobile_devices (name, key, created_at, strong) values (?, ?, ?, ?)').run(name.slice(0, 60) || 'phone', key, now(), strong).lastInsertRowid,
+        db.prepare('insert into mobile_devices (name, key, created_at, strong, via) values (?, ?, ?, ?, ?)').run(name.slice(0, 60) || 'phone', key, now(), strong, kind).lastInsertRowid,
       )
       const code = newPairCode()
       codes.set(code, { device: id, until: now() + PAIR_MS })

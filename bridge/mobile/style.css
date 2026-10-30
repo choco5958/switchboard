@@ -50,6 +50,7 @@ main { padding: 14px 16px calc(env(safe-area-inset-bottom) + 24px); max-width: 6
 .chip.accent { background: var(--accent-soft); color: var(--accent); }
 .chip.good { color: var(--good); }
 .chip.warn { color: var(--warn); }
+.small.warn { color: var(--warn); }
 .title { margin: 0 0 6px; font-size: 16px; font-weight: 650; }
 .body { margin: 0 0 8px; white-space: pre-wrap; color: var(--text); font-size: 14px; }
 .small { font-size: 13px; color: var(--quiet); margin: 4px 0; }

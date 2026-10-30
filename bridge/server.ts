@@ -38,7 +38,7 @@ import {
 } from './peer.ts'
 import { ROUTINE_FAIL_LIMIT, nextRun, parseSchedule, type Schedule } from './schedule.ts'
 import { TELEGRAM_API, createTelegram } from './telegram.ts'
-import { MOBILE_PORT, createMobile } from './mobile.ts'
+import { MOBILE_PORT, createMobile, type Run, type TailscaleMode } from './mobile.ts'
 import { makeVapidKeys, type PushMessage, type VapidKeys } from './push.ts'
 import { DICTS, eventKindLabel, nodeOwnerLabel, nodeStatusLabel, resolveLang, setLang, stageLabel, taskStatusLabel, tIn, type Key, type Lang, type Vars } from '../src/shared/i18n/index.ts'
 
@@ -347,7 +347,8 @@ export function systemLocale(): string {
 // `token`: the bridge listens on TCP (bridge/endpoint.ts) and answers only requests that carry it.
 // `appKey`: what the app proves itself with (appOnly); the app hands it over at the start.
 // `tailscale`: the tailscale command for phones (bridge/mobile.ts), null for none (tests).
-export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch; token?: string; appKey?: string; tailscale?: string | null }
+// `tailscaleRun`: runs it instead of the real one (tests).
+export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch; token?: string; appKey?: string; tailscale?: string | null; tailscaleRun?: Run }
 
 // What only the person may do, through the app: answer a permission ask, say they are away,
 // set up Telegram or phones, schedule prompts, change settings, control sessions and read their
@@ -1160,11 +1161,17 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   // Feature area: phones (bridge/mobile.ts). A phone's decrypted request runs through handle()
   // like any other, marked as the phone's so it may answer what only the person may.
   const phoneRequests = new WeakSet<IncomingMessage>()
-  const mobileSetting = (): { enabled: boolean; port: number; lan: boolean } => {
+  // `tailscale`: the HTTPS address as the person last left it (mobile.ts TailscaleMode), unknown
+  // until a start has looked.
+  type MobileSetting = { enabled: boolean; port: number; lan: boolean; tailscale?: TailscaleMode }
+  const mobileSetting = (): MobileSetting => {
     const row = db.prepare("select value from settings where key = 'mobile'").get() as { value: string } | undefined
-    const saved = (row ? JSON.parse(row.value) : {}) as { enabled?: unknown; port?: unknown; lan?: unknown }
-    return { enabled: saved.enabled === true, port: Number.isInteger(saved.port) ? (saved.port as number) : MOBILE_PORT, lan: saved.lan !== false }
+    const saved = (row ? JSON.parse(row.value) : {}) as { enabled?: unknown; port?: unknown; lan?: unknown; tailscale?: unknown }
+    const tailscale = (['off', 'serve', 'funnel'] as const).find(mode => mode === saved.tailscale)
+    return { enabled: saved.enabled === true, port: Number.isInteger(saved.port) ? (saved.port as number) : MOBILE_PORT, lan: saved.lan !== false, tailscale }
   }
+  const saveMobileSetting = (setting: MobileSetting) =>
+    db.prepare("insert into settings (key, value) values ('mobile', ?) on conflict (key) do update set value = excluded.value").run(JSON.stringify(setting))
   const viaPhone = (method: string, path: string, body: unknown): Promise<{ status: number; json: unknown }> =>
     new Promise(resolve => {
       const req = Readable.from([Buffer.from(JSON.stringify(body ?? {}))]) as unknown as IncomingMessage
@@ -1256,7 +1263,12 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     vapid,
     fetch: options.fetch,
     tailscale: options.tailscale,
+    run: options.tailscaleRun,
     changed: () => changed('mobile'),
+    summaryOf: id => (db.prepare('select summary from approvals where id = ?').get(id) as { summary: string } | undefined)?.summary ?? null,
+    keepTailscale: mode => {
+      if (!closed) saveMobileSetting({ ...mobileSetting(), tailscale: mode })
+    },
     strings: () => {
       const lang = langNow()
       return { lang, ...Object.fromEntries(Object.entries(DICTS[lang]).filter(([key]) => key.startsWith('mobile.page.'))) }
@@ -1277,7 +1289,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     lastAway = what
     await notifyPhones({ title: say('mobile.push.waiting', { questions: questions.length, approvals: approvals.length }), body: '', tag: 'waiting', tab: questions.length > 0 ? 'decisions' : 'approvals' })
   }
-  if (mobileSetting().enabled) void mobile.start(mobileSetting().port, mobileSetting().lan)
+  if (mobileSetting().enabled) void mobile.start(mobileSetting().port, mobileSetting().lan, mobileSetting().tailscale)
 
   // Where this bridge listens, read once it does (PROVE_PATH): the inode of its socket file, or its port.
   let bound = ''
@@ -1447,9 +1459,11 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const port = Number.isInteger(body.port) && (body.port as number) >= 0 && (body.port as number) < 65536 ? (body.port as number) : saved.port
       // `lan` false: this computer only, for Tailscale HTTPS (no firewall question either).
       const lan = typeof body.lan === 'boolean' ? body.lan : saved.lan
-      db.prepare("insert into settings (key, value) values ('mobile', ?) on conflict (key) do update set value = excluded.value").run(JSON.stringify({ enabled, port, lan }))
-      if (enabled) await mobile.start(port, lan)
-      else await mobile.stop()
+      saveMobileSetting({ ...saved, enabled, port, lan })
+      // Off takes Tailscale HTTPS off too (it would send the address to whatever takes the port
+      // next); on again brings it back as the person left it.
+      if (enabled) await mobile.start(port, lan, saved.tailscale)
+      else await mobile.stop(true)
       changed('mobile')
       return send(res, 200, { ...(await mobile.status()), enabled })
     }
@@ -1466,6 +1480,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (funnel && !status.tailscale.funnelAllowed) return send(res, 400, { error: say('mobile.funnelPolicy', { link: status.tailscale.funnelLink }) })
       const result = await mobile.tailscale(on, funnel)
       if (!result.ok) return send(res, 400, { error: say('mobile.tailscaleFailed', { error: result.error }) })
+      saveMobileSetting({ ...mobileSetting(), tailscale: !on ? 'off' : funnel ? 'funnel' : 'serve' })
       changed('mobile')
       return send(res, 200, { ...(await mobile.status()), enabled: mobileSetting().enabled })
     }
@@ -2448,13 +2463,15 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   })
 
   // Once only: a signal and the self-check may both ask. The last checkpoint leaves the WAL empty.
+  // Done once the phone page has stopped and taken Tailscale HTTPS off (mobile.ts shutdown).
   let closed = false
-  const close = () => {
-    if (closed) return
+  let stopped: Promise<void> = Promise.resolve()
+  const close = (): Promise<void> => {
+    if (closed) return stopped
     closed = true
     shuttingDown = true
     telegram.stop()
-    void mobile.stop()
+    stopped = mobile.shutdown()
     clearInterval(pruning)
     clearInterval(releasing)
     clearInterval(routineTimer)
@@ -2465,6 +2482,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       // Another connection still reads: closing checkpoints what it can.
     }
     db.close()
+    return stopped
   }
 
   // How many sessions memory holds something for (tests).
@@ -2670,10 +2688,7 @@ if (import.meta.main) {
   // Stopped from outside (the app quitting or replacing it, a kill, Ctrl-C): the database
   // closes first, so the WAL is folded in and Telegram and the phone server stop cleanly.
   for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
-    process.once(signal, () => {
-      bridge.close()
-      process.exit(0)
-    })
+    process.once(signal, () => void bridge.close().finally(() => process.exit(0)))
   }
   try {
     let where = defaultSocketPath()
@@ -2687,8 +2702,7 @@ if (import.meta.main) {
       if (serving() && !(parent && !alive(parent))) return
       console.log('claude-ide bridge: another bridge took over, or the process that started it is gone; leaving')
       clearInterval(watch)
-      bridge.close()
-      process.exit(0)
+      void bridge.close().finally(() => process.exit(0))
     }, parent ? 2000 : 30_000)
   } catch (error) {
     console.log(`claude-ide bridge not started: ${error instanceof Error ? error.message : String(error)}`)

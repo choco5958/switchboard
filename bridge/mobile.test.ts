@@ -1,7 +1,7 @@
 import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createCipheriv, createDecipheriv, createECDH, createPublicKey, randomBytes, verify } from 'node:crypto'
-import { request } from 'node:http'
+import { createServer, request } from 'node:http'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -181,13 +181,25 @@ describe('Web Push', () => {
   })
 })
 
-test('allowing and writing to a session take a connection nobody on the Wi-Fi can swap', () => {
-  for (const ok of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '100.100.3.48', 'fd7a:115c:a1e0::d536:331']) assert.ok(strongTransport(ok), ok)
-  for (const no of ['192.168.0.5', '10.0.0.2', '172.16.0.1', 'fe80::1', '100.128.0.1']) assert.ok(!strongTransport(no), no)
+test('allowing, writing to a session and a memo take the Tailscale HTTPS address, which nobody on the Wi-Fi can swap', () => {
+  const tls = { host: 'mac.tail1.ts.net', 'x-forwarded-proto': 'https' }
+  for (const ok of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) assert.ok(strongTransport(ok, tls, 'mac.tail1.ts.net'), ok)
+  assert.ok(strongTransport('127.0.0.1', { ...tls, host: 'MAC.tail1.ts.net:443' }, 'mac.tail1.ts.net'))
+  // Plain HTTP, to a Wi-Fi or a Tailscale IP address: a network can answer for either.
+  for (const no of ['192.168.0.5', '10.0.0.2', '172.16.0.1', 'fe80::1', '100.100.3.48', 'fd7a:115c:a1e0::d536:331']) assert.ok(!strongTransport(no, tls, 'mac.tail1.ts.net'), no)
+  // From this computer without what tailscale serve adds: another tunnel (its own name), a local
+  // program (no TLS), or Tailscale not known at all.
+  assert.ok(!strongTransport('127.0.0.1', { ...tls, host: 'abc.trycloudflare.com' }, 'mac.tail1.ts.net'))
+  assert.ok(!strongTransport('127.0.0.1', { ...tls, host: 'localhost:47390' }, 'mac.tail1.ts.net'))
+  assert.ok(!strongTransport('127.0.0.1', { host: 'mac.tail1.ts.net' }, 'mac.tail1.ts.net'))
+  assert.ok(!strongTransport('127.0.0.1', tls, ''))
   assert.ok(needsStrong('POST', '/outbox', {}))
   assert.ok(needsStrong('POST', '/approvals/3/answer', { decision: 'allow' }))
   for (const decision of ['deny', 'terminal']) assert.ok(!needsStrong('POST', '/approvals/3/answer', { decision }))
   assert.ok(!needsStrong('POST', '/questions/3/answer', { choice: 'a' }))
+  assert.ok(!needsStrong('POST', '/questions/3/answer', { choice: 'a', memo: '  ' }))
+  // A memo goes into the session's prompt: words of the phone's own, as a message would be.
+  for (const memo of ['이유', 3, ['x'], { a: 1 }]) assert.ok(needsStrong('POST', '/questions/3/answer', { choice: 'a', memo }), String(memo))
   assert.ok(!needsStrong('GET', '/mobile/view', {}))
   assert.notEqual(newPairCode(), newPairCode())
 })
@@ -313,17 +325,189 @@ test('slow uploads from one sender cannot hold every connection, and each body g
   await mobile.stop()
 })
 
-test('pairing codes are tried at most thirty times a minute in all', async () => {
+// Tailscale as the tests see it: running, with the HTTPS name below, and a serve config kept
+// in `served` (the port tailscale serve sends the name to, or 0). Nothing real runs.
+const DOMAIN = 'mac.tail1.ts.net'
+const TLS = { host: DOMAIN, 'x-forwarded-proto': 'https' }
+const fakeTailscale = () => {
+  const ts = { served: 0, funnel: false, calls: [] as string[][] }
+  const run: Run = async (_bin, args) => {
+    ts.calls.push(args)
+    if (args[0] === 'status') return { ok: true, out: JSON.stringify({ BackendState: 'Running', CertDomains: [DOMAIN], Self: { ID: 'n1', CapMap: { funnel: null } } }) }
+    if (args.join(' ') === 'serve status --json') {
+      if (!ts.served) return { ok: true, out: '{}' }
+      return { ok: true, out: JSON.stringify({ TCP: { 443: { HTTPS: true } }, Web: { [`${DOMAIN}:443`]: { Handlers: { '/': { Proxy: `http://127.0.0.1:${ts.served}` } } } }, AllowFunnel: ts.funnel ? { [`${DOMAIN}:443`]: true } : {} }) }
+    }
+    if (args.join(' ') === 'serve --https=443 off') {
+      ts.served = 0
+      ts.funnel = false
+    } else if (args[1] === '--bg') {
+      ts.served = Number(args[3]!.split(':').pop())
+      ts.funnel = args[0] === 'funnel'
+    }
+    return { ok: true, out: '' }
+  }
+  return { ts, run }
+}
+
+test('strangers guessing pairing codes never keep the person from pairing, and each guesser waits longer', async () => {
   let clock = Date.now()
-  const mobile = createMobile({ db: new DatabaseSync(':memory:'), ...quiet(), tailscale: null, now: () => clock })
+  const { run } = fakeTailscale()
+  const mobile = createMobile({ db: new DatabaseSync(':memory:'), ...quiet(), tailscale: '/bin/tailscale', run, now: () => clock })
   await mobile.start(0, false)
   const { port } = await mobile.status()
   const paired = mobile.pair('홈 화면', 'https')
-  const claim = (code: string, from: string) => raw(port, 'POST', '/claim', JSON.stringify({ code }), { 'x-forwarded-for': from })
-  for (let i = 0; i < 30; i++) assert.equal((await claim('WRONGXXX', `203.0.113.${100 + i}`)).status, 404)
-  assert.equal((await claim(paired.code, '198.51.100.60')).status, 429)
+  const claim = (code: string, from: string) => raw(port, 'POST', '/claim', JSON.stringify({ code }), { ...TLS, 'x-forwarded-for': from })
+  // Over plain HTTP, or from a tunnel that is not Tailscale's, no code is handed over.
+  assert.equal((await raw(port, 'POST', '/claim', JSON.stringify({ code: paired.code }), { 'x-forwarded-for': '198.51.100.9' })).status, 403)
+  for (let i = 0; i < 60; i++) assert.equal((await claim('WRONGXXX', `203.0.113.${100 + i}`)).status, 404)
+  assert.equal((await claim(paired.code, '198.51.100.60')).status, 200, 'a first try is heard')
+  // One guesser: five, then a minute, then two.
+  const guesser = '2001:db8:aa:1::5'
+  for (let i = 0; i < 5; i++) assert.equal((await claim('WRONGXXX', guesser)).status, 404)
+  assert.equal((await claim('WRONGXXX', '2001:db8:aa:2::9')).status, 429, 'the same /48')
   clock += 61_000
-  assert.equal((await claim(paired.code, '198.51.100.60')).status, 200, 'the code was kept')
+  assert.equal((await claim('WRONGXXX', guesser)).status, 404)
+  clock += 61_000
+  assert.equal((await claim('WRONGXXX', guesser)).status, 429, 'two minutes now')
+  clock += 61_000
+  assert.equal((await claim('WRONGXXX', guesser)).status, 404)
+  await mobile.stop()
+})
+
+test('a phone paired over plain HTTP is heard from the network only, sees no secret and adds no memo', async () => {
+  const { run } = fakeTailscale()
+  let from = '192.168.0.23'
+  const summary = 'curl -H "Authorization: Bearer abcdefghijklmnop" https://x.example'
+  const inner = async (_method: string, path: string) =>
+    path === '/mobile/view' ? { status: 200, json: { approvals: [{ id: 1, summary, cwd: '/w/token=abc123' }, { id: 2, summary: 'ls‮', cwd: '' }] } } : { status: 200, json: {} }
+  const mobile = createMobile({ db: new DatabaseSync(':memory:'), inner, strings: () => ({}), vapid: makeVapidKeys, tailscale: '/bin/tailscale', run, addressOf: () => from, summaryOf: id => (id === 2 ? 'ls‮' : summary) })
+  await mobile.start(0, false)
+  const { port } = await mobile.status()
+  const weak = mobile.pair('Wi-Fi', 'lan')
+  const tailnetIp = mobile.pair('Tailscale IP', 'tailscale')
+  const strong = mobile.pair('HTTPS', 'https')
+  const ask = async (who: { id: number; key: string }, inner: unknown, headers: Record<string, string> = {}) => {
+    const nonce = randomBytes(12)
+    const wire = JSON.stringify({ d: who.id, n: toB64(nonce), c: toB64(seal(fromB64(who.key), nonce, utf8(JSON.stringify({ t: Date.now(), ...(inner as object) })), utf8(`sb1:req:${who.id}`))) })
+    const res = await raw(port, 'POST', '/api', wire, headers)
+    const out = JSON.parse(res.text) as { n: string; c: string }
+    return JSON.parse(fromUtf8(open(fromB64(who.key), fromB64(out.n), fromB64(out.c), utf8(`sb1:res:${who.id}:${toB64(nonce)}`))!)) as { status: number; json: any }
+  }
+  // From the Wi-Fi: it reads, with secrets masked, answers and denies, but adds no memo.
+  const view = await ask(weak, { method: 'GET', path: '/mobile/view' })
+  assert.equal(view.status, 200)
+  assert.equal(view.json.pairedStrong, false)
+  assert.equal(view.json.approvals[0].summary, 'curl -H "Authorization: Bearer ***" https://x.example')
+  assert.equal(view.json.approvals[0].cwd, '/w/token=***')
+  assert.equal((await ask(weak, { method: 'POST', path: '/questions/1/answer', body: { choice: 'a' } })).status, 200)
+  assert.deepEqual((await ask(weak, { method: 'POST', path: '/questions/1/answer', body: { choice: 'a', memo: '이렇게 해 줘' } })).json, { error: 'strong', strong: true, pairAgain: false })
+  // A phone paired through a Tailscale IP address counts as plain HTTP too.
+  assert.equal((await ask(tailnetIp, { method: 'GET', path: '/mobile/view' })).json.pairedStrong, false)
+  // Through Tailscale HTTPS or Funnel (from this computer): not heard at all.
+  from = '127.0.0.1'
+  for (const who of [weak, tailnetIp]) assert.deepEqual((await ask(who, { method: 'GET', path: '/mobile/view' }, { ...TLS, 'x-forwarded-for': '203.0.113.80' })).json, { error: 'strong', strong: true, pairAgain: true })
+  const events = (who: { id: number; key: string }) => {
+    const nonce = randomBytes(12)
+    return `/events?d=${who.id}&n=${toB64(nonce)}&c=${toB64(seal(fromB64(who.key), nonce, utf8(JSON.stringify({ t: Date.now() })), utf8(`sb1:ev:${who.id}`)))}`
+  }
+  assert.equal((await raw(port, 'GET', events(weak), undefined, TLS)).status, 403)
+  // The phone paired through the HTTPS address sees the command whole, and may allow it.
+  const shown = await ask(strong, { method: 'GET', path: '/mobile/view' }, TLS)
+  assert.equal(shown.json.approvals[0].summary, summary)
+  assert.equal(shown.json.approvals[0].hidden, false)
+  assert.equal((await ask(strong, { method: 'POST', path: '/questions/1/answer', body: { choice: 'a', memo: '이유' } }, TLS)).status, 200)
+  assert.equal((await ask(strong, { method: 'POST', path: '/approvals/1/answer', body: { decision: 'allow' } }, TLS)).status, 200)
+  // Characters that hide or reorder text show as [U+...], and such a command is not allowed here.
+  assert.equal(shown.json.approvals[1].summary, 'ls[U+202E]')
+  assert.equal(shown.json.approvals[1].hidden, true)
+  assert.deepEqual((await ask(strong, { method: 'POST', path: '/approvals/2/answer', body: { decision: 'allow' } }, TLS)).json, { error: 'hidden', hidden: true })
+  assert.equal((await ask(strong, { method: 'POST', path: '/approvals/2/answer', body: { decision: 'deny' } }, TLS)).status, 200)
+  // From this computer without Tailscale's marks (another tunnel, a local program): plain HTTP.
+  assert.equal((await ask(strong, { method: 'POST', path: '/approvals/1/answer', body: { decision: 'allow' } }, { 'x-forwarded-for': '203.0.113.81' })).status, 403)
+  await mobile.stop()
+})
+
+test('phones paired before an address was kept count as plain HTTP once, and are told to pair again', async () => {
+  const db = new DatabaseSync(':memory:')
+  db.exec('create table mobile_devices (id integer primary key, name text not null, key text not null, created_at integer not null, last_seen integer, push text, strong integer not null default 0)')
+  db.prepare('insert into mobile_devices (name, key, created_at, last_seen, strong) values (?, ?, ?, ?, 1)').run('Tailscale IP 폰', toB64(randomBytes(32)), Date.now(), Date.now())
+  createMobile({ db, ...quiet(), tailscale: null })
+  const again = createMobile({ db, ...quiet(), tailscale: null })
+  const after = again.pair('새 폰', 'https')
+  // Started once more: only the first start downgrades.
+  createMobile({ db, ...quiet(), tailscale: null })
+  const devices = (await again.status()).devices
+  assert.deepEqual(devices.map(d => [d.name, d.strong]), [['Tailscale IP 폰', false], ['새 폰', true]])
+  assert.equal(after.id, 2)
+})
+
+test('Tailscale HTTPS goes off when phones do and when the bridge leaves, and comes back as the person left it', async () => {
+  const { ts, run } = fakeTailscale()
+  const db = new DatabaseSync(':memory:')
+  const kept: string[] = []
+  const make = () => createMobile({ db, ...quiet(), tailscale: '/bin/tailscale', run, keepTailscale: mode => kept.push(mode), bindMs: 300 })
+  const first = make()
+  // Settings from before the mode was kept: what is found is kept, nothing changes.
+  await first.start(0, false)
+  const { port } = await first.status()
+  assert.deepEqual(kept, ['off'])
+  assert.equal((await first.tailscale(true)).ok, true)
+  assert.equal(ts.served, port)
+  // Phones turned off: the address goes before the port is let go.
+  await first.stop(true)
+  assert.equal(ts.served, 0)
+  // On again, as the person left it.
+  await first.start(port, false, 'serve')
+  assert.equal(ts.served, port)
+  // The bridge on its way out (an update replaces it): off; the next one turns it on again.
+  await first.shutdown()
+  assert.equal(ts.served, 0)
+  const second = make()
+  await second.start(port, false, 'funnel')
+  assert.equal(ts.served, port)
+  assert.equal(ts.funnel, true)
+  await second.stop()
+  assert.equal(ts.served, port, 'a restart alone leaves it')
+  // Another program holds the port: the address would bring the person's phones to it.
+  const squatter = createServer(() => {})
+  await new Promise<void>((resolve, reject) => squatter.once('error', reject).listen(port, '127.0.0.1', resolve))
+  const third = make()
+  await third.start(port, false, 'serve')
+  assert.equal((await third.status()).listening, false)
+  assert.equal(ts.served, 0)
+  squatter.close()
+  const offs = ts.calls.filter(c => c.join(' ') === 'serve --https=443 off').length
+  assert.equal(offs, 3)
+})
+
+test('strangers holding requests open leave room for a phone that showed its key', async () => {
+  const { run } = fakeTailscale()
+  const mobile = createMobile({ db: new DatabaseSync(':memory:'), ...quiet(), tailscale: '/bin/tailscale', run, bodyMs: 1500 })
+  await mobile.start(0, false)
+  const { port } = await mobile.status()
+  const phone = mobile.pair('폰', 'https')
+  // The phone came through Funnel once.
+  assert.equal((await raw(port, 'POST', '/api', sealedFor(phone, { t: Date.now(), method: 'GET', path: '/mobile/view' }), { ...TLS, 'x-forwarded-for': '198.51.100.70' })).status, 200)
+  const slow = (from: string) =>
+    new Promise<string>(resolve => {
+      const req = request({ host: '127.0.0.1', port, method: 'POST', path: '/api', agent: false, headers: { 'content-type': 'application/json', 'content-length': '20000', 'x-forwarded-for': from } }, res => {
+        res.resume()
+        res.on('end', () => resolve(`answered ${res.statusCode}`))
+      })
+      req.on('error', () => resolve('closed'))
+      req.write('{')
+    })
+  const hanging = Array.from({ length: 48 }, (_, i) => slow(`203.0.113.${150 + Math.floor(i / 8)}`))
+  // Once all 48 are in (a busy machine takes a while), one more stranger finds no room.
+  let stranger = 0
+  for (let i = 0; i < 100 && stranger !== 429; i++) {
+    await new Promise(resolve => setTimeout(resolve, 30))
+    stranger = (await raw(port, 'GET', '/time', undefined, { 'x-forwarded-for': '203.0.113.200' })).status
+  }
+  assert.equal(stranger, 429, 'no room for one more stranger')
+  assert.notEqual((await raw(port, 'GET', '/time', undefined, { 'x-forwarded-for': '198.51.100.70' })).status, 429, 'the phone gets in')
+  await Promise.all(hanging)
   await mobile.stop()
 })
 
@@ -402,7 +586,8 @@ describe('a paired phone', () => {
     pushes.push({ url: String(url), body: init.body })
     return new Response(null, { status: 201 })
   }) as unknown as typeof fetch
-  const bridge = createBridge(join(dir, 'ide.db'), 'ko-KR', { appKey: APP_KEY, tailscale: null, fetch: fakeFetch })
+  const tailscale = fakeTailscale()
+  const bridge = createBridge(join(dir, 'ide.db'), 'ko-KR', { appKey: APP_KEY, tailscale: '/bin/tailscale', tailscaleRun: tailscale.run, fetch: fakeFetch })
   let port = 0
   let phone = { id: 0, key: '' }
 
@@ -420,9 +605,10 @@ describe('a paired phone', () => {
       req.end()
     })
 
+  // As a phone through Tailscale HTTPS: from 127.0.0.1, with the marks tailscale serve adds.
   const http = (method: string, path: string, body?: string, host?: string, extra: Record<string, string> = {}): Promise<{ status: number; text: string; headers: Record<string, unknown> }> =>
     new Promise((resolve, reject) => {
-      const headers: Record<string, string> = { 'content-type': 'application/json', ...extra }
+      const headers: Record<string, string> = { 'content-type': 'application/json', ...TLS, ...extra }
       if (host) headers.host = host
       const req = request({ host: '127.0.0.1', port, method, path, headers }, res => {
         let text = ''
@@ -529,7 +715,7 @@ describe('a paired phone', () => {
   })
 
   test("disconnecting a phone whose live stream is open ends the stream, and the bridge goes on", async () => {
-    const third = (await call('POST', '/mobile/pair', { name: '세 번째' })).json
+    const third = (await call('POST', '/mobile/pair', { name: '세 번째', kind: 'https' })).json
     const ended = new Promise<string>((resolve, reject) => {
       const req = request({ host: '127.0.0.1', port, path: eventsPath(third) }, res => {
         let text = ''
@@ -647,26 +833,38 @@ describe('a paired phone', () => {
     assert.equal((await ask('GET', '/mobile/view', undefined, Date.now(), paired)).status, 200)
   })
 
-  test('a phone paired with a link to a plain HTTP address may not allow or write, even through Tailscale', async () => {
+  test('a phone paired with a link to a plain HTTP address, a Tailscale IP one too, is not heard through Tailscale HTTPS', async () => {
     await call('POST', '/sessions', { id: 'ph9', cwd: '/w/weak' })
-    for (const kind of ['lan', 'name', undefined]) {
+    const a = (await call('POST', '/approvals', { sessionId: 'ph9', tool: 'Bash', summary: 'ls', requestKey: 'weak' })).json
+    for (const kind of ['lan', 'name', 'tailscale', undefined]) {
       const weak = (await call('POST', '/mobile/pair', { name: `HTTP ${kind}`, kind })).json
-      const view = await ask('GET', '/mobile/view', undefined, Date.now(), weak)
-      assert.equal(view.json.pairedStrong, false, String(kind))
-      const a = (await call('POST', '/approvals', { sessionId: 'ph9', tool: 'Bash', summary: 'ls', requestKey: `weak-${kind}` })).json
-      // This test comes from 127.0.0.1, as Tailscale HTTPS and Funnel do: the connection is fine.
-      const allow = await ask('POST', `/approvals/${a.id}/answer`, { decision: 'allow' }, Date.now(), weak)
-      assert.equal(allow.status, 403)
-      assert.deepEqual(allow.json, { error: 'strong', strong: true, pairAgain: true })
-      assert.equal((await ask('POST', '/outbox', { sessionId: 'ph9', text: 'x' }, Date.now(), weak)).status, 403)
-      assert.equal((await ask('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }, Date.now(), weak)).status, 200, 'denying is fine')
+      // This test comes from 127.0.0.1 with Tailscale's marks, as Tailscale HTTPS and Funnel do.
+      for (const [method, path, body] of [['GET', '/mobile/view'], ['POST', `/approvals/${a.id}/answer`, { decision: 'deny' }], ['POST', '/outbox', { sessionId: 'ph9', text: 'x' }]] as const) {
+        const refused = await ask(method, path, body, Date.now(), weak)
+        assert.equal(refused.status, 403, `${kind} ${path}`)
+        assert.deepEqual(refused.json, { error: 'strong', strong: true, pairAgain: true })
+      }
     }
-    // A Tailscale address (WireGuard) keeps the key off the Wi-Fi too.
-    const viaTailscale = (await call('POST', '/mobile/pair', { name: 'Tailscale IP', kind: 'tailscale' })).json
-    assert.equal((await ask('GET', '/mobile/view', undefined, Date.now(), viaTailscale)).json.pairedStrong, true)
+    assert.equal((await call('GET', `/approvals/${a.id}`)).json.status, 'pending')
     const devices = (await call('GET', '/mobile')).json.devices as { name: string; strong: boolean }[]
     assert.equal(devices.find(d => d.name === 'HTTP lan')?.strong, false)
-    assert.equal(devices.find(d => d.name === 'Tailscale IP')?.strong, true)
+    assert.equal(devices.find(d => d.name === 'HTTP tailscale')?.strong, false)
+    await call('POST', `/approvals/${a.id}/answer`, { decision: 'deny' })
+  })
+
+  test('phones off takes Tailscale HTTPS off, and phones on brings it back as the person left it', async () => {
+    const on = await call('POST', '/mobile/tailscale', { on: true })
+    assert.equal(on.status, 200)
+    assert.equal(tailscale.ts.served, port)
+    assert.equal(on.json.addresses[0].url, `https://${DOMAIN}`)
+    assert.equal((await call('POST', '/mobile', { enabled: false })).json.listening, false)
+    assert.equal(tailscale.ts.served, 0)
+    port = (await call('POST', '/mobile', { enabled: true })).json.port
+    assert.equal(tailscale.ts.served, port)
+    assert.equal((await call('POST', '/mobile/tailscale', { on: false })).status, 200)
+    assert.equal(tailscale.ts.served, 0)
+    port = (await call('POST', '/mobile', { enabled: true, port: 0 })).json.port
+    assert.equal(tailscale.ts.served, 0, 'left off')
   })
 
   test('the largest memo the page lets a person write fits, and a body larger than any real one is refused unread', async () => {
