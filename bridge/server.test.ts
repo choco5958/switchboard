@@ -1100,6 +1100,21 @@ describe('scheduled prompts and waits', () => {
     for (const r of [skip, once, one]) await call('POST', `/routines/${r.id}/delete`)
   })
 
+  test('deleting a routine takes back its prompt still waiting; saving one that is gone is a 404', async () => {
+    const { json: r } = await call('POST', '/routines', { name: '지울 점검', prompt: '로그를 봐줘', project: 'gone-r', cwd: '/w/gone-r', schedule: { kind: 'daily', time: '09:00' } })
+    await call('POST', '/sessions', { id: 'gr-1', cwd: '/w/gone-r' })
+    const stream = open('gr-1')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    await call('POST', `/routines/${r.id}/run`)
+    assert.deepEqual((await runs(r.id)).map(run => run.status), ['sent'])
+    await call('POST', `/routines/${r.id}/delete`)
+    stream.destroy()
+    assert.deepEqual(await take('gr-1'), [])
+    const saved = await call('POST', '/routines', { id: r.id, name: '지울 점검', prompt: 'p', project: 'gone-r', cwd: '/w/gone-r', schedule: { kind: 'daily', time: '09:00' } })
+    assert.equal(saved.status, 404)
+    assert.ok(!(await call('GET', '/state')).json.routines.some((row: { id: number }) => row.id === r.id))
+  })
+
   test('a wait goes back into its session when it fires', async () => {
     await call('POST', '/sessions', { id: 'wt-1', cwd: '/w/wait' })
     const { json } = await call('POST', '/waits', { sessionId: 'wt-1', note: 'CI가 끝나면 결과를 보고 배포 여부 판단' })

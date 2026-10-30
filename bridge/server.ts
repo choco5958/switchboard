@@ -412,6 +412,21 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   addColumns('routines', [['failed_off', 'integer not null default 0']])
   db.exec('update tasks set number = id where number is null')
 
+  // Writes that belong together land together or not at all: a crash between two statements
+  // leaves no half of them. A savepoint, so one may run inside another.
+  const atomic = <T>(fn: () => T): T => {
+    db.exec('savepoint atomic')
+    try {
+      const result = fn()
+      db.exec('release atomic')
+      return result
+    } catch (error) {
+      db.exec('rollback to atomic')
+      db.exec('release atomic')
+      throw error
+    }
+  }
+
   // Feature area: UI language. Errors, log lines and texts for sessions follow the `lang` setting.
   const langNow = (): Lang => {
     const row = db.prepare("select value from settings where key = 'lang'").get() as { value: string } | undefined
@@ -1936,9 +1951,11 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const next = nextRun(schedule, now())
       const id = Number(body.id) || 0
       if (id) {
-        db.prepare('update routines set project = ?, cwd = ?, name = ?, prompt = ?, schedule = ?, missed = ?, enabled = ?, next_at = ?, updated_at = ?, failed_off = 0 where id = ?').run(
+        const updated = db.prepare('update routines set project = ?, cwd = ?, name = ?, prompt = ?, schedule = ?, missed = ?, enabled = ?, next_at = ?, updated_at = ?, failed_off = 0 where id = ?').run(
           project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), id,
         )
+        // Deleted meanwhile (another window): nothing was saved.
+        if (updated.changes === 0) return send(res, 404, { error: say('bridge.notFound') })
       }
       const saved = id
         ? id
@@ -1955,8 +1972,17 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const r = db.prepare('select * from routines where id = ?').get(Number(routineAction[1])) as RoutineRow | undefined
       if (!r) return send(res, 404, { error: say('bridge.notFound') })
       if (routineAction[2] === 'delete') {
-        db.prepare('delete from routine_runs where routine_id = ?').run(r.id)
-        db.prepare('delete from routines where id = ?').run(r.id)
+        // A run's prompt still waiting for its session goes with it: without its run it would
+        // reach the session as an empty request.
+        const dropped = atomic(() => {
+          const closed = db
+            .prepare('update outbox set delivered = 1, answered = 1 where delivered = 0 and routine_run in (select id from routine_runs where routine_id = ?)')
+            .run(r.id).changes
+          db.prepare('delete from routine_runs where routine_id = ?').run(r.id)
+          db.prepare('delete from routines where id = ?').run(r.id)
+          return closed
+        })
+        if (dropped > 0) changed('outbox')
       } else {
         startRun(r, now())
         assignRuns()
