@@ -373,6 +373,8 @@ export const ko = {
   'term.shell': '셸',
   'term.pickFolder': '프로젝트 폴더',
   'term.noFolder': '폴더가 없습니다: {path}',
+  'term.hostLost': '터미널 호스트가 멈춰서 이 터미널도 끝났습니다',
+  'term.hostFailed': '터미널 호스트를 시작하지 못했습니다. 기록: {log}',
   // Log page
   'log.filter': '걸러 볼 말 (작업, 종류, 내용)',
   'log.noMatch': '이 말이 들어간 로그가 없습니다.',
@@ -845,6 +847,9 @@ export const ko = {
   'agents.intro': 'Claude Code, Codex, Gemini 같은 코딩 CLI를 아래 도크에서 엽니다. Claude Code는 mod로, 다른 CLI는 그 실행에만 붙이는 Switchboard 연결 서버(MCP)로 작업, 계획, 질문을 올리고, 답은 그 터미널에 입력됩니다. CLI 자체의 설정 파일은 고치지 않습니다. 사용량 막대와 권한 확인 중계는 지금 Claude Code에서만 됩니다.',
   'agents.showOthers': '다른 에이전트 버튼 보이기',
   'agents.showOthersHint': '기본은 켜짐입니다. 끄면 독에는 Claude와 셸 버튼만 보입니다. 켜면 설치된 CLI와 직접 추가한 CLI 버튼이 나옵니다.',
+  'agents.closeOnQuit': '앱을 닫을 때 터미널도 닫기',
+  'agents.closeOnQuitHint': '기본은 꺼짐입니다. 꺼 두면 앱을 닫거나 다시 시작하거나 업데이트해도 터미널과 그 안의 Claude Code, 다른 CLI가 계속 실행되고, 앱을 다시 열면 그대로 보입니다. 켜면 앱을 닫을 때 모든 터미널이 함께 닫힙니다. 탭의 ×는 언제나 그 터미널을 닫습니다.',
+  'agents.closeOnQuitOff': '이 컴퓨터에서는 앱을 닫으면 터미널도 함께 닫힙니다.',
   'agents.looking': '찾는 중',
   'agents.installed': '설치됨',
   'agents.missing': '설치되지 않음',

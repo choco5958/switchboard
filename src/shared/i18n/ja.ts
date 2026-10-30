@@ -374,6 +374,8 @@ export const ja: Dict = {
   'term.shell': 'シェル',
   'term.pickFolder': 'プロジェクトのフォルダー',
   'term.noFolder': 'フォルダーがありません: {path}',
+  'term.hostLost': 'ターミナルホストが停止したため、このターミナルも終了しました',
+  'term.hostFailed': 'ターミナルホストを起動できませんでした。ログ: {log}',
   // Log page
   'log.filter': '絞り込み (タスク、種類、内容)',
   'log.noMatch': 'この言葉を含むログはありません。',
@@ -846,6 +848,9 @@ export const ja: Dict = {
   'agents.intro': 'Claude Code、Codex、Gemini などのコーディング CLI を下のドックから開きます。Claude Code は mod で、ほかの CLI はその実行だけに付ける Switchboard の接続サーバー (MCP) で、タスク、計画、質問を送ります。回答はそのターミナルに入力されます。CLI 自体の設定ファイルは変更しません。使用量のメーターと権限確認の中継は、いまは Claude Code だけで使えます。',
   'agents.showOthers': '他のエージェントのボタンを表示',
   'agents.showOthersHint': '初期設定はオンです。オフの間、ドックには Claude とシェルのボタンだけが表示されます。オンにすると、インストール済みの CLI と追加した CLI のボタンが表示されます。',
+  'agents.closeOnQuit': 'アプリを閉じるときにターミナルも閉じる',
+  'agents.closeOnQuitHint': '初期設定はオフです。オフの間は、アプリを閉じても、再起動しても、アップデートしても、ターミナルとその中の Claude Code やほかの CLI は動き続け、アプリを開き直すとそのまま表示されます。オンにすると、アプリを閉じるときにすべてのターミナルが閉じます。タブの × はいつでもそのターミナルを閉じます。',
+  'agents.closeOnQuitOff': 'このコンピューターでは、アプリを閉じるとターミナルも閉じます。',
   'agents.looking': '検索中',
   'agents.installed': 'インストール済み',
   'agents.missing': '未インストール',

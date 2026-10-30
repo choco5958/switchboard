@@ -5,7 +5,9 @@
 // and a .deb (or any other Linux package, the system package manager's to update, as the README
 // says) get a notification that opens the download page.
 // An update never stops the app by itself: it installs when the person quits, or when they ask
-// for it from the notification after being told which terminals that closes.
+// for it from the notification after being told which terminals that closes. On macOS and Linux
+// the terminal host keeps the terminals running through it (src/main/termHost.ts), so it closes
+// none unless the person set the app to close them at a quit.
 
 import { app, dialog, Notification, powerMonitor, shell } from 'electron'
 import { mkdirSync, rmSync } from 'node:fs'
@@ -27,8 +29,9 @@ export function installsUpdates(platform: string = process.platform, env: Record
   return platform === 'linux' && !!env.APPIMAGE
 }
 
-// How many terminals an install now would close: the quit ends every app terminal still running,
-// and with it Claude Code or whatever else runs there. None: nothing to ask.
+// How many terminals an install now would close: the quit ends every app terminal running in the
+// app's own process, and with it Claude Code or whatever else runs there (terminals.ts
+// terminalStates leaves out those the host keeps). None: nothing to ask.
 export function terminalsClosing(terminals: readonly { alive: boolean }[]): number {
   return terminals.filter(one => one.alive).length
 }
@@ -131,6 +134,7 @@ type Found = { version: string; files: readonly { url: string; sha512?: string; 
 // The bridge keeps running through the swap. It runs this app's executable as Node, but macOS
 // keeps a moved or deleted file open for the process using it, and its scripts are a copy under
 // ~/.claude-ide/runtime (runtime.ts). The new version replaces it when it starts (staleBridge).
+// The terminal host does the same and is not replaced: it keeps its terminals until they end.
 function macUpdates(terminals: () => readonly { alive: boolean }[]): (found: Found) => Promise<boolean> {
   const bundle = bundleOf(app.getPath('exe'))
   const dir = join(app.getPath('userData'), 'updates')

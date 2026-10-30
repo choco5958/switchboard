@@ -187,6 +187,9 @@ export const CUSTOM_AGENTS_KEY = 'customAgents'
 // Whether the dock offers agent CLIs other than Claude. On unless the setting is exactly false, so
 // people who had these buttons before the setting existed keep them.
 export const SHOW_OTHER_AGENTS_KEY = 'showOtherAgents'
+// true: quitting the app closes its terminals. Unset (the default): the terminal host keeps them
+// running through a quit, a restart or an update (src/main/termHost.ts).
+export const CLOSE_TERMINALS_KEY = 'closeTerminalsOnQuit'
 export const showOtherAgents = (value: unknown): boolean => value !== false
 
 export const PLACEHOLDERS = ['server', 'command', 'args', 'args_json', 'config_file', 'config_json', 'name'] as const

@@ -115,10 +115,13 @@ export function copyRuntime(source: string, home: string, build: string): string
 
 // Other builds' copies, once this one is in use. Each on its own: a file another program
 // holds open (Windows) keeps that folder for the next start, and nothing else stops.
-export function pruneRuntimes(home: string, build: string): void {
+// `keep`: builds whose terminal host still runs terminals (termClient.ts hostBuilds). A Claude
+// Code started there runs the mod's hooks from that copy, and other CLIs their MCP server.
+export function pruneRuntimes(home: string, build: string, keep: Iterable<string> = []): void {
   const base = join(home, '.claude-ide', 'runtime')
+  const kept = new Set(keep)
   for (const name of readdirSync(base)) {
-    if (name === build) continue
+    if (name === build || kept.has(name)) continue
     try {
       rmSync(join(base, name), { recursive: true, force: true })
     } catch {

@@ -24,12 +24,14 @@ export function realEncryption(storage: KeyStorage, platform: string = process.p
 // `refused`: the keychain would not give its secret (the person said no to its question). The
 // saved file stays for a later start that is allowed, and this run uses a key of its own, which
 // means the app starts its bridge again (every session's stream drops once).
-export function loadAppKey(file: string, storage: KeyStorage = safeStorage, platform: string = process.platform): { key: string; refused: boolean } {
-  if (!realEncryption(storage, platform)) return { key: randomBytes(32).toString('hex'), refused: false }
+// `lasting`: the next start finds the same key, which the terminal host needs to let it back in
+// (termClient.ts hostSupported).
+export function loadAppKey(file: string, storage: KeyStorage = safeStorage, platform: string = process.platform): { key: string; refused: boolean; lasting: boolean } {
+  if (!realEncryption(storage, platform)) return { key: randomBytes(32).toString('hex'), refused: false, lasting: false }
   if (existsSync(file)) {
     try {
       const key = storage.decryptString(readFileSync(file))
-      if (/^[0-9a-f]{64}$/.test(key)) return { key, refused: false }
+      if (/^[0-9a-f]{64}$/.test(key)) return { key, refused: false, lasting: true }
     } catch {
       // Made by another install, or the keychain said no: writing a new key tells which.
     }
@@ -39,12 +41,13 @@ export function loadAppKey(file: string, storage: KeyStorage = safeStorage, plat
   try {
     sealed = storage.encryptString(key)
   } catch {
-    return { key, refused: true }
+    return { key, refused: true, lasting: false }
   }
   try {
     writeFileSync(file, sealed, { mode: 0o600 })
   } catch {
     // Kept for this run only.
+    return { key, refused: false, lasting: false }
   }
-  return { key, refused: false }
+  return { key, refused: false, lasting: true }
 }

@@ -374,6 +374,8 @@ export const en: Dict = {
   'term.shell': 'shell',
   'term.pickFolder': 'Project folder',
   'term.noFolder': 'Folder not found: {path}',
+  'term.hostLost': 'The terminal host stopped, so this terminal ended',
+  'term.hostFailed': 'Could not start the terminal host. Log: {log}',
   // Log page
   'log.filter': 'Filter (task, kind, text)',
   'log.noMatch': 'No log lines contain that text.',
@@ -846,6 +848,9 @@ export const en: Dict = {
   'agents.intro': "Coding CLIs such as Claude Code, Codex and Gemini open from the dock below. Claude Code connects through the mod, the others through the Switchboard connection server (MCP) attached to that run only; either way they post tasks, plans and questions, and answers are typed into the terminal. The CLI's own config files are left alone. Usage meters and permission relay work with Claude Code only for now.",
   'agents.showOthers': 'Show other agent buttons',
   'agents.showOthersHint': 'On by default. Off: the dock shows only Claude and shell buttons. On: buttons for installed CLIs and the ones you added appear.',
+  'agents.closeOnQuit': 'Close terminals when the app quits',
+  'agents.closeOnQuitHint': "Off by default. Off: quitting, restarting or updating the app leaves the terminals running, with Claude Code or any other CLI in them, and they show again when the app opens. On: quitting the app closes every terminal. A tab's × always closes its terminal.",
+  'agents.closeOnQuitOff': 'On this computer the terminals close when the app quits.',
   'agents.looking': 'Looking',
   'agents.installed': 'Installed',
   'agents.missing': 'Not installed',

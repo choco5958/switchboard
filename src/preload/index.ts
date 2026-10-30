@@ -54,6 +54,7 @@ const api: IdeApi = {
   termResize: (id, cols, rows) => ipcRenderer.send('term:resize', id, cols, rows),
   termClose: id => ipcRenderer.invoke('term:close', id),
   pickFolder: () => ipcRenderer.invoke('term:pickFolder'),
+  termKeeps: () => ipcRenderer.invoke('term:keeps'),
   onTermData: listener => {
     const handler = (_e: unknown, event: { id: string; data: string; seq: number }) => listener(event)
     ipcRenderer.on('term:data', handler)

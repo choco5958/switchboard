@@ -374,6 +374,8 @@ export const zhCN: Dict = {
   'term.shell': '终端',
   'term.pickFolder': '项目文件夹',
   'term.noFolder': '文件夹不存在：{path}',
+  'term.hostLost': '终端主机已停止，此终端也随之结束',
+  'term.hostFailed': '无法启动终端主机。日志：{log}',
   // Log page
   'log.filter': '筛选 (任务、类型、内容)',
   'log.noMatch': '没有包含这段文字的日志。',
@@ -846,6 +848,9 @@ export const zhCN: Dict = {
   'agents.intro': 'Claude Code、Codex、Gemini 等编码 CLI 都从下方的停靠栏打开。Claude Code 通过 mod 连接，其他 CLI 通过仅在该次运行中挂上的 Switchboard 连接服务器 (MCP) 连接，用来提交任务、计划和问题，回答会输入到它的终端。不会修改 CLI 自己的配置文件。用量条和权限确认中转目前只支持 Claude Code。',
   'agents.showOthers': '显示其他代理按钮',
   'agents.showOthersHint': '默认开启。关闭时，停靠栏只显示 Claude 和 shell 按钮。开启后，会显示已安装和自行添加的 CLI 按钮。',
+  'agents.closeOnQuit': '退出应用时关闭终端',
+  'agents.closeOnQuitHint': '默认关闭。关闭时，退出、重启或更新应用后，终端及其中运行的 Claude Code 和其他 CLI 会继续运行，重新打开应用后照常显示。开启后，退出应用会关闭所有终端。标签上的 × 始终会关闭该终端。',
+  'agents.closeOnQuitOff': '在这台电脑上，退出应用时终端也会关闭。',
   'agents.looking': '查找中',
   'agents.installed': '已安装',
   'agents.missing': '未安装',
