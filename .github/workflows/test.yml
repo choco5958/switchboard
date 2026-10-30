@@ -25,6 +25,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      # The mod's harness tests (mod/tests/*.test.ts) run in Claude Code's own test kit, which
+      # needs no login. The mod's own full type check is not run here: the engine and tool types
+      # it checks against are written by Claude Code beside a loaded mod and are not in the
+      # repository. pnpm typecheck covers the mod's modules that need none of them.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.314
+      - run: claude plugin test mod
 
   # Windows: the bridge over TCP, its start, the shell command and the MCP server reaching
   # it, and the shell helpers. The rest of the suite talks over Unix sockets.

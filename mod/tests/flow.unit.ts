@@ -111,7 +111,7 @@ test('nodes are marked done, now, next, left and failed', () => {
 })
 
 test('a predecessor missing from the plan does not block', () => {
-  const lone = { taskId: 1, key: 'x', title: 'x', status: '대기', after: ['gone'], round: 1 }
+  const lone = { taskId: 1, key: 'x', title: 'x', kind: '', owner: '', status: '대기', after: ['gone'], round: 1 }
   assert.equal(markOf(lone, [lone]), '▷')
 })
 

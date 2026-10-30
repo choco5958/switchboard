@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "bridge", "mcp", "scripts", "electron.vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "bridge", "mcp", "scripts", "mod/hooks/approval.ts", "mod/hooks/batch.ts", "mod/hooks/flow.ts", "mod/hooks/tools.ts", "mod/tests/approval.unit.ts", "mod/tests/batch.unit.ts", "mod/tests/flow.unit.ts", "electron.vite.config.ts", "vitest.config.ts"]
 }
