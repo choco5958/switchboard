@@ -178,7 +178,9 @@ From a terminal, `xattr -dr com.apple.quarantine /Applications/Switchboard.app` 
 
 At each start the app rewrites the bridge start files and the `switchboard` command in `~/.claude-ide` to match where it is. The `switchboard` command lands in `~/.local/bin` on macOS and Linux and in `%USERPROFILE%\.claude-ide\bin` on Windows; add that folder to your PATH.
 
-The app checks for new versions by itself. Windows and Linux (AppImage) download a new version and install it when the app quits. macOS cannot install an unsigned update, so there a notification opens the download page.
+The app checks for new versions by itself. Windows, macOS and Linux (AppImage) download a new version and install it when the app quits. Clicking the notification that says it is ready restarts the app and installs it at once; if app terminals are open, the app first asks, saying how many will close. An update never closes the app by itself.
+
+macOS installs updates itself from the version after 0.3.4, so getting from 0.3.4 or earlier to that version takes one last download by hand. If the app sits where your account cannot replace it (such as the Applications folder of an account that is not an administrator), the notification opens the download page on macOS too. If the keychain asks after an update, click Always Allow as above.
 
 ### From source
 

@@ -61,6 +61,11 @@ export function onTerminalsChange(listener: () => void): () => void {
   return () => changeListeners.delete(listener)
 }
 
+// What a quit would end: each terminal's state, for the update's question (updater.ts).
+export function terminalStates(): { alive: boolean }[] {
+  return [...terms.values()].map(one => ({ alive: one.alive }))
+}
+
 const changed = () => {
   for (const listener of changeListeners) listener()
 }
