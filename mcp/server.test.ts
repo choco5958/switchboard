@@ -214,6 +214,48 @@ describe('pieces of the MCP server', () => {
     assert.equal(await answerLine('{"jsonrpc":"2.0","method":"notifications/initialized"}', session.handle), undefined)
     const batch = (await answerLine('[{"jsonrpc":"2.0","id":1,"method":"ping"},{"jsonrpc":"2.0","method":"notifications/x"}]', session.handle)) as any[]
     assert.deepEqual(batch.map(r => r.id), [1])
+    // An empty batch and a message with no method are Invalid Requests, not unknown methods.
+    assert.deepEqual(await answerLine('[]', session.handle), { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid request' } })
+    assert.deepEqual(((await answerLine('{"jsonrpc":"2.0","id":7}', session.handle)) as any).error.code, -32600)
+    assert.equal(((await answerLine('{"jsonrpc":"2.0","id":7}', session.handle)) as any).id, 7)
+    assert.equal(((await answerLine('{"jsonrpc":"2.0","id":8,"method":"nope"}', session.handle)) as any).error.code, -32601)
+  })
+
+  test('a question or a message sent again after a lost connection carries the same key, so the bridge keeps one', async () => {
+    const keys: Record<string, string[]> = { '/questions': [], '/messages': [] }
+    let drop = true
+    const session = createSession(
+      { agent: 'codex', terminal: '', cwd: '/w', socket: '/none', home: '/none' },
+      {
+        call: async (_method, path, body): Promise<Reply> => {
+          const list = keys[path]
+          if (list) {
+            list.push(String((body as { requestKey?: unknown }).requestKey ?? ''))
+            // The bridge stored it, then the connection dropped before the reply.
+            if (drop) {
+              drop = false
+              return { ok: false, status: 0, json: { error: 'ECONNRESET' } }
+            }
+            drop = true
+          }
+          return { ok: true, status: 200, json: { id: 1, ids: ['m1'], settings: { lang: 'en' } } }
+        },
+        startBridge: async () => true,
+        run: async () => ({ code: 1, stdout: '', stderr: '' }),
+        log: () => undefined,
+      },
+    )
+    const tool = (name: string, args: unknown) => session.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })
+    await tool('ask_decision', { question: 'Ship it?', options: [{ key: 'a', label: 'Yes' }] })
+    await tool('ask_decision', { question: 'Ship it?', options: [{ key: 'a', label: 'Yes' }] })
+    await tool('send_to_session', { to: 'api', text: 'Status?' })
+    const [first, again, second] = keys['/questions']!
+    assert.ok(first)
+    assert.equal(again, first)
+    assert.notEqual(second, first)
+    assert.equal(keys['/messages']!.length, 2)
+    assert.ok(keys['/messages']![0])
+    assert.equal(keys['/messages']![1], keys['/messages']![0])
   })
 
   test('a bridge that is down is started, and the session registers before the call goes again', async () => {
