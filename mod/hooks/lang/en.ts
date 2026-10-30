@@ -174,7 +174,7 @@ export const en: Dict = {
 
   'stage.요구': 'Requirements',
   'stage.설계': 'Design',
-  'stage.작업': 'Build',
+  'stage.작업': 'Work',
   'stage.완료': 'Done',
   'taskStatus.하는 중': 'Active',
   'taskStatus.대기': 'Waiting',

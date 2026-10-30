@@ -121,7 +121,7 @@ test('flow, batch and devtool lines follow the language and keep Korean by defau
     fetchedAt: 0,
     lang: 'en' as const,
   }
-  assert.deepEqual(summaryLines(snapshot, 'en'), ['#4 T: Build stage, Active', '1 task, 0 decisions waiting, 0 subagents running, 0 done'])
+  assert.deepEqual(summaryLines(snapshot, 'en'), ['#4 T: Work stage, Active', '1 task, 0 decisions waiting, 0 subagents running, 0 done'])
   assert.match(batchText([{ id: 'q1', text: 'a' }, { id: 'm1', text: 'b' }], 'en'), /^\[Switchboard\] 2 items arrived/)
   assert.equal(toastText([{ id: 'q6', text: '' }, { id: 'm2', text: '' }], 'en'), 'Put answers to Q6, 1 IDE message into the session')
   assert.equal(

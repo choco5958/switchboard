@@ -534,7 +534,7 @@ test('with lang set to en, the pane, band, prompts and command speak English', a
     expect(await ui.find({ type: 'Text', text: /^Flow by task/ })).toBeDefined()
 
     await ui.press({ key: 'summary' })
-    expect(await ui.find({ type: 'Text', text: /: Build stage, Active, 2\/4 nodes done, now 고도화 구현/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /: Work stage, Active, 2\/4 nodes done, now 고도화 구현/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '2 tasks, 1 decision waiting, 1 subagent running, 1 done' })).toBeDefined()
     await ui.press({ key: 'summary' })
 
