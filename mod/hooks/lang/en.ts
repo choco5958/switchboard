@@ -149,6 +149,8 @@ export const en: Dict = {
   'tool.nodeFailedPlain': 'Could not update the node.',
   'tool.nodeDone': 'Node {key}: {status} (round {round})',
   'wt.notRepo': '{path} is not a git repo, so no worktree can be made there. Call again with the repo path in repo.',
+  'wt.badBase': 'The base branch {base} cannot be used. Call again with a branch name that does not start with -.',
+  'wt.outside': '{path} is outside the session folder, so no worktree can be made there. repo can only name a repo inside the session folder.',
   'wt.repoAddFailed': 'Could not add the repo to Orca: {error}',
   'wt.createFailed': 'Could not create the worktree: {error}',
   'wt.createFailedPlain': 'Could not create the worktree.',

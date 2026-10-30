@@ -146,6 +146,8 @@ export const zhCN: Dict = {
   'tool.nodeFailedPlain': '无法更新节点。',
   'tool.nodeDone': '节点 {key}：{status}（第 {round} 轮）',
   'wt.notRepo': '{path} 不是 git 仓库，无法创建工作树。请在 repo 中填写仓库路径后重新调用。',
+  'wt.badBase': '无法使用基准分支 {base}。请填写不以 - 开头的分支名后重新调用。',
+  'wt.outside': '{path} 在会话文件夹之外，无法创建工作树。repo 只能填写会话文件夹内的仓库。',
   'wt.repoAddFailed': '无法在 Orca 中添加仓库：{error}',
   'wt.createFailed': '无法创建工作树：{error}',
   'wt.createFailedPlain': '无法创建工作树。',

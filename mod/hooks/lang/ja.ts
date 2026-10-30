@@ -146,6 +146,8 @@ export const ja: Dict = {
   'tool.nodeFailedPlain': 'ノードを更新できませんでした。',
   'tool.nodeDone': 'ノード {key}: {status}({round} 回目)',
   'wt.notRepo': '{path} は git リポジトリではないため、ワークツリーを作れません。repo にリポジトリのパスを入れて呼び直してください。',
+  'wt.badBase': '基準ブランチ {base} は使えません。- で始まらないブランチ名を入れて呼び直してください。',
+  'wt.outside': '{path} はセッションのフォルダの外にあるため、ワークツリーを作れません。repo にはセッションのフォルダ内のリポジトリだけを指定できます。',
   'wt.repoAddFailed': 'Orca にリポジトリを登録できませんでした: {error}',
   'wt.createFailed': 'ワークツリーを作れませんでした: {error}',
   'wt.createFailedPlain': 'ワークツリーを作れませんでした。',

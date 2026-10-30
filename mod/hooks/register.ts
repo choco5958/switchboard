@@ -6,7 +6,7 @@ import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
 import { bridgeFetch, startArgv, streamArgv } from './link.ts'
-import { BROWSER_TOOLS, cancelText, peersText, sentText, toolDefs, type Peer } from './tools.ts'
+import { BROWSER_TOOLS, cancelText, peersText, sentText, toolDefs, worktreeRoot, type Peer } from './tools.ts'
 import { waitApproval } from './approval.ts'
 
 // The mod connects this Claude Code session to the Switchboard bridge:
@@ -136,9 +136,9 @@ function errorOf(reply: Record<string, unknown>): string {
 // Answer to Q9 and Q10: the session asks for a worktree when a node needs one,
 // and its own subagent works there.
 async function createWorktree($: Engine, task: string, key: string, base?: string, repo?: string): Promise<string> {
-  const from = repo ?? (await $.session.root())
-  const root = (await $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd: from })).stdout.trim()
-  if (!root) return t(currentLang(), 'wt.notRepo', { path: from })
+  const found = await worktreeRoot(async (argv, cwd) => (await $.process.run(argv, { cwd })).stdout, await $.session.root(), repo, base)
+  if ('refused' in found) return t(currentLang(), found.refused, found.vars)
+  const { root } = found
   const listed = await orca($, ['worktree', 'list', '--repo', `path:${root}`, '--limit', '1'])
   if (listed.ok !== true) {
     const added = await orca($, ['repo', 'add', '--path', root])

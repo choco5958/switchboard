@@ -154,6 +154,8 @@ export const ko = {
   'tool.nodeFailedPlain': '노드를 갱신하지 못했습니다.',
   'tool.nodeDone': '노드 {key}: {status} ({round}회차)',
   'wt.notRepo': '{path}은(는) git 레포가 아니라 워크트리를 만들 수 없습니다. repo에 레포 경로를 적어 다시 부르세요.',
+  'wt.badBase': '기준 브랜치 {base}는 쓸 수 없습니다. -로 시작하지 않는 브랜치 이름을 적어 다시 부르세요.',
+  'wt.outside': '{path}은(는) 세션 폴더 밖이라 워크트리를 만들 수 없습니다. repo에는 세션 폴더 안의 레포만 적을 수 있습니다.',
   'wt.repoAddFailed': 'Orca에 레포를 등록하지 못했습니다: {error}',
   'wt.createFailed': '워크트리를 만들지 못했습니다: {error}',
   'wt.createFailedPlain': '워크트리를 만들지 못했습니다.',
