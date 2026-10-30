@@ -149,7 +149,7 @@ describe('the MCP server against a test bridge', () => {
     // The other session answers it; the codex session reads the reply with check_answers.
     await call('POST', '/messages', { sessionId: 'peer-claude', replyTo: id, text: '상태: 완료\n결과: id, name' })
     const got = await c.tool('check_answers')
-    assert.match(got.text, new RegExp(`이 세션이 보낸 요청 ${id}에 대한 답`))
+    assert.match(got.text, new RegExp(`이 세션이 보낸 요청 ${id}의 답`))
     assert.match(got.text, /결과: id, name/)
     assert.ok(self)
     // A request it no longer needs: taken back before the other session got it.

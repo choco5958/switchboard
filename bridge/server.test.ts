@@ -690,7 +690,7 @@ describe('messages between sessions', () => {
     assert.equal(reply.ids.length, 1)
     assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'pb', ids: sent.ids, answer: '끝' })).json.relayed, 0)
     const [back] = await take('pa')
-    assert.match(back!.text, new RegExp(`요청 ${sent.ids[0]}에 대한 답`))
+    assert.match(back!.text, new RegExp(`요청 ${sent.ids[0]}의 답`))
     assert.match(back!.text, /보낸 세션 이름으로 시작해/)
     assert.doesNotMatch(back!.text, /send_to_session으로 결과를 보내세요/)
   })
