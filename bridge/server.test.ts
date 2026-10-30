@@ -1218,3 +1218,93 @@ describe("the database over the bridge's life", () => {
     rmSync(home, { recursive: true, force: true })
   })
 })
+
+describe('retention and the size of /state', () => {
+  const DAY = 24 * 3600_000
+
+  test('pruning drops what is long finished and sessions long gone, never what still waits', () => {
+    const home = mkdtempSync(join(tmpdir(), 'sb-keep-'))
+    const own = createBridge(join(home, 'ide.db'), 'ko-KR')
+    const db = own.db
+    const at = Date.now()
+    const old = at - 40 * DAY
+    const count = (sql: string) => (db.prepare(sql).get() as { n: number }).n
+    const session = db.prepare('insert into sessions (id, project, cwd, started_at, last_seen) values (?, ?, ?, 1, ?)')
+    session.run('gone', 'p', '/w/p', old)
+    session.run('older', 'p', '/w/p', old + DAY)
+    session.run('asked', 'p', '/w/p', old)
+    session.run('owed', 'p', '/w/p', old)
+    session.run('recent', 'p', '/w/p', at)
+    session.run('only', 'solo', '/w/solo', old)
+    db.prepare("insert into questions (session_id, project, question, created_at) values ('asked', 'p', '아직 기다림', ?)").run(old)
+    db.prepare("insert into questions (session_id, project, question, status, created_at, answered_at, delivered) values ('owed', 'p', '답 전달 전', 'answered', ?, ?, 0)").run(old, old)
+    // Messages for a session that never came back go; one for a recent session stays however old.
+    db.prepare("insert into outbox (session_id, text, created_at) values ('gone', '못 받음', ?)").run(old)
+    db.prepare("insert into outbox (session_id, text, created_at) values ('recent', '받을 것', ?)").run(old)
+    // A scheduled prompt whose run was deleted closes instead of going in empty.
+    db.prepare("insert into outbox (session_id, kind, text, created_at, expects_reply, routine_run) values ('recent', '예약', '', ?, 1, 9999)").run(at)
+    db.prepare("insert into routines (id, project, cwd, name, prompt, schedule, created_at, updated_at) values (1, 'p', '/w/p', 'r', 'x', '{}', 1, 1)").run()
+    const run = db.prepare('insert into routine_runs (routine_id, scheduled_for, created_at, status, finished_at) values (1, ?, ?, ?, ?)')
+    for (let i = 0; i < 25; i++) run.run(old, old, 'done', old)
+    run.run(old, old, 'sent', null)
+    db.prepare("insert into approvals (session_id, project, tool, summary, status, created_at, answered_at) values ('recent', 'p', 'Bash', 'ls', 'allow', ?, ?)").run(old, old)
+    db.prepare("insert into approvals (session_id, project, tool, summary, status, created_at) values ('recent', 'p', 'Bash', 'pwd', 'pending', ?)").run(old)
+    db.prepare('insert into telegram_approvals (approval_id, message_id) values (1, 10)').run()
+    db.prepare("insert into waits (session_id, note, created_at, fired_at) values ('recent', '끝난 것', ?, ?)").run(old, old)
+    const fired = Number(db.prepare("insert into waits (session_id, note, created_at, fired_at) values ('recent', '전달 전', ?, ?)").run(old, old).lastInsertRowid)
+    db.prepare("insert into outbox (session_id, text, created_at, wait_id) values ('recent', '', ?, ?)").run(at, fired)
+    db.prepare("insert into waits (session_id, note, created_at) values ('recent', '열린 것', ?)").run(old)
+    db.prepare('insert into telegram_messages (question_id, message_id, created_at) values (1, 20, ?)').run(old)
+    db.prepare('insert into telegram_messages (question_id, message_id, created_at) values (999, 21, ?)').run(old)
+
+    own.prune(at)
+    // 'only' is the newest of its project; 'older' is not, and 'gone' has nothing waiting.
+    const sessions = (db.prepare('select id from sessions order by id').all() as { id: string }[]).map(r => r.id)
+    assert.deepEqual(sessions, ['asked', 'only', 'owed', 'recent'])
+    assert.deepEqual((db.prepare('select text from outbox where wait_id is null and routine_run is null').all() as { text: string }[]).map(r => r.text), ['받을 것'])
+    assert.equal(count('select count(*) n from outbox where routine_run = 9999 and delivered = 1 and answered = 1'), 1)
+    // The newest 20 runs stay: the one still running and 19 finished.
+    assert.equal(count("select count(*) n from routine_runs where status = 'done'"), 19)
+    assert.equal(count("select count(*) n from routine_runs where status = 'sent'"), 1)
+    assert.deepEqual((db.prepare('select status from approvals').all() as { status: string }[]).map(r => r.status), ['pending'])
+    assert.equal(count('select count(*) n from telegram_approvals'), 0)
+    assert.deepEqual((db.prepare('select note from waits order by id').all() as { note: string }[]).map(r => r.note), ['전달 전', '열린 것'])
+    assert.deepEqual((db.prepare('select question_id from telegram_messages').all() as { question_id: number }[]).map(r => r.question_id), [1])
+    own.close()
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  test('/state sends the live, recent and needed sessions, not every one ever seen', async () => {
+    await call('POST', '/sessions', { id: 'cap-now', cwd: '/w/cap' })
+    const insert = bridge.db.prepare("insert into sessions (id, project, cwd, started_at, last_seen, usage) values (?, ?, '/w/many', 1, ?, '{}')")
+    for (let i = 0; i < 400; i++) insert.run(`many-${i}`, 'many', 1000 + i)
+    // Seen long ago, but the only one of its project (its folder), or with a question still waiting.
+    insert.run('lone-1', 'lone', 1)
+    bridge.db.prepare("insert into questions (session_id, project, question, created_at) values ('many-0', 'many', '오래된 세션의 질문', 1)").run()
+    const sessions = (await call('GET', '/state')).json.sessions as { id: string }[]
+    const ids = new Set(sessions.map(s => s.id))
+    assert.ok(sessions.length < 400, String(sessions.length))
+    assert.ok(!ids.has('many-1'))
+    for (const id of ['many-0', 'lone-1', 'many-399', 'cap-now']) assert.ok(ids.has(id), id)
+    bridge.db.exec("delete from questions where session_id = 'many-0'")
+    bridge.db.exec("delete from sessions where id like 'many-%' or id = 'lone-1'")
+  })
+
+  test('the hot lookups read through an index, not the whole table', () => {
+    const plan = (sql: string, args: (string | number)[]) =>
+      (bridge.db.prepare(`explain query plan ${sql}`).all(...args) as { detail: string }[]).map(r => r.detail).join(' | ')
+    for (const [sql, args] of [
+      ['select * from outbox where session_id = ? and delivered = 0 order by id', ['s']],
+      ["select session_id from outbox where group_key = ? and id != ? and answered = 0 and no_reply = ''", ['g', 1]],
+      ["select count(*) as n from outbox where chain = ? and from_session != '' and expects_reply = 1", [1]],
+      ['select count(*) as n from outbox where from_session = ? and session_id = ? and expects_reply = 1 and created_at > ?', ['a', 'b', 1]],
+      ["select * from outbox where from_session != '' and expects_reply = 1 and answered = 0 and cancelled = 0 and no_reply = '' and question_id is null", []],
+      ["select * from questions where session_id = ? and status = 'answered' and delivered = 0 order by id", ['s']],
+      ["select project, count(*) n from questions where status = 'answered' group by project", []],
+      ["select * from questions where status = 'answered' order by answered_at desc limit 50", []],
+      ["select id from routine_runs where (status = 'waiting' and created_at < ?) or (status = 'sent' and created_at < ?)", [1, 1]],
+    ] as [string, (string | number)[]][]) {
+      assert.doesNotMatch(plan(sql, args), /SCAN (outbox|questions|routine_runs)(?! USING)/, sql)
+    }
+  })
+})
