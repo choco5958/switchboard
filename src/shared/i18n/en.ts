@@ -355,6 +355,7 @@ export const en: Dict = {
   // Palette
   'palette.placeholder': 'Search tasks, questions, views and actions',
   'palette.empty': 'No matches.',
+  'palette.more': '{n} more. Type more to narrow the list.',
   // Terminals
   'term.exited': 'ended, code {code}',
   'term.shell': 'shell',

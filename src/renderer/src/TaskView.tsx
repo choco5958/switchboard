@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Agent, CommandKind, GraphNode, LogEvent, Question, Task, WorktreeCheck } from '../../shared/types'
 import { WorkerLane } from './WorkerLane'
 import { ago, clock, layoutGraph, reviewLoops, stageCounts, stations } from './model'
-import { AgentBadge, NumberBadge } from './parts'
+import { AgentBadge, NumberBadge, onPress } from './parts'
 import type { AgentTag } from '../../shared/agents'
 import { eventKindLabel, nodeKindLabel, nodeOwnerLabel, nodeStatusLabel, stageLabel, t, taskStatusLabel } from '../../shared/i18n'
 import { artifactFromNotes, nodeDetailKey, runningAgents, taskEvents, taskQuestions, testsFromNotes } from './taskInfo'
@@ -181,7 +181,11 @@ export function TaskView({
               <div
                 key={node.key}
                 className={`node node-${node.status} ${node.key === selectedKey ? 'node-selected' : ''}`}
+                role="button"
+                tabIndex={0}
+                aria-pressed={node.key === selectedKey}
                 onClick={() => setSelectedKey(key => (key === node.key ? null : node.key))}
+                onKeyDown={onPress(() => setSelectedKey(key => (key === node.key ? null : node.key)))}
                 style={{ left: x(col), top: y(row), width: COL_W, height: BOX_H }}
                 title={node.note ? `${node.title}\n${node.note}` : node.title}
               >
@@ -308,7 +312,13 @@ function NodeTable({ nodes, selectedKey, onSelect }: { nodes: GraphNode[]; selec
         </thead>
         <tbody>
           {nodes.map(node => (
-            <tr key={node.id} className={`clickable ${node.key === selectedKey ? 'on' : ''}`} onClick={() => onSelect(node.key)}>
+            <tr
+              key={node.id}
+              className={`clickable ${node.key === selectedKey ? 'on' : ''}`}
+              tabIndex={0}
+              onClick={() => onSelect(node.key)}
+              onKeyDown={onPress(() => onSelect(node.key))}
+            >
               <td>
                 <span className="tag-chip">{nodeKindLabel(node.kind)}</span>
               </td>

@@ -530,7 +530,7 @@ export function App() {
     if (tab.kind === 'archive') return <ArchivePage archived={view.archived} onRestore={id => void restore(id)} />
     if (tab.kind === 'log') return <LogPage events={view.events} tasks={logTasks} agents={tags} />
     if (tab.kind === 'linear') return <LinearPage sessions={view.sessions} />
-    if (tab.kind === 'settings') return <SettingsPage settings={state.settings} routines={state.routines} runs={state.routineRuns} projects={projects} />
+    if (tab.kind === 'settings') return <SettingsPage settings={state.settings} routines={state.routines} runs={state.routineRuns} projects={allProjects} />
     if (tab.kind === 'gallery') return showDev ? <GalleryPage /> : null
     return null
   }

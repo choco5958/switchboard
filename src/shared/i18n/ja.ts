@@ -355,6 +355,7 @@ export const ja: Dict = {
   // Palette
   'palette.placeholder': 'タスク、質問、画面、操作を検索',
   'palette.empty': '一致するものがありません。',
+  'palette.more': 'ほかに {n} 件あります。検索語を足すと絞り込めます。',
   // Terminals
   'term.exited': '終了、コード {code}',
   'term.shell': 'シェル',

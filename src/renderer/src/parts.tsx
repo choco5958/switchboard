@@ -5,6 +5,16 @@ import { eventKindLabel, stageLabel, t } from '../../shared/i18n'
 import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent, type Attention } from './model'
 import type { AgentTag } from '../../shared/agents'
 
+// Enter or Space on a focused row or box that is not a button runs what a click runs.
+// Keys pressed on a control inside it (a close button) are left to that control.
+export function onPress(run: () => void): (event: React.KeyboardEvent) => void {
+  return event => {
+    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+    event.preventDefault()
+    run()
+  }
+}
+
 // Six task colors, cycled by task number (the round badge in the task list).
 export function taskColor(task: Pick<Task, 'number'>): string {
   return `var(--task-${((task.number || 1) - 1) % 6})`
@@ -129,7 +139,7 @@ export function History({ questions, onOpen }: { questions: Question[]; onOpen: 
             {answered.map(q => {
               const label = optionsOf(q).find(o => o.key === q.choice)?.label
               return (
-                <tr key={q.id} onClick={() => onOpen(q.id)} className="clickable">
+                <tr key={q.id} onClick={() => onOpen(q.id)} onKeyDown={onPress(() => onOpen(q.id))} tabIndex={0} className="clickable">
                   <td>Q{q.id}</td>
                   <td>{q.task_title || q.project}</td>
                   <td>{q.question}</td>

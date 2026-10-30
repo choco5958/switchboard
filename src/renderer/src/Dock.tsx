@@ -4,7 +4,7 @@ import { projectOfCwd, type ProjectInfo } from '../../shared/projects'
 import { CLAUDE_MIN, olderThan, PRESETS, type AgentTag, type CustomAgent } from '../../shared/agents'
 import { Icon } from './Icons'
 import { TerminalView } from './TerminalView'
-import { LogLines } from './parts'
+import { LogLines, onPress } from './parts'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
 import { t } from '../../shared/i18n'
 
@@ -21,6 +21,7 @@ function savedHeight(): number {
 }
 
 export const AGENTS_FOUND = 'switchboard:agents-found'
+const CLOSE_ARMED_MS = 3000
 
 // What the dock can open: Claude, a plain shell, and every other agent CLI that is
 // installed or the person added. kind is 'claude', 'shell' or the agent's id.
@@ -97,6 +98,7 @@ export function Dock({
   // A slot chosen in the top bar while no project is in view: the folder menu then opens Claude on it.
   const [pickSlot, setPickSlot] = useState<number | undefined>()
   const body = useRef<HTMLDivElement>(null)
+  const newBox = useRef<HTMLDivElement>(null)
   const logBox = useRef<HTMLDivElement>(null)
 
   // Settings can look for installed CLIs again; the dock takes what it found.
@@ -181,6 +183,30 @@ export function Dock({
   }, [])
   const all = launchers(found, customs, showOthers)
 
+  // A Close? left armed goes back to × after a few seconds, so a later press never closes at once.
+  useEffect(() => {
+    if (!closing) return
+    const timer = setTimeout(() => setClosing(null), CLOSE_ARMED_MS)
+    return () => clearTimeout(timer)
+  }, [closing])
+
+  // The folder menu closes on a click outside it or on Esc.
+  useEffect(() => {
+    if (!menu) return
+    const outside = (event: MouseEvent) => {
+      if (!newBox.current?.contains(event.target as Node)) setMenu(null)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenu(null)
+    }
+    document.addEventListener('mousedown', outside)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', outside)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [menu])
+
   const close = async (id: string) => {
     const term = terms.find(t => t.id === id)
     // A running terminal needs a second press, as closing it ends the program in it.
@@ -212,7 +238,16 @@ export function Dock({
           {t('dock.log')}
         </button>
         {shown.map(term => (
-          <div key={term.id} className={`dock-tab ${current === term.id ? 'on' : ''} ${term.alive ? '' : 'dead'}`} title={term.cwd} onClick={() => setActive(term.id)}>
+          <div
+            key={term.id}
+            role="tab"
+            tabIndex={0}
+            aria-selected={current === term.id}
+            className={`dock-tab ${current === term.id ? 'on' : ''} ${term.alive ? '' : 'dead'}`}
+            title={term.cwd}
+            onClick={() => setActive(term.id)}
+            onKeyDown={onPress(() => setActive(term.id))}
+          >
             {scope === null && <span className="quiet">{projectOf(term)} </span>}
             {term.title}
             {!term.alive && <span className="quiet"> {t('dock.ended')}</span>}
@@ -222,6 +257,7 @@ export function Dock({
             <button
               className={`tab-close ${closing === term.id ? 'armed' : ''}`}
               title={term.alive ? t('dock.closeArmedTitle') : t('common.close')}
+              onBlur={() => setClosing(armed => (armed === term.id ? null : armed))}
               onClick={event => {
                 event.stopPropagation()
                 void close(term.id)
@@ -231,7 +267,7 @@ export function Dock({
             </button>
           </div>
         ))}
-        <div className="dock-new">
+        <div className="dock-new" ref={newBox}>
           {all.map(l => (
             <button
               key={l.kind}

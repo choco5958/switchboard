@@ -355,6 +355,7 @@ export const zhCN: Dict = {
   // Palette
   'palette.placeholder': '搜索任务、问题、页面和操作',
   'palette.empty': '没有匹配项。',
+  'palette.more': '还有 {n} 项。多输入一些文字可以缩小范围。',
   // Terminals
   'term.exited': '已结束，代码 {code}',
   'term.shell': '终端',

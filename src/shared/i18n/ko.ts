@@ -354,6 +354,7 @@ export const ko = {
   // Palette
   'palette.placeholder': '작업, 질문, 화면, 할 일 찾기',
   'palette.empty': '맞는 것이 없습니다.',
+  'palette.more': '{n}개가 더 있습니다. 검색어를 더 적으면 좁혀집니다.',
   // Terminals
   'term.exited': '끝남, 코드 {code}',
   'term.shell': '셸',
