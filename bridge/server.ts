@@ -35,7 +35,7 @@ import {
   type NoReply,
   type PeerRow,
 } from './peer.ts'
-import { nextRun, parseSchedule, type Schedule } from './schedule.ts'
+import { ROUTINE_FAIL_LIMIT, nextRun, parseSchedule, type Schedule } from './schedule.ts'
 import { TELEGRAM_API, createTelegram } from './telegram.ts'
 import { MOBILE_PORT, createMobile } from './mobile.ts'
 import { makeVapidKeys, type PushMessage, type VapidKeys } from './push.ts'
@@ -55,6 +55,7 @@ type RoutineRow = {
   next_at: number | null
   created_at: number
   updated_at: number
+  failed_off: number
 }
 
 type RunRow = {
@@ -407,6 +408,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   // Which agent CLI a session runs in (sessions before this were all Claude Code)
   // and the app terminal it runs in, when it does.
   addColumns('sessions', [['agent', "text not null default 'claude'"], ['terminal', "text not null default ''"]])
+  // A scheduled prompt that switched itself off after ROUTINE_FAIL_LIMIT failed runs in a row.
+  addColumns('routines', [['failed_off', 'integer not null default 0']])
   db.exec('update tasks set number = id where number is null')
 
   // Feature area: UI language. Errors, log lines and texts for sessions follow the `lang` setting.
@@ -685,6 +688,19 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       pushDeliveries(sessionId)
     }
   }
+  // Only runs that reached a session count: one that found no session, was skipped or missed
+  // spent nothing. Counting starts again when the person saves or switches the routine back on.
+  const stopIfFailing = (routineId: number) => {
+    const r = db.prepare('select * from routines where id = ?').get(routineId) as RoutineRow | undefined
+    if (!r?.enabled) return
+    const recent = db
+      .prepare(
+        "select status from routine_runs where routine_id = ? and session_id != '' and status in ('done', 'quiet', 'failed') and created_at >= ? order by id desc limit ?",
+      )
+      .all(r.id, r.updated_at, ROUTINE_FAIL_LIMIT) as { status: string }[]
+    if (recent.length < ROUTINE_FAIL_LIMIT || recent.some(run => run.status !== 'failed')) return
+    db.prepare('update routines set enabled = 0, failed_off = 1 where id = ?').run(r.id)
+  }
   const finishRun = (runId: number, answerText: string, interrupted = false) => {
     const run = db.prepare('select * from routine_runs where id = ?').get(runId) as RunRow | undefined
     if (!run || run.status !== 'sent') return
@@ -692,6 +708,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const failure = run.failure || (interrupted ? say('routine.interrupted') : '')
     db.prepare('update routine_runs set status = ?, failure = ?, result = ?, finished_at = ? where id = ?').run(status, failure, clipText(answerText).slice(0, 4000), now(), run.id)
     if (run.message_id) db.prepare('update outbox set answered = 1 where id = ?').run(run.message_id)
+    if (status === 'failed') stopIfFailing(run.routine_id)
     changed('routines')
   }
   const tickRoutines = (at = now()) => {
@@ -704,14 +721,15 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     }
     // A run nobody took, or one whose turn never reported back, ends instead of blocking the next.
     const stale = db
-      .prepare("select id, status from routine_runs where (status = 'waiting' and created_at < ?) or (status = 'sent' and created_at < ?)")
-      .all(at - RUN_WAIT_MS, at - RUN_RESULT_MS) as { id: number; status: string }[]
+      .prepare("select id, routine_id, status from routine_runs where (status = 'waiting' and created_at < ?) or (status = 'sent' and created_at < ?)")
+      .all(at - RUN_WAIT_MS, at - RUN_RESULT_MS) as { id: number; routine_id: number; status: string }[]
     for (const run of stale) {
       db.prepare("update routine_runs set status = 'failed', failure = ?, finished_at = ? where id = ?").run(
         say(run.status === 'waiting' ? 'routine.noSession' : 'routine.noResult'),
         at,
         run.id,
       )
+      stopIfFailing(run.routine_id)
     }
     assignRuns()
     if (due.length > 0 || stale.length > 0) changed('routines')
@@ -1914,7 +1932,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const next = nextRun(schedule, now())
       const id = Number(body.id) || 0
       if (id) {
-        db.prepare('update routines set project = ?, cwd = ?, name = ?, prompt = ?, schedule = ?, missed = ?, enabled = ?, next_at = ?, updated_at = ? where id = ?').run(
+        db.prepare('update routines set project = ?, cwd = ?, name = ?, prompt = ?, schedule = ?, missed = ?, enabled = ?, next_at = ?, updated_at = ?, failed_off = 0 where id = ?').run(
           project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), id,
         )
       }

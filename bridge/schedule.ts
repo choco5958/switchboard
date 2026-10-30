@@ -13,6 +13,10 @@ export type Schedule =
 
 export const MIN_INTERVAL_MINUTES = 5
 
+// A routine whose runs keep failing switches itself off after this many in a row, so a broken
+// prompt does not spend the model on every run until someone looks.
+export const ROUTINE_FAIL_LIMIT = 5
+
 function clock(time: string): [number, number] | null {
   const match = /^(\d{1,2}):(\d{2})$/.exec(time)
   if (!match) return null

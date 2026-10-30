@@ -4,6 +4,7 @@ import type { ProjectInfo } from '../../../shared/projects'
 import { t, type Key } from '../../../shared/i18n'
 import { useToast } from '../parts'
 import { clock } from '../model'
+import { ROUTINE_FAIL_LIMIT } from '../../../../bridge/schedule.ts'
 
 // Settings: scheduled prompts (bridge/schedule.ts). Each goes to a connected Claude Code
 // session of its project at its time; with none, the app opens one there.
@@ -125,6 +126,7 @@ export function RoutinesSection({ routines, runs, projects }: { routines: Routin
                 {deleting === r.id ? t('routines.deleteConfirm') : t('routines.delete')}
               </button>
             </div>
+            {r.failed_off === 1 && !r.enabled && <div className="small error">{t('routines.failedOff', { n: ROUTINE_FAIL_LIMIT })}</div>}
             {last && (
               <div className="quiet small routine-last" title={last.result || last.failure}>
                 {t('routines.last', { at: clock(last.scheduled_for), status: t(STATUS_KEYS[last.status]) })}

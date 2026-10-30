@@ -270,6 +270,7 @@ export type Routine = {
   next_at: number | null
   created_at: number
   updated_at: number
+  failed_off?: number // 1 when it switched itself off after ROUTINE_FAIL_LIMIT failed runs (bridge/schedule.ts)
 }
 
 export type RoutineRun = {

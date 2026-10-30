@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, deliveryText, listen, nodeEventText, projectName } from './server.ts'
+import { ROUTINE_FAIL_LIMIT } from './schedule.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'claude-ide-'))
 const socketPath = join(dir, 'bridge.sock')
@@ -1044,6 +1045,37 @@ describe('scheduled prompts and waits', () => {
     stream.destroy()
     await call('POST', `/routines/${r.id}/delete`)
     assert.equal((await runs(r.id)).length, 0)
+  })
+
+  test('a routine whose runs keep failing in a session switches itself off until saved again', async () => {
+    const schedule = { kind: 'once', at: '2099-01-01T09:00' }
+    const { json: r } = await call('POST', '/routines', { name: '깨진 점검', prompt: 'p', project: 'flaky', cwd: '/w/flaky', schedule })
+    // A run that never found a session spent nothing and does not count.
+    await call('POST', `/routines/${r.id}/run`)
+    bridge.tickRoutines(Date.now() + 31 * 60_000)
+    await call('POST', '/sessions', { id: 'fl-1', cwd: '/w/flaky' })
+    const stream = open('fl-1')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const fail = async () => {
+      await call('POST', `/routines/${r.id}/run`)
+      const [got] = await take('fl-1')
+      await call('POST', '/routines/report', { sessionId: 'fl-1', kind: 'failed', reason: '토큰 만료' })
+      await call('POST', '/messages/turn-end', { sessionId: 'fl-1', ids: [got!.id], answer: '' })
+    }
+    const routine = async () => (await call('GET', '/state')).json.routines.find((row: { id: number }) => row.id === r.id)
+    for (let i = 1; i < ROUTINE_FAIL_LIMIT; i++) await fail()
+    assert.deepEqual([(await routine()).enabled, (await routine()).failed_off], [1, 0])
+    await fail()
+    assert.deepEqual([(await routine()).enabled, (await routine()).failed_off], [0, 1])
+    assert.equal((await runs(r.id)).filter(run => run.status === 'failed').length, ROUTINE_FAIL_LIMIT + 1)
+
+    // Switched back on, it counts again from there.
+    await call('POST', '/routines', { ...(await routine()), schedule, enabled: true })
+    assert.deepEqual([(await routine()).enabled, (await routine()).failed_off], [1, 0])
+    await fail()
+    assert.equal((await routine()).enabled, 1)
+    stream.destroy()
+    await call('POST', `/routines/${r.id}/delete`)
   })
 
   test('a run due long ago follows the missed policy; a once switches itself off', async () => {

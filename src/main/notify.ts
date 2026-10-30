@@ -1,4 +1,4 @@
-import type { Question, RoutineRun } from '../shared/types'
+import type { Question, Routine, RoutineRun } from '../shared/types'
 
 export type PendingScan = {
   // Ids to remember for the next comparison.
@@ -54,4 +54,12 @@ export function scanRuns(runs: readonly RoutineRun[], previous: Set<number> | nu
   const ended = runs.filter(run => run.status === 'done' || run.status === 'failed')
   const ids = new Set(ended.map(run => run.id))
   return { ids, fresh: previous === null ? [] : ended.filter(run => !previous.has(run.id)) }
+}
+
+// The failed run that made its routine switch itself off: the newest run of a routine that is
+// off for its failures. Older failed runs of it tell only their own failure.
+export function switchedOff(run: RoutineRun, routines: readonly Routine[], runs: readonly RoutineRun[]): boolean {
+  if (run.status !== 'failed') return false
+  if (routines.find(r => r.id === run.routine_id)?.failed_off !== 1) return false
+  return runs.filter(other => other.routine_id === run.routine_id).at(-1)?.id === run.id
 }

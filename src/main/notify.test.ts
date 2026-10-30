@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Question } from '../shared/types'
-import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled } from './notify'
+import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled, switchedOff } from './notify'
 
 const q = (id: number, status: Question['status'] = 'pending', question = `q${id}`): Question =>
   ({ id, status, question, project: 'proj', session_id: 's' }) as Question
@@ -67,4 +67,12 @@ test('a run that ended with something to say notifies once; quiet and skipped on
   expect(first.fresh).toEqual([])
   const next = scanRuns([run(1, 'done'), run(2, 'quiet'), run(3, 'failed'), run(4, 'skipped'), run(5, 'sent')], first.ids)
   expect(next.fresh.map(r => (r as { id: number }).id)).toEqual([3])
+})
+
+test('only the newest failed run of a routine that switched itself off says so', () => {
+  const run = (id: number, routine_id: number, status: string) => ({ id, routine_id, scheduled_for: 0, created_at: 0, session_id: 's', status, failure: 'x', result: '', finished_at: 0 }) as never
+  const routines = [{ id: 1, failed_off: 1 }, { id: 2, failed_off: 0 }] as never
+  const runs = [run(1, 1, 'failed'), run(2, 2, 'failed'), run(3, 1, 'failed')]
+  expect(runs.map(r => switchedOff(r, routines, runs))).toEqual([false, false, true])
+  expect(switchedOff(run(4, 1, 'done'), routines, [run(4, 1, 'done')])).toBe(false)
 })

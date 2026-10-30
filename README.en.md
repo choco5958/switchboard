@@ -248,7 +248,7 @@ Turn off `Accept phones on the same Wi-Fi` to listen on this computer only, for 
 
 ### Scheduled prompts
 
-In Settings > Scheduled prompts, set a name, project, prompt and schedule. Intervals are 5 minutes or longer. A run is skipped while the previous one is still going. For runs missed while the app or bridge was off, you choose whether to run them once on startup.
+In Settings > Scheduled prompts, set a name, project, prompt and schedule. Intervals are 5 minutes or longer. A run is skipped while the previous one is still going. For runs missed while the app or bridge was off, you choose whether to run them once on startup. If 5 runs in a row fail after reaching a session, the routine switches itself off and tells you. Runs that found no session or were skipped do not count. Editing the routine or switching it back on starts the count over.
 
 ### Shell command
 

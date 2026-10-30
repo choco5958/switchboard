@@ -19,8 +19,9 @@ import { nodeRoot, useNodeRoot } from './appRoot'
 import { copyRuntime, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
 import { startUpdates } from './updater'
 import { APP_HEADER, requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
+import { ROUTINE_FAIL_LIMIT } from '../../bridge/schedule.ts'
 import { loadAppKey } from './appKey'
-import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled } from './notify'
+import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled, switchedOff } from './notify'
 import { STALL_MS, stalledSessions } from '../shared/stall'
 import { limitedUntil } from '../shared/limit'
 import { netEntry, type PageLogEntry } from '../shared/pageLog'
@@ -255,7 +256,11 @@ function notifyRuns(state: BridgeState): void {
   if (!Notification.isSupported()) return
   for (const run of scan.fresh) {
     const routine = (state.routines ?? []).find(r => r.id === run.routine_id)
-    const body = run.status === 'failed' ? t('notify.runFailed', { reason: run.failure }) : firstLine(run.result) || t('notify.runDone')
+    const body = switchedOff(run, state.routines ?? [], state.routineRuns ?? [])
+      ? t('notify.runFailedOff', { reason: run.failure, n: ROUTINE_FAIL_LIMIT })
+      : run.status === 'failed'
+        ? t('notify.runFailed', { reason: run.failure })
+        : firstLine(run.result) || t('notify.runDone')
     const notification = new Notification({ title: routine?.name ?? 'Switchboard', body })
     liveNotifications.add(notification)
     notification.on('click', () => {
