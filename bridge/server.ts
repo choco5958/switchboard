@@ -927,6 +927,15 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     }
   }
 
+  // What memory keeps of sessions that went away. A close time past OFFLINE_NOTE_MS tells
+  // checkNoReplies nothing the bridge's start does not (both are that long ago); activity of a
+  // session that never opened a stream (or reported after it closed) ends after a day.
+  const forgetGone = (at = now()) => {
+    for (const [id, since] of offlineSince) if (at - since >= OFFLINE_NOTE_MS) offlineSince.delete(id)
+    const live = liveSessions()
+    for (const [id, a] of activity) if (!live.includes(id) && at - a.at >= DAY) activity.delete(id)
+  }
+
   // Retention. Questions are history and stay. Delivered messages, done commands and
   // ended subagents go after 7 days; events keep the newest 5000; commands a session
   // never picked up go once it has not been seen for a day. After KEEP_MS: finished
@@ -999,6 +1008,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   const releasing = setInterval(
     guarded('release', () => {
       checkNoReplies()
+      forgetGone()
       for (const id of liveSessions()) {
         const waiting =
           stmt('select 1 from outbox where session_id = ? and delivered = 0 limit 1').get(id) ||
@@ -1365,17 +1375,22 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         changed('sessions')
         assignRuns()
       }
-      req.on('close', () => {
+      // Guarded: an exception in an event handler would end the bridge.
+      req.on('close', guarded('stream close', () => {
         set.delete(res)
+        if (set.size > 0) return
+        // Gone: what the bridge keeps in memory per session goes too (activity is in every /state).
+        if (deliveryWatchers.get(sessionId) === set) deliveryWatchers.delete(sessionId)
+        activity.delete(sessionId)
         // Streams close as the bridge shuts down too, after its database.
-        if (set.size > 0 || shuttingDown) return
+        if (shuttingDown) return
         offlineSince.set(sessionId, now())
         changed('sessions')
         // Its process is gone, and the ask with it.
         for (const row of db.prepare("select * from approvals where session_id = ? and status = 'pending'").all(sessionId) as ApprovalRow[]) {
           answerApproval(row, 'expired', '')
         }
-      })
+      }))
       db.prepare('update sessions set last_seen = ? where id = ?').run(now(), sessionId)
       pushDeliveries(sessionId, res)
       pushCommands(sessionId, { only: res })
@@ -2240,7 +2255,10 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     db.close()
   }
 
-  return { server, db, prune, tickRoutines, checkNoReplies, close }
+  // How many sessions memory holds something for (tests).
+  const memory = () => ({ streams: deliveryWatchers.size, activity: activity.size, offlineSince: offlineSince.size })
+
+  return { server, db, prune, tickRoutines, checkNoReplies, forgetGone, memory, close }
 }
 
 function sameSecret(given: string, expected: string): boolean {

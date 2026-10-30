@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, deliveryText, listen, nodeEventText, projectName } from './server.ts'
 import { ROUTINE_FAIL_LIMIT } from './schedule.ts'
+import { OFFLINE_NOTE_MS } from './peer.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'claude-ide-'))
 const socketPath = join(dir, 'bridge.sock')
@@ -1306,5 +1307,29 @@ describe('retention and the size of /state', () => {
     ] as [string, (string | number)[]][]) {
       assert.doesNotMatch(plan(sql, args), /SCAN (outbox|questions|routine_runs)(?! USING)/, sql)
     }
+  })
+
+  test('memory lets go of a session once its stream closes', async () => {
+    await call('POST', '/sessions', { id: 'mem-1', cwd: '/w/mem' })
+    const base = bridge.memory()
+    const stream = request({ socketPath, path: '/deliveries?session=mem-1' })
+    stream.on('error', () => undefined)
+    stream.end()
+    await new Promise(resolve => stream.on('response', resolve))
+    await call('POST', '/sessions/activity', { sessionId: 'mem-1', state: 'working', openTools: 0 })
+    assert.equal(bridge.memory().streams, base.streams + 1)
+    assert.ok((await call('GET', '/state')).json.activity['mem-1'])
+    stream.destroy()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(bridge.memory().streams, base.streams)
+    assert.equal((await call('GET', '/state')).json.activity['mem-1'], undefined)
+    assert.equal(bridge.memory().offlineSince, base.offlineSince + 1)
+    // Past OFFLINE_NOTE_MS its close time says nothing more, and goes too.
+    bridge.forgetGone(Date.now() + OFFLINE_NOTE_MS)
+    assert.equal(bridge.memory().offlineSince, 0)
+    // Activity reported without a stream ends after a day.
+    await call('POST', '/sessions/activity', { sessionId: 'mem-1', state: 'idle', openTools: 0 })
+    bridge.forgetGone(Date.now() + 25 * 3600_000)
+    assert.equal((await call('GET', '/state')).json.activity['mem-1'], undefined)
   })
 })
