@@ -56,6 +56,18 @@ test('a long poll answers as soon as the person does, not when its wait ends', a
   assert.equal((await call('GET', `/approvals/${id}?wait=20000`)).json.status, 'allow')
 })
 
+test('an answer goes only with the call it was given for: the same key with another tool or summary is another ask', async () => {
+  const id = await ask('dup-1', 'toolu_dup1')
+  await call('POST', `/approvals/${id}/answer`, { decision: 'allow' })
+  const post = (tool: string, summary: string) => call('POST', '/approvals', { sessionId: 'dup-1', tool, summary, requestKey: 'toolu_dup1' })
+  assert.deepEqual((await post('Bash', 'rm -rf build')).json, { id, duplicate: true })
+  const other = (await post('Bash', 'rm -rf ~')).json
+  assert.notEqual(other.id, id)
+  assert.equal(other.duplicate, undefined)
+  assert.equal((await call('GET', `/approvals/${other.id}`)).json.status, 'pending')
+  assert.notEqual((await post('Write', 'rm -rf build')).json.id, id)
+})
+
 test('a long poll with nothing to say answers pending when its wait ends; a poll the mod drops is let go', async () => {
   const id = await ask('lp-2', 'toolu_lp2')
   const started = Date.now()
