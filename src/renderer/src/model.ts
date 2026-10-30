@@ -62,6 +62,28 @@ export function keyAction(key: string, options: Option[]): KeyAction {
   return { type: 'none' }
 }
 
+// The keys that really pick each option, as keyAction reads them: its own key when that is one
+// character, then its number while no option's own key takes that digit first. A key two options
+// claim goes to the first, so the second does not list it.
+export function optionKeys(options: Option[]): Map<string, string[]> {
+  const keys = new Map<string, string[]>(options.map(o => [o.key, []]))
+  const candidates = [...options.map(o => o.key).filter(k => k.length === 1 && k.trim() !== ''), ...'123456789']
+  const seen = new Set<string>()
+  for (const candidate of candidates) {
+    const lower = candidate.toLowerCase()
+    if (seen.has(lower)) continue
+    seen.add(lower)
+    const action = keyAction(candidate, options)
+    if (action.type === 'choose') keys.get(action.key)?.push(candidate)
+  }
+  return keys
+}
+
+// Whether h holds and m opens the memo: an option whose key is h or m takes the key instead.
+export function keyWorks(key: 'h' | 'm', options: Option[]): boolean {
+  return keyAction(key, options).type === (key === 'h' ? 'hold' : 'memo')
+}
+
 export function ago(ts: number, now = Date.now()): string {
   return agoText(now - ts)
 }
@@ -139,12 +161,6 @@ export function reviewLoops(nodes: GraphNode[]): { from: string; to: string; rou
     }
   }
   return loops
-}
-
-// The station line under the task header: this stage and the one after it.
-export function stations(stage: (typeof STAGES)[number]): { now: string; next: string | null } {
-  const index = STAGES.indexOf(stage)
-  return { now: stage, next: STAGES[index + 1] ?? null }
 }
 
 // Agent descriptions start with "[task title::node key]" so the bridge can tie

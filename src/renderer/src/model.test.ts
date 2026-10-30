@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { GraphNode, Question, Task } from '../../shared/types'
-import { ago, attentionOf, keyAction, layoutGraph, nextAfter, optionsOf, queueOf, reachOf, reviewLoops, stageCounts, stations, stripTaskPrefix, taskFacts, taskOfEvent, tasksByProject, waitingFirst } from './model'
+import { ago, attentionOf, keyAction, keyWorks, layoutGraph, optionKeys, nextAfter, optionsOf, queueOf, reachOf, reviewLoops, stageCounts, stripTaskPrefix, taskFacts, taskOfEvent, tasksByProject, waitingFirst } from './model'
 
 const q = (id: number, status: Question['status'] = 'pending'): Question => ({
   id,
@@ -60,6 +60,27 @@ describe('keys', () => {
 
   test('an option keyed h wins over hold', () => {
     expect(keyAction('h', [{ key: 'h', label: '높게' }])).toEqual({ type: 'choose', key: 'h' })
+  })
+
+  test('the keys shown on each option are the ones that pick it', () => {
+    expect(optionKeys([{ key: 'a', label: '' }, { key: 'b', label: '' }])).toEqual(new Map([['a', ['a', '1']], ['b', ['b', '2']]]))
+    // Numbered options: the digit is their own key, shown once.
+    expect(optionKeys([{ key: '1', label: '' }, { key: '2', label: '' }])).toEqual(new Map([['1', ['1']], ['2', ['2']]]))
+    // A digit key takes that digit from the option it would number.
+    expect(optionKeys([{ key: 'x', label: '' }, { key: '1', label: '' }])).toEqual(new Map([['x', ['x']], ['1', ['1', '2']]]))
+    // A long key is never one key press; past nine options there is no digit.
+    const many = Array.from({ length: 10 }, (_, i) => ({ key: `opt${i}`, label: '' }))
+    expect(optionKeys(many).get('opt0')).toEqual(['1'])
+    expect(optionKeys(many).get('opt9')).toEqual([])
+    // The same key twice picks the first only.
+    expect(optionKeys([{ key: 'a', label: '' }, { key: 'A', label: '' }])).toEqual(new Map([['a', ['a', '1']], ['A', ['2']]]))
+  })
+
+  test('h and m work unless an option takes them', () => {
+    expect(keyWorks('h', options)).toBe(true)
+    expect(keyWorks('m', options)).toBe(true)
+    expect(keyWorks('h', [{ key: 'h', label: '' }])).toBe(false)
+    expect(keyWorks('m', [{ key: 'M', label: '' }])).toBe(false)
   })
 })
 
@@ -129,11 +150,6 @@ describe('review loops', () => {
   test('no loop for first rounds or reviews not started', () => {
     expect(reviewLoops([n('a', [], { round: 2 }), n('r', ['a'], { kind: '검토', status: '대기' })])).toEqual([])
     expect(reviewLoops([n('a', []), n('r', ['a'], { kind: '검토' })])).toEqual([])
-  })
-
-  test('stations name this stage and the next', () => {
-    expect(stations('작업')).toEqual({ now: '작업', next: '완료' })
-    expect(stations('완료')).toEqual({ now: '완료', next: null })
   })
 })
 
