@@ -4,11 +4,15 @@
 // while the new one takes the new ones. The host runs as plain Node (the app's executable in
 // Node mode, or node in the tests): this file imports nothing but Node's own modules.
 
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { join } from 'node:path'
 
 // A snapshot with a long scrollback is the largest line; anything far past it is not ours.
 export const MAX_LINE = 32 * 1024 * 1024
+// Before both sides have proved the key, a line is a greeting or a proof: a few hundred bytes.
+export const MAX_GREETING = 4096
+// A connection that has not proved the key by then is closed.
+export const AUTH_MS = 5000
 
 // What the app needs to show a terminal again after a restart: the dock tab and the typing
 // target (terminals.ts). The host keeps it as given and hands it back.
@@ -51,8 +55,13 @@ export type SpawnRequest = {
 }
 
 // From the app. `rid` pairs a request with its reply; write and resize have none.
+// The greeting proves the app's key without sending it (proof below): the app sends a nonce,
+// the host answers with one of its own and its proof, and the app proves itself last, only
+// to a host that proved first. A program that took a host's socket path learns nothing.
+// `{ t: 'hello', key, build }`: how hosts of 0.3.5 greeted (termClient.ts legacyHost).
 export type Request =
-  | { t: 'hello'; key: string; build: string }
+  | { t: 'hello'; build: string; nonce: string }
+  | { t: 'auth'; proof: string }
   | ({ t: 'spawn'; rid: number } & SpawnRequest)
   | { t: 'write'; id: string; data: string }
   | { t: 'resize'; id: string; cols: number; rows: number }
@@ -64,7 +73,9 @@ export type Request =
 export type Reply = { t: 'reply'; rid: number; ok: boolean; error?: string; pid?: number; terms?: TermState[]; snapshot?: Snapshot }
 
 // From the host. data, exit and fg go to every app attached to that terminal.
+// `challenge` answers the app's hello; `hello` follows the app's proof.
 export type Message =
+  | { t: 'challenge'; nonce: string; proof: string }
   | { t: 'hello'; build: string; pid: number }
   | Reply
   | { t: 'data'; id: string; data: string }
@@ -76,8 +87,9 @@ export function encode(message: Request | Message): string {
 }
 
 // Splits a stream into messages. A line that does not parse is skipped; one longer than
-// MAX_LINE ends the connection (`tooLong`), as no sender of ours writes it.
-export function lineReader(onMessage: (message: Record<string, unknown>) => void, tooLong: () => void): (chunk: string) => void {
+// `max()` (read at each chunk: MAX_GREETING until the key is proved) ends the connection
+// (`tooLong`), as no sender of ours writes it.
+export function lineReader(onMessage: (message: Record<string, unknown>) => void, tooLong: () => void, max: () => number = () => MAX_LINE): (chunk: string) => void {
   let buffer = ''
   return chunk => {
     // Only the new part can hold the line's end: a snapshot arrives in many chunks.
@@ -97,7 +109,7 @@ export function lineReader(onMessage: (message: Record<string, unknown>) => void
       }
       if (message && typeof message === 'object' && !Array.isArray(message)) onMessage(message as Record<string, unknown>)
     }
-    if (buffer.length > MAX_LINE) {
+    if (buffer.length > max()) {
       buffer = ''
       tooLong()
     }
@@ -110,6 +122,15 @@ export function keyMatches(given: unknown, key: string): boolean {
   const a = createHash('sha256').update(given).digest()
   const b = createHash('sha256').update(key).digest()
   return timingSafeEqual(a, b)
+}
+
+export const newNonce = () => randomBytes(32).toString('hex')
+export const validNonce = (nonce: unknown): nonce is string => typeof nonce === 'string' && /^[0-9a-f]{64}$/.test(nonce)
+
+// What one side of a greeting proves the key with. The role keeps a proof from being handed
+// back to the side that made it; both nonces make it good for this connection only.
+export function proof(key: string, role: 'host' | 'app', appNonce: string, hostNonce: string): string {
+  return createHmac('sha256', key).update(`switchboard-termhost\n${role}\n${appNonce}\n${hostNonce}`).digest('hex')
 }
 
 // A build becomes a file name: the version and the content hash (runtime.ts buildId).

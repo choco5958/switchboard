@@ -2,7 +2,7 @@
 // quitting, restarting or updating the app never ends the work running in them. The app
 // starts it detached on its own executable in Node mode (termClient.ts launchHost), gives it
 // the app's key on standard input and talks to it over a Unix socket (termProtocol.ts) that
-// only answers a connection proving that key.
+// only answers a connection proving that key, after proving it first itself.
 //
 // Each build of the app has its own host. A host takes new terminals only from an app of its
 // own build: after an update its files may be gone (macOS replaces the bundle, and node-pty's
@@ -19,7 +19,7 @@ import { createRequire } from 'node:module'
 import { chmodSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createCore, type Emulator, type SpawnPty } from './termCore.ts'
-import { encode, hostSocket, keyMatches, lineReader, validBuild, type Message, type SpawnRequest, type TermMeta } from './termProtocol.ts'
+import { AUTH_MS, encode, hostSocket, keyMatches, lineReader, MAX_GREETING, MAX_LINE, newNonce, proof, validBuild, validNonce, type Message, type SpawnRequest, type TermMeta } from './termProtocol.ts'
 
 type HeadlessModule = typeof import('@xterm/headless')
 type SerializeModule = typeof import('@xterm/addon-serialize')
@@ -37,6 +37,8 @@ export type HostConfig = {
   // The folder whose node_modules hold node-pty, @xterm/headless and @xterm/addon-serialize.
   modules: string
   idleMs: number
+  // How long a connection has to prove the key (termProtocol.ts AUTH_MS; shorter in tests).
+  authMs?: number
 }
 
 function log(...parts: unknown[]): void {
@@ -65,6 +67,8 @@ function emulatorWith(headless: HeadlessModule, serialize: SerializeModule): (co
 type Client = {
   socket: Socket
   authed: boolean
+  // The greeting's nonces, set once the app said hello and the host answered.
+  nonces: { app: string; host: string } | null
   build: string
   // Terminals whose output this app gets.
   subs: Set<string>
@@ -153,13 +157,20 @@ export async function runHost(config: HostConfig): Promise<void> {
 
   function handle(client: Client, message: Record<string, unknown>): void {
     if (!client.authed) {
-      if (message.t !== 'hello' || !keyMatches(message.key, config.key)) {
+      const refuse = () => {
         log('refused a connection without the app key')
         client.socket.destroy()
+      }
+      // The app's hello: answered with this host's proof, which the app checks before its own.
+      if (!client.nonces) {
+        if (message.t !== 'hello' || !validNonce(message.nonce) || 'key' in message) return refuse()
+        client.nonces = { app: message.nonce, host: newNonce() }
+        client.build = str(message.build)
+        send(client, { t: 'challenge', nonce: client.nonces.host, proof: proof(config.key, 'host', client.nonces.app, client.nonces.host) })
         return
       }
+      if (message.t !== 'auth' || !keyMatches(message.proof, proof(config.key, 'app', client.nonces.app, client.nonces.host))) return refuse()
       client.authed = true
-      client.build = str(message.build)
       if (client.build !== config.build && !retired) {
         retired = true
         log(`an app of build ${client.build} attached; taking no new terminals`)
@@ -224,16 +235,24 @@ export async function runHost(config: HostConfig): Promise<void> {
   rmSync(path, { force: true })
 
   const server = createServer(socket => {
-    const client: Client = { socket, authed: false, build: '', subs: new Set(), attaching: new Map() }
+    const client: Client = { socket, authed: false, nonces: null, build: '', subs: new Set(), attaching: new Map() }
     clients.add(client)
     socket.setEncoding('utf8')
     const read = lineReader(
       message => handle(client, message),
       () => socket.destroy(),
+      () => (client.authed ? MAX_LINE : MAX_GREETING),
     )
+    // One that does not prove the key in time holds nothing open.
+    const timer = setTimeout(() => {
+      if (!client.authed) socket.destroy()
+    }, config.authMs ?? AUTH_MS)
     socket.on('data', (chunk: string) => read(chunk))
     socket.on('error', () => undefined)
-    socket.on('close', () => clients.delete(client))
+    socket.on('close', () => {
+      clearTimeout(timer)
+      clients.delete(client)
+    })
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
@@ -295,7 +314,7 @@ if (import.meta.main) {
   const resources = (process as { resourcesPath?: string }).resourcesPath
   const modules = process.env.SWITCHBOARD_MODULES || (resources ? join(resources, 'app.asar') : '')
   try {
-    await runHost({ build, dir, key, modules, idleMs: Number(process.env.SWITCHBOARD_TERMHOST_IDLE_MS) || 60_000 })
+    await runHost({ build, dir, key, modules, idleMs: Number(process.env.SWITCHBOARD_TERMHOST_IDLE_MS) || 60_000, authMs: Number(process.env.SWITCHBOARD_TERMHOST_AUTH_MS) || AUTH_MS })
   } catch (error) {
     log('could not start:', error)
     process.exit(1)
