@@ -310,12 +310,12 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
   display: grid; height: 100%;
   grid-template-areas: 'top top top' 'rail side tabs' 'rail side main' 'rail side log';
   grid-template-rows: 40px 34px 1fr auto;
-  grid-template-columns: 48px 300px 1fr;
+  grid-template-columns: 48px 316px 1fr;
 }
 .shell.sidebar-closed { grid-template-columns: 48px 0 1fr; }
 .shell:has(> .props-panel) {
   grid-template-areas: 'top top top top' 'rail side tabs props' 'rail side main props' 'rail side log props';
-  grid-template-columns: 48px 300px minmax(0, 1fr) auto;
+  grid-template-columns: 48px 316px minmax(0, 1fr) auto;
 }
 .shell.sidebar-closed:has(> .props-panel) { grid-template-columns: 48px 0 minmax(0, 1fr) auto; }
 .shell.dock-closed .dock { display: none; }
@@ -865,7 +865,7 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
 
 /* ⋯ on project and group rows: always faintly there, full on hover or focus. In the flow of the
    row (not over it), so it never covers the row's counts. */
-.row-more { position: static; flex: none; margin-left: 2px; background: none; opacity: 0.6; pointer-events: auto; }
+.row-more { position: static; flex: none; width: 20px; margin-left: 0; background: none; opacity: 0.6; pointer-events: auto; }
 .project-line:hover .row-more, .project-line:focus-within .row-more, .project-line:has(.row-menu) .row-more { opacity: 1; }
 
 /* Shortcut list (? or ⌘/) */
