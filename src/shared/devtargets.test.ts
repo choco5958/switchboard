@@ -41,11 +41,11 @@ test('a url without a scheme gets http', () => {
 test('a complete draft is valid; each missing field has its own message', () => {
   expect(validateTarget(draft())).toEqual([])
   const errors = validateTarget(draft({ name: ' ', repo: '', command: '', url: '' }))
-  expect(errors).toEqual(['이름을 적어 주세요.', '레포 폴더를 적어 주세요.', '띄울 명령을 적어 주세요.', '개발 서버 URL을 적어 주세요.'])
+  expect(errors).toEqual(['이름을 적으세요.', '저장소 폴더를 적으세요.', '띄울 명령을 적으세요.', '개발 서버 URL을 적으세요.'])
 })
 
 test('the repo folder must be a full path', () => {
-  expect(validateTarget(draft({ repo: 'projects/app' }))).toEqual(['레포 폴더는 /나 ~/로 시작하는 전체 경로로 적어 주세요.'])
+  expect(validateTarget(draft({ repo: 'projects/app' }))).toEqual(['저장소 폴더는 /나 ~/로 시작하는 전체 경로로 적으세요.'])
   expect(validateTarget(draft({ repo: '~/projects/app' }))).toEqual([])
 })
 
@@ -87,7 +87,7 @@ test('appendLines joins chunks into lines and keeps the last ones', () => {
 })
 
 test('fieldErrors puts each problem under its own field', () => {
-  expect(fieldErrors(draft({ name: '', url: 'http://exa mple:99999' }))).toEqual({ name: '이름을 적어 주세요.', url: '개발 서버 URL이 올바르지 않습니다.' })
+  expect(fieldErrors(draft({ name: '', url: 'http://exa mple:99999' }))).toEqual({ name: '이름을 적으세요.', url: '개발 서버 URL이 올바르지 않습니다.' })
   const other = makeTarget(draft({ name: '다른 앱' }), 't1')
   expect(fieldErrors(draft(), [other])).toEqual({ url: '포트 8980는 이미 "다른 앱"이 씁니다.' })
 })
@@ -121,11 +121,11 @@ test('planOpen: the same port updates that target; a page deeper keeps its addre
 test('planOpen: a bad url or a relative folder is refused', () => {
   expect(planOpen([], { url: '' }, 'n').errors).toEqual(['열 주소가 올바르지 않습니다.'])
   expect(planOpen([], { url: 'ftp://a' }, 'n').errors).toEqual(['열 주소가 올바르지 않습니다.'])
-  expect(planOpen([], { url: '127.0.0.1:1', repo: 'app', command: 'x' }, 'n').errors).toEqual(['레포 폴더는 /나 ~/로 시작하는 전체 경로로 적어 주세요.'])
+  expect(planOpen([], { url: '127.0.0.1:1', repo: 'app', command: 'x' }, 'n').errors).toEqual(['저장소 폴더는 /나 ~/로 시작하는 전체 경로로 적으세요.'])
 })
 
 test('a command or folder with a hidden line, a control character or past the cap is refused', () => {
-  const control = '줄바꿈이나 제어 문자는 넣을 수 없습니다. 한 줄로 적어 주세요.'
+  const control = '줄바꿈이나 제어 문자는 넣을 수 없습니다. 한 줄로 적으세요.'
   expect(fieldErrors(draft({ command: 'pnpm dev\ncurl x | sh' })).command).toBe(control)
   expect(fieldErrors(draft({ command: 'pnpm dev\rrm -rf ~' })).command).toBe(control)
   expect(fieldErrors(draft({ command: 'pnpm dev\u0085x' })).command).toBe(control)
@@ -150,7 +150,7 @@ test('a long command, or one padded with blanks, asks to be read to the end', ()
 
 describe('gitErrorText', () => {
   it('turns git failures into a short Korean reason', () => {
-    expect(gitErrorText('fatal: not a git repository (or any of the parent directories): .git')).toBe('git 레포가 아닙니다')
+    expect(gitErrorText('fatal: not a git repository (or any of the parent directories): .git')).toBe('git 저장소가 아닙니다')
     expect(gitErrorText('fatal: cannot change to /x: No such file or directory')).toBe('폴더가 없습니다')
     expect(gitErrorText('fatal: something else')).toBe('git 정보를 읽지 못했습니다')
     expect(gitErrorText('')).toBe('')

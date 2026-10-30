@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { LogEvent, Question, Task } from '../../../shared/types'
+import { nodeStatusSlug } from '../../../shared/i18n'
 import { Icon } from '../Icons'
 import { LogLines, NumberBadge, QueueItem, TaskItem } from '../parts'
 
@@ -122,6 +123,7 @@ function Graph() {
           <div
             key={node.key}
             className={`node node-${node.status} ${node.key === 'decide' ? 'node-selected' : ''}`}
+            data-status={nodeStatusSlug(node.status)}
             style={{ left: node.left, top: node.top, width: 200, height: 64 }}
           >
             <div className="node-title">

@@ -51,7 +51,7 @@ test('the injected source is valid JavaScript and carries the breadcrumb functio
   const source = pickerSource('abc123')
   expect(() => new Function(source)).not.toThrow()
   expect(source).toContain('const crumbsIn = (')
-  expect(source).toContain('무엇을 바꾸면 좋을지 적어 주세요')
+  expect(source).toContain('무엇을 바꾸면 좋을지 적으세요')
   expect(source).toContain('"abc123"')
   expect(source).not.toContain('console.log(')
 })

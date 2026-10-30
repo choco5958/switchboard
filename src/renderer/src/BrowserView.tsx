@@ -15,7 +15,7 @@ import {
 } from './comments'
 import { debugStore, failureReason, sessionFor, useDebugStore, waitUntilAnswering, whereTo } from './debugStore'
 import { CaptureLimiter, makeNonce, parseMessage, pickerSource, type PickMessage } from './picker'
-import { commentStatusLabel, t, type Key } from '../../shared/i18n'
+import { commentStatusLabel, commentStatusSlug, t, type Key } from '../../shared/i18n'
 import { composing } from './ime'
 import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
 import { focusScript, isLocalUrl, pointScript, refRevision, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
@@ -544,7 +544,7 @@ export function BrowserView({
           {shown.map(c => {
             const n = openComments.indexOf(c)
             return (
-              <div key={c.id} className={`kept kept-${c.status}`}>
+              <div key={c.id} className={`kept kept-${c.status}`} data-status={commentStatusSlug(c.status)}>
                 <div className="kept-head">
                   {n >= 0 ? <span className="mark-num">{n + 1}</span> : <span className="tag-chip kept-status">{commentStatusLabel(c.status)}</span>}
                   <span className="small quiet kept-where">{c.place || c.element}</span>
