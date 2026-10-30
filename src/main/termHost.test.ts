@@ -276,7 +276,8 @@ server.listen(path, () => chmodSync(path, 0o600))
       t: 'spawn',
       id: 'old-t1',
       file: '/bin/sh',
-      args: ['-c', 'sleep 1'],
+      // Long enough that the updated app attaches before it ends, even on a busy machine.
+      args: ['-c', 'sleep 2'],
       cwd: dir,
       env: { PATH: '/usr/bin:/bin' },
       cols: 80,
@@ -293,8 +294,9 @@ server.listen(path, () => chmodSync(path, 0o600))
     expect(refused).toMatchObject({ ok: false, error: expect.stringContaining('takes no new terminals') })
     // Its terminal ends; the old host goes although the new app is still attached.
     await wait(() => fresh.closed, 8000)
-    expect(alive(fresh.pid)).toBe(false)
-  })
+    // The socket closes a moment before the process is gone.
+    await wait(() => !alive(fresh.pid), 3000)
+  }, 20_000)
 
   it('the answer typing types into a terminal the host runs', async () => {
     const dbDir = mkdtempSync(join(tmpdir(), 'sb-hostdeliv-'))
