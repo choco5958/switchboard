@@ -18,7 +18,8 @@ import {
 // The project switcher at the top of the sidebar: every project, the folders the person sorts
 // them into (each opens and closes), and the projects taken off the list. A project moves by
 // dragging it onto a folder or through its ⋯ menu (also on right-click). Keys: F2 renames a
-// focused folder, Delete takes a focused project off the list, and the menu takes arrows and Esc.
+// focused folder and Delete (or Backspace) deletes it, Delete takes a focused project off the
+// list, and the menu takes arrows and Esc.
 
 const DRAG_TYPE = 'application/x-switchboard-project'
 
@@ -280,6 +281,10 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
                   if (event.key === 'F2') {
                     event.preventDefault()
                     setEditing(folder.id)
+                  }
+                  if (event.key === 'Delete' || event.key === 'Backspace') {
+                    event.preventDefault()
+                    ungroup(folder)
                   }
                 }}
               >

@@ -109,7 +109,7 @@ Jump to any task, question or project. Group projects into folders and fold them
 - Type `/switchboard` in Claude Code to see that session's flow and decisions in a side pane.
 
 #### Display
-- Group projects in the sidebar with `+ Folder` and fold them. Removing a project from the list keeps its files and history.
+- Group projects in the sidebar with `+ Folder` and fold them. Delete a folder with `Delete folder` in its ⋯ menu or the Delete key; its projects stay in the list. Removing a project from the list keeps its files and history.
 - 한국어, English, 日本語, 简体中文; it follows the OS language at first.
 - 13 themes: Classic navy, Adventure journal, Phosphor terminal, Pixel dots, Subway map, Circuit board, Modern terminal, Blue DOS window, Dracula, Nord, Solarized Dark and Light, GitHub Light.
 - With Orca installed, each node can get a worktree, and a Linear issue can start a task.
