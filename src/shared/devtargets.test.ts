@@ -129,6 +129,10 @@ test('a command or folder with a hidden line, a control character or past the ca
   expect(fieldErrors(draft({ command: 'pnpm dev\ncurl x | sh' })).command).toBe(control)
   expect(fieldErrors(draft({ command: 'pnpm dev\rrm -rf ~' })).command).toBe(control)
   expect(fieldErrors(draft({ command: 'pnpm dev\u0085x' })).command).toBe(control)
+  // Shown in another order, or with an invisible part, than it runs.
+  for (const hidden of ['\u202e', '\u2066', '\u2069', '\u200b', '\u200f', '\u2028', '\u2029', '\ufeff', '\u00ad'])
+    expect(fieldErrors(draft({ command: `pnpm dev ${hidden}hs | x lruc` })).command).toBe(control)
+  expect(fieldErrors(draft({ command: 'pnpm dev --name 한글' })).command).toBeUndefined()
   expect(fieldErrors(draft({ command: 'pnpm\tdev' })).command).toBeUndefined()
   expect(fieldErrors(draft({ repo: '/tmp/app\n/etc' })).repo).toBe(control)
   expect(fieldErrors(draft({ command: 'x'.repeat(COMMAND_MAX + 1) })).command).toBe(`${COMMAND_MAX}자를 넘을 수 없습니다.`)

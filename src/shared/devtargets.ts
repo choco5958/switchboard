@@ -34,11 +34,12 @@ export function normalizeUrl(url: string): string {
 
 // The command runs in a shell (`sh -l -c`) and a session can name it (open_in_ide). A newline
 // or another control character would hide more lines behind the one the confirmation shows,
-// so none may be in the command or its folder; tabs alone stay. The lengths are caps far past
-// any real start command or path.
+// and a direction override or a zero width character (the format characters, Cf) would show
+// the text in another order than it runs, so none may be in the command or its folder; tabs
+// alone stay. The lengths are caps far past any real start command or path.
 export const COMMAND_MAX = 2000
 export const REPO_MAX = 1024
-const CONTROL = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/
+const CONTROL = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029\p{Cf}]/u
 
 // Why a folder or a command may not run, or null when it may.
 export function runProblem(field: 'repo' | 'command', value: string): string | null {
