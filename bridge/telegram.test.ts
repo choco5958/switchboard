@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, listen } from './server.ts'
-import { questionMessage, replyAnswer } from './telegram.ts'
+import { createTelegram, questionMessage, replyAnswer } from './telegram.ts'
 
 // A fake Telegram: getMe, sendMessage, editMessageText and answerCallbackQuery are recorded;
 // getUpdates hands out what the test queued, then holds briefly as long polling does.
@@ -208,4 +208,49 @@ test('at the desk nothing goes out; leaving sends what waits', async () => {
   await until(() => sent('sendMessage').some(c => c.body.text?.includes(`Q${q.id}`)))
   stream.destroy()
   assert.equal((await call('POST', '/telegram/token', { token: null })).json.configured, false)
+})
+
+test('a new token never leaves two polling loops, even when the old one slept after a failed poll', async () => {
+  const secrets = new Map<string, string>([['telegram.token', '1:OLD']])
+  let polling = 0
+  let most = 0
+  let polls = 0
+  // getUpdates fails at once for the old token (the loop then sleeps) and holds for the new one.
+  const fakeFetch = (async (url: string, init: RequestInit) => {
+    const method = String(url).split('/').pop()
+    if (method === 'getMe') return new Response(JSON.stringify({ ok: true, result: { username: 'b' } }))
+    polls++
+    if (String(url).includes('OLD')) throw new Error('network down')
+    polling++
+    most = Math.max(most, polling)
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, 20)
+        init.signal?.addEventListener('abort', () => (clearTimeout(timer), reject(new Error('aborted'))))
+      })
+    } finally {
+      polling--
+    }
+    return new Response(JSON.stringify({ ok: true, result: [] }))
+  }) as typeof fetch
+  const telegram = createTelegram({
+    api: 'http://telegram', fetch: fakeFetch, retryMs: 60,
+    secret: key => secrets.get(key) ?? null,
+    setSecret: (key, value) => (value === null ? secrets.delete(key) : secrets.set(key, value)),
+    lang: () => 'ko', away: () => true, pending: () => [], question: () => undefined, answer: () => undefined, hold: () => undefined,
+    sentMessage: () => null, saveMessage: () => undefined, questionOf: () => null, pendingApprovals: () => [], approval: () => undefined,
+    answerApproval: () => false, approvalMessage: () => null, saveApprovalMessage: () => undefined, changed: () => undefined, log: () => undefined,
+  })
+  telegram.start()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal((await telegram.setToken('1:NEW')).ok, true)
+  // Long past the old loop's sleep: had it woken and polled again, two would run at once.
+  await new Promise(resolve => setTimeout(resolve, 200))
+  telegram.start()
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.equal(most, 1)
+  telegram.stop()
+  const after = polls
+  await new Promise(resolve => setTimeout(resolve, 100))
+  assert.equal(polls, after)
 })

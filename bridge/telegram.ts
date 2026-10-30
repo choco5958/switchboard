@@ -52,6 +52,8 @@ export type TelegramDeps = {
   saveApprovalMessage: (approvalId: number, messageId: number) => void
   changed: () => void
   log: (text: string) => void
+  // The first wait after a failed poll (5 s; tests make it short).
+  retryMs?: number
 }
 
 export type TelegramApproval = { id: number; project: string; tool: string; summary: string; cwd: string; reason: string; status: string }
@@ -292,22 +294,41 @@ export function createTelegram(deps: TelegramDeps) {
     }
   }
 
-  const loop = async () => {
+  // Each start is a new generation: a loop of an older one (stopped while it slept between
+  // failed polls, then started again by setToken) leaves instead of polling beside the new one.
+  let generation = 0
+  let wake: (() => void) | null = null
+  const current = (gen: number) => gen === generation && running && token() !== null
+  const pause = (ms: number) =>
+    new Promise<void>(resolve => {
+      const timer = setTimeout(() => {
+        wake = null
+        resolve()
+      }, ms)
+      wake = () => {
+        clearTimeout(timer)
+        wake = null
+        resolve()
+      }
+    })
+
+  const loop = async (gen: number) => {
     let wait = 0
-    while (running && token()) {
+    while (current(gen)) {
       abort = new AbortController()
       try {
         const updates = (await call('getUpdates', { offset, timeout: POLL_SECONDS, allowed_updates: ['message', 'callback_query'] }, abort.signal)) as Update[]
         wait = 0
         for (const update of updates) {
+          if (gen !== generation) return
           offset = Math.max(offset, update.update_id + 1)
           await handle(update).catch(error => deps.log(`telegram update: ${String(error)}`))
         }
       } catch (error) {
-        if (!running) return
+        if (!current(gen)) return
         deps.log(`telegram poll: ${String(error)}`)
-        wait = Math.min(Math.max(wait * 2, 5000), 60_000)
-        await new Promise(resolve => setTimeout(resolve, wait))
+        wait = Math.min(Math.max(wait * 2, deps.retryMs ?? 5000), 60_000)
+        await pause(wait)
       }
     }
   }
@@ -315,14 +336,17 @@ export function createTelegram(deps: TelegramDeps) {
   const start = () => {
     if (running || !token()) return
     running = true
-    void loop().finally(() => {
-      running = false
+    const gen = ++generation
+    void loop(gen).finally(() => {
+      if (gen === generation) running = false
     })
   }
 
   const stop = () => {
     running = false
+    generation++
     abort?.abort()
+    wake?.()
   }
 
   return {
