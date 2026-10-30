@@ -79,6 +79,11 @@ export function QuestionCard({
   onKey.current = event => {
     const target = event.target as HTMLElement | null
     const typing = target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT' || target?.tagName === 'SELECT'
+    // Enter or Space on a focused button, link, tab or menu entry presses that control, not Send.
+    // The card's own option buttons are the exception: pick one with the mouse, then Enter sends it.
+    const control = target?.closest?.('button, a[href], [role="tab"], [role="menuitem"], [role="button"]')
+    const pressing = (event.key === 'Enter' || event.key === ' ') && !!control && !control.classList.contains('option')
+    if (event.defaultPrevented || pressing) return
     if (!isOpen || busy || typing || composing(event) || event.metaKey || event.ctrlKey || event.altKey) return
     const action = keyAction(event.key, options)
     if (action.type === 'none') return
