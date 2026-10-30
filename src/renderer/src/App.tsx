@@ -23,7 +23,7 @@ import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
 import { stalledSessions } from '../../shared/stall'
 import { limitedUntil } from '../../shared/limit'
 import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
-import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
+import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, railPickFor, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
 import { applyTheme } from './theme'
 import { installSettingSaver, postSetting, settle, withPending, type Pending } from './settings'
 import { LOCALE_TAG, resolveLang, setLang, stageLabel, t, type Key } from '../../shared/i18n'
@@ -270,7 +270,11 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const open = useCallback((tab: Tab) => setTabs(current => openTab(current, tab)), [])
+  // Opening a tab from anywhere moves the rail's light with it (tabs.ts railPickFor).
+  const open = useCallback((tab: Tab) => {
+    setTabs(current => openTab(current, tab))
+    setRailPick(railPickFor(RAIL, tab))
+  }, [])
   // A task or question of another project would open as a hidden tab; the view follows it instead.
   const openTask = (id: number) => {
     setScope(current => scopeFor(current, state.tasks.find(t => t.id === id)?.project))
@@ -346,11 +350,18 @@ export function App() {
   }
   const shownTabs = tabs.open.filter(inScope)
   const active = inScope(activeTab(tabs)) ? activeTab(tabs) : HOME
+  const activeKey = tabKey(active)
+  // A tab opened at the far end of a full tab bar scrolls into sight.
+  const tabbarRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    tabbarRef.current?.querySelector('.tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [activeKey])
   // Reports, syncs and Linear sends go to the newest session of the project in view, or nowhere.
   const latestSession = useMemo(() => pickSession(state.sessions, scope), [state.sessions, scope])
   const showDev = devMenuShown(state.settings)
   const rail = RAIL.filter(r => !r.dev || showDev)
-  const railOn = railActive(rail, { picked: railPick, active: tabs.active, section, sidebarOpen })
+  // The tab on screen, not the stored one: a tab of another project is hidden and home shows instead.
+  const railOn = railActive(rail, { picked: railPick, active: tabKey(active), section, sidebarOpen })
 
   // A folder a terminal opened in becomes a project of its own in the switcher.
   const addProject = useCallback(
@@ -681,7 +692,7 @@ export function App() {
           </aside>
         )}
 
-        <div className="tabbar">
+        <div className="tabbar" ref={tabbarRef}>
           {!sidebarOpen && (
             <div className="tabbar-scope">
               <button className="tabbar-expand" title={t('tabbar.expand')} aria-label={t('tabbar.expand')} onClick={() => setSidebarOpen(true)}>
@@ -704,6 +715,15 @@ export function App() {
                 aria-selected={key === tabKey(active)}
                 className={`tab ${key === tabKey(active) ? 'on' : ''}`}
                 onClick={() => setTabs(current => ({ ...current, active: key }))}
+                // The middle button closes a tab, as in a browser; pressing it down would start autoscroll.
+                onMouseDown={event => {
+                  if (event.button === 1) event.preventDefault()
+                }}
+                onAuxClick={event => {
+                  if (event.button !== 1 || tab.kind === 'home') return
+                  event.preventDefault()
+                  setTabs(current => closeTab(current, key))
+                }}
                 onKeyDown={event => {
                   if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
                   event.preventDefault()

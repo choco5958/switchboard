@@ -38,6 +38,13 @@ export function railActive<Id extends string>(
   return (view.sidebarOpen && items.find(item => item.section === view.section)?.icon) || null
 }
 
+// The rail button a newly opened tab belongs to, whatever opened it (the rail, the palette, a link):
+// the one whose tab it is, or none for a task or question.
+export function railPickFor<Id extends string>(items: readonly RailItem<Id>[], tab: Tab): Id | null {
+  const key = tabKey(tab)
+  return items.find(item => item.tab && tabKey(item.tab) === key)?.icon ?? null
+}
+
 export function openTab(tabs: Tabs, tab: Tab): Tabs {
   const key = tabKey(tab)
   const open = tabs.open.some(t => tabKey(t) === key) ? tabs.open : [...tabs.open, tab]

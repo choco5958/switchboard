@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, restoreTabs, tabKey, type Tabs } from './tabs'
+import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, railPickFor, restoreTabs, tabKey, type Tabs } from './tabs'
 
 const start: Tabs = { open: [HOME], active: 'home' }
 
@@ -55,4 +55,22 @@ test('lights one rail button at a time', () => {
   expect(railActive(rail, { ...view, picked: 'question', active: 'task:3', section: 'questions', sidebarOpen: false })).toBe(null)
   // A pick whose section was closed gives way to the active tab.
   expect(railActive(rail, { ...view, picked: 'question', section: 'questions', sidebarOpen: false })).toBe('home')
+})
+
+test('a tab opened from anywhere picks its own rail button', () => {
+  const rail = [
+    { icon: 'home', section: 'home', tab: HOME },
+    { icon: 'question', section: 'questions' },
+    { icon: 'history', tab: { kind: 'history' as const } },
+    { icon: 'log', tab: { kind: 'log' as const } },
+  ]
+  // The palette, the dock's expand log button or the history link open these without a rail press.
+  expect(railPickFor(rail, { kind: 'log' })).toBe('log')
+  expect(railPickFor(rail, { kind: 'history' })).toBe('history')
+  expect(railPickFor(rail, { kind: 'task', id: 4 })).toBe(null)
+  // History opened from the questions section: history lights, not questions.
+  const view = { picked: railPickFor(rail, { kind: 'history' }), active: 'history', section: 'questions', sidebarOpen: true }
+  expect(railActive(rail, view)).toBe('history')
+  // A task of another project is the stored active tab but home shows: home lights.
+  expect(railActive(rail, { picked: null, active: tabKey(HOME), section: 'home', sidebarOpen: false })).toBe('home')
 })
