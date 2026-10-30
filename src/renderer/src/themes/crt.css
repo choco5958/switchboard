@@ -13,6 +13,11 @@
   --good: #39ff6a;
   --warn: #ffc94a;
   --bad: #ff5f56;
+  --line-strong: #397241;
+  --on-good: #021204;
+  --on-warn: #021204;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --mono: 'D2Coding', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
   --sans: var(--mono);
 }

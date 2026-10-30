@@ -68,6 +68,11 @@ describe('top bar helpers', () => {
     expect(flipTheme('githublight', 'nord', 'a3')).toEqual({ theme: 'nord', lastDark: 'nord' })
     expect(flipTheme('dracula', undefined, 'a3')).toEqual({ theme: 'metro', lastDark: 'dracula' })
   })
+  test('the default theme flips to its own light half and back', () => {
+    expect(isLight('a3light')).toBe(true)
+    expect(flipTheme('a3', undefined, 'a3')).toEqual({ theme: 'a3light', lastDark: 'a3' })
+    expect(flipTheme('a3light', 'nord', 'a3')).toEqual({ theme: 'a3', lastDark: 'a3' })
+  })
   test('scoped counts show the total too', () => {
     expect(countLabel('결정', 3, null)).toBe('결정 3')
     expect(countLabel('결정', 3, 1)).toBe('결정 1 (전체 3)')

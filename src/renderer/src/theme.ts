@@ -9,6 +9,7 @@ export type Theme = { id: string; label: string }
 
 export const THEMES: Theme[] = [
   { id: 'a3', label: '기본 남색' },
+  { id: 'a3light', label: '기본 남색 (밝음)' },
   { id: 'a4', label: '모험 일지' },
   { id: 'crt', label: '인광 터미널' },
   { id: 'dotpico', label: '도트 픽셀' },

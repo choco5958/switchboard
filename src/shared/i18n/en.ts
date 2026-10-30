@@ -1025,4 +1025,6 @@ export const en: Dict = {
   'mobile.funnelAllow': 'Allow Funnel',
   'mobile.funnelPolicy': 'This tailnet does not allow Funnel yet. Allow it at {link} and turn it on again.',
   'mobile.loadFailed': 'Could not read the phone access state: {error}',
+  // Design system: shared parts (ui.tsx), dialogs, the light default theme
+  'theme.a3light': 'Classic navy (light)',
 }

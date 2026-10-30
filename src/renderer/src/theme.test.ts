@@ -23,37 +23,83 @@ test('labels avoid em dash, en dash and the middle dot', () => {
 })
 
 // Contrast over the theme tokens (WCAG 2 relative luminance). Each theme's first block holds its
-// tokens; a3 is the fallback for any token a theme leaves out.
+// tokens; a3 is the fallback for any token a theme leaves out. A token may name another one
+// (var(--text)) or be translucent (--accent-soft), which is laid over the surface under it.
+type Rgba = [number, number, number, number]
+
 function tokens(css: string): Record<string, string> {
   const head = css.slice(0, css.indexOf('}'))
-  return Object.fromEntries([...head.matchAll(/--([\w-]+):\s*(#[0-9a-fA-F]{6})\b/g)].map(m => [m[1], m[2]]))
+  return Object.fromEntries([...head.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(m => [m[1]!, m[2]!.trim()]))
 }
 
-function luminance(hex: string): number {
-  const linear = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+function colour(value: string | undefined, all: Record<string, string>, depth = 0): Rgba | null {
+  if (!value || depth > 4) return null
+  const ref = value.match(/^var\(--([\w-]+)\)$/)
+  if (ref) return colour(all[ref[1]!], all, depth + 1)
+  const hex = value.match(/^#([0-9a-fA-F]{6})$/)
+  if (hex) return [...[0, 2, 4].map(i => parseInt(hex[1]!.slice(i, i + 2), 16)), 1] as Rgba
+  const rgba = value.match(/^rgba?\(([^)]+)\)$/)
+  if (!rgba) return null
+  const [r = 0, g = 0, b = 0, a = 1] = rgba[1]!.split(',').map(Number)
+  return [r, g, b, a]
+}
+
+function over(top: Rgba, under: Rgba): Rgba {
+  return [...[0, 1, 2].map(i => top[i]! * top[3] + under[i]! * (1 - top[3])), 1] as Rgba
+}
+
+function luminance([r, g, b]: Rgba): number {
+  const linear = [r, g, b].map(c => c / 255).map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
   return [0.2126, 0.7152, 0.0722].reduce((sum, weight, i) => sum + weight * (linear[i] ?? 0), 0)
 }
 
-function contrast(a: string, b: string): number {
+function contrast(a: Rgba, b: Rgba): number {
   const [x, y] = [luminance(a), luminance(b)]
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
 }
 
-test('badge and primary button text, and status colours, reach 4.5:1 in every theme', () => {
+// [foreground, background, least ratio, surface under a translucent background]
+type Pair = [string, string, number, string?]
+
+// Every pair in every theme (a3 under each); the ones below their ratio come back as lines.
+function lowContrast(pairs: Pair[]): string[] {
   const base = tokens(readFileSync(join(dir, 'a3.css'), 'utf8'))
   const low: string[] = []
   for (const { id } of THEMES) {
     const t = { ...base, ...tokens(readFileSync(join(dir, `${id}.css`), 'utf8')) }
-    const check = (fg: string, bg: string) => {
-      const [a, b] = [t[fg], t[bg]]
-      if (!a || !b) return low.push(`${id}: no ${a ? bg : fg}`)
+    for (const [fg, bg, least, under] of pairs) {
+      const a = colour(t[fg], t)
+      let b = colour(t[bg], t)
+      if (b && under) b = over(b, colour(t[under], t) ?? b)
+      if (!a || !b) {
+        low.push(`${id}: no ${a ? bg : fg}`)
+        continue
+      }
       const ratio = contrast(a, b)
-      if (ratio < 4.5) low.push(`${id}: ${fg} on ${bg} ${ratio.toFixed(2)}`)
+      if (ratio < least) low.push(`${id}: ${fg} on ${bg}${under ? ` over ${under}` : ''} ${ratio.toFixed(2)}`)
     }
-    for (const bg of ['accent', 'task-0', 'task-1', 'task-2', 'task-3', 'task-4', 'task-5']) check('on-accent', bg)
-    for (const fg of ['text', 'quiet', 'good', 'warn', 'bad']) for (const bg of ['bg', 'panel', 'panel-2']) check(fg, bg)
   }
-  expect(low).toEqual([])
+  return low
+}
+
+const SURFACES = ['bg', 'panel', 'panel-2']
+const on = (fgs: string[], bgs: string[], least: number): Pair[] => fgs.flatMap(fg => bgs.map((bg): Pair => [fg, bg, least]))
+
+test('text, quiet text, the accent and the status colours reach 4.5:1 on every surface', () => {
+  expect(lowContrast(on(['text', 'quiet', 'accent', 'good', 'warn', 'bad'], SURFACES, 4.5))).toEqual([])
+})
+
+test('badge and button text reaches 4.5:1 on its fill: the accent, the task colours, good and warn', () => {
+  const fills = on(['on-accent'], ['accent', 'task-0', 'task-1', 'task-2', 'task-3', 'task-4', 'task-5'], 4.5)
+  expect(lowContrast([...fills, ['on-good', 'good', 4.5], ['on-warn', 'warn', 4.5]])).toEqual([])
+})
+
+test('a selected row (accent-soft over a panel) keeps its text at 4.5:1', () => {
+  expect(lowContrast(['panel', 'panel-2'].map((under): Pair => ['on-accent-soft', 'accent-soft', 4.5, under]))).toEqual([])
+})
+
+test('field and button borders and the focus ring reach 3:1 on every surface', () => {
+  expect(lowContrast(on(['line-strong', 'focus'], SURFACES, 3))).toEqual([])
 })
 
 // Every theme sets every colour token of the base theme itself, so none silently shows a3's navy.

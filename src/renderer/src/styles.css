@@ -96,7 +96,7 @@ h3 { font-size: 13px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .option:disabled { cursor: default; opacity: 0.85; }
 .option .num { margin-left: auto; }
 .recommend {
-  padding: 0 6px; border-radius: 4px; font-size: 12px; color: var(--bg); background: var(--good);
+  padding: 0 6px; border-radius: 4px; font-size: 12px; color: var(--on-good); background: var(--good);
 }
 .reason { color: var(--quiet); margin: 4px 0 12px; }
 .memo {
@@ -214,7 +214,7 @@ h3 { font-size: 13px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .rail-button { position: relative; width: 36px; height: 36px; display: grid; place-items: center; border: none; border-radius: 8px; background: none; color: var(--quiet); cursor: pointer; }
 .rail-button:hover { color: var(--text); background: var(--panel-2); }
 .rail-button.on { color: var(--accent); background: var(--accent-soft); }
-.rail-badge { position: absolute; top: 2px; right: 2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--warn); color: var(--bg); font: 600 11px/15px var(--sans); }
+.rail-badge { position: absolute; top: 2px; right: 2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--warn); color: var(--on-warn); font: 600 11px/15px var(--sans); }
 .sidebar { position: relative; }
 .sidebar-close { position: absolute; top: 10px; right: 8px; border: none; background: none; color: var(--quiet); cursor: pointer; }
 .sidebar-meta .link { margin-top: 0; }
@@ -316,7 +316,7 @@ h3 { font-size: 13px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
 .kept-remove { margin: 0; padding: 0; }
 .mark-num {
   display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
-  background: var(--warn); color: var(--bg); font: 700 12px/18px var(--sans);
+  background: var(--warn); color: var(--on-warn); font: 700 12px/18px var(--sans);
 }
 .debug-panel .direct { margin-bottom: 14px; }
 .direct-input { min-height: 56px; }
@@ -595,7 +595,7 @@ h3 { font-size: 13px; margin: 12px 0 6px; color: var(--quiet); font-weight: 600;
   display: inline-grid; place-items: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%;
   background: none; color: var(--quiet); font-size: 8px; line-height: 1; cursor: pointer;
 }
-.ccr-run:hover:not(:disabled) { background: var(--accent); color: var(--bg, #fff); }
+.ccr-run:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
 .ccr-run:disabled { opacity: 0.3; cursor: not-allowed; }
 .ccr-meter { display: inline-flex; align-items: center; gap: 2px; }
 .ccr-label { color: var(--text, inherit); opacity: 0.75; font-weight: 600; }

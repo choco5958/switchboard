@@ -14,6 +14,11 @@
   --good: #00733a;
   --warn: #a34f00;
   --bad: #c41d1b;
+  --line-strong: #828780;
+  --on-good: #ffffff;
+  --on-warn: #ffffff;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --track: #9aa19a;
 }
 
@@ -23,8 +28,6 @@
 [data-theme='metro'] .topbar { border-bottom: 4px solid var(--accent); }
 [data-theme='metro'] .tab.on { box-shadow: inset 0 -4px 0 var(--accent); }
 [data-theme='metro'] .card { border-width: 2px; border-radius: 14px; }
-[data-theme='metro'] .recommend,
-[data-theme='metro'] .rail-badge { color: #ffffff; }
 [data-theme='metro'] .chip { font-weight: 600; border-width: 2px; }
 [data-theme='metro'] .actions button { border-radius: 999px; border-width: 2px; font-weight: 600; }
 [data-theme='metro'] .option { border-width: 2px; border-radius: 999px; }

@@ -71,9 +71,9 @@ export function resetText(resetsAt: string | number | undefined, now = Date.now(
 }
 
 export const LIGHT_THEME = 'metro'
-const LIGHT_THEMES = new Set([LIGHT_THEME, 'solarizedlight', 'githublight'])
+const LIGHT_THEMES = new Set([LIGHT_THEME, 'a3light', 'solarizedlight', 'githublight'])
 // A scheme with both a light and a dark version flips to its other half.
-const PAIRS: Record<string, string> = { solarizeddark: 'solarizedlight', solarizedlight: 'solarizeddark' }
+const PAIRS: Record<string, string> = { a3: 'a3light', a3light: 'a3', solarizeddark: 'solarizedlight', solarizedlight: 'solarizeddark' }
 
 export function isLight(theme: string): boolean {
   return LIGHT_THEMES.has(theme)

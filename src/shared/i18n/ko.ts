@@ -1024,6 +1024,8 @@ export const ko = {
   'mobile.funnelAllow': 'Funnel 허용하기',
   'mobile.funnelPolicy': '이 tailnet은 아직 Funnel을 허용하지 않았습니다. {link} 에서 허용한 뒤 다시 켜세요.',
   'mobile.loadFailed': '휴대폰 연결 상태를 읽지 못했습니다: {error}',
+  // Design system: shared parts (ui.tsx), dialogs, the light default theme
+  'theme.a3light': '기본 남색 (밝음)',
 } satisfies Record<string, string>
 
 export type Dict = Record<keyof typeof ko, string>

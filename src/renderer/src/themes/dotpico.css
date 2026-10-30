@@ -15,6 +15,11 @@
   --good: #00e436;
   --warn: #ffec27;
   --bad: #ff77a8; /* the red #ff004d is too dark for text on the blue panel */
+  --line-strong: #83769c;
+  --on-good: #000000;
+  --on-warn: #000000;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --mono: 'Galmuri11', 'Galmuri9', 'DungGeunMo', 'D2Coding', Menlo, monospace;
   --sans: var(--mono);
 }

@@ -13,6 +13,11 @@
   --good: #64d48d;
   --warn: #f2c65a;
   --bad: #ff7a68;
+  --line-strong: #c58a3e;
+  --on-good: #0a2615;
+  --on-warn: #0a2615;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --copper: #c58a3e;
 }
 
@@ -47,4 +52,3 @@
 [data-theme='pcb'] .browser-bar button.primary { background: linear-gradient(#f0c66a, #c9932f); border-color: #f5d68f; color: #0a2615; font-weight: 700; }
 [data-theme='pcb'] .stages li { border-top-width: 2px; }
 [data-theme='pcb'] .stages li.done { border-color: var(--good); }
-[data-theme='pcb'] .recommend { color: #0a2615; }

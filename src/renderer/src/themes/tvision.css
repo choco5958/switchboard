@@ -14,6 +14,11 @@
   --good: #55ff55;
   --warn: #ffff55;
   --bad: #ff7777;
+  --line-strong: #aaaaaa;
+  --on-good: #000000;
+  --on-warn: #000000;
+  --on-accent-soft: #000000;
+  --focus: #ffff55;
   --menu: #aaaaaa;
   --button: #00aa00;
   --mono: 'D2Coding', 'SF Mono', Menlo, monospace;

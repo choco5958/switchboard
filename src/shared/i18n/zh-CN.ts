@@ -1025,4 +1025,6 @@ export const zhCN: Dict = {
   'mobile.funnelAllow': '允许 Funnel',
   'mobile.funnelPolicy': '这个 tailnet 还没有允许 Funnel。请在 {link} 允许后再开启。',
   'mobile.loadFailed': '无法读取手机连接状态: {error}',
+  // Design system: shared parts (ui.tsx), dialogs, the light default theme
+  'theme.a3light': '经典藏青 浅色',
 }

@@ -15,6 +15,11 @@
   --good: #50fa7b;
   --warn: #ffb86c;
   --bad: #ff6e6e;
+  --line-strong: #7a7e95;
+  --on-good: #21222c;
+  --on-warn: #21222c;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --term-0: #21222c; --term-1: #ff5555; --term-2: #50fa7b; --term-3: #f1fa8c;
   --term-4: #bd93f9; --term-5: #ff79c6; --term-6: #8be9fd; --term-7: #f8f8f2;
   --term-8: #6272a4; --term-9: #ff6e6e; --term-10: #69ff94; --term-11: #ffffa5;

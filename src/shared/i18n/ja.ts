@@ -1025,4 +1025,6 @@ export const ja: Dict = {
   'mobile.funnelAllow': 'Funnel を許可する',
   'mobile.funnelPolicy': 'この tailnet はまだ Funnel を許可していません。{link} で許可してから、もう一度オンにしてください。',
   'mobile.loadFailed': 'スマートフォン接続の状態を読めませんでした: {error}',
+  // Design system: shared parts (ui.tsx), dialogs, the light default theme
+  'theme.a3light': 'ベーシック紺 ライト',
 }

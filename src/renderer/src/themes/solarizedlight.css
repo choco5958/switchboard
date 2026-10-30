@@ -10,12 +10,17 @@
   --line: #d6cdb5;
   --text: #073642;
   --quiet: #556a71;
-  --accent: #2073ae;
+  --accent: #1e6ba2;
   --accent-soft: rgba(38, 139, 210, 0.14);
   --on-accent: #fdf6e3;
   --good: #5f6e00;
   --warn: #826200;
   --bad: #c62421;
+  --line-strong: #657b83;
+  --on-good: #fdf6e3;
+  --on-warn: #fdf6e3;
+  --on-accent-soft: var(--text);
+  --focus: var(--accent);
   --term-0: #073642; --term-1: #dc322f; --term-2: #859900; --term-3: #b58900;
   --term-4: #268bd2; --term-5: #d33682; --term-6: #2aa198; --term-7: #eee8d5;
   --term-8: #002b36; --term-9: #cb4b16; --term-10: #586e75; --term-11: #657b83;
