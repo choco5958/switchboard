@@ -21,6 +21,8 @@ Claude Code、Codex、Gemini CLI のセッションが判断を尋ね、互い�
 
 <br>
 
+<p align="center"><a href="https://github.com/choco5958/switchboard/blob/main/docs/intro-en.mp4"><img src="docs/intro-en.png" width="720" alt="紹介動画 (54秒、英語)"></a></p>
+
 ![ホーム画面: プロジェクト別のタスク、判断待ち、作業ログ](docs/screenshot-home.png)
 
 セッションは人の判断が必要になると質問を判断待ちキューに載せ、答えを待たずにほかの作業を続けます。キーひとつで答えると、その答えがプロンプトとしてセッションに入ります。セッション同士で仕事をやり取りでき、席を外している間は判断の質問と権限の確認が自分の Telegram に届きます。

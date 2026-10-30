@@ -21,6 +21,8 @@ Claude Code、Codex、Gemini CLI 会话会向你请求决定、彼此委派工�
 
 <br>
 
+<p align="center"><a href="https://github.com/choco5958/switchboard/blob/main/docs/intro-en.mp4"><img src="docs/intro-en.png" width="720" alt="介绍视频 (54 秒，英文)"></a></p>
+
 ![主页: 按项目分组的任务、待决定、工作日志](docs/screenshot-home.png)
 
 会话需要人来做决定时，会把问题放进待决定队列，然后不等回答继续做别的事。你按一个键回答，答案就作为提示词回到该会话。会话之间也可以互相委派工作；你不在电脑前时，决定问题和权限确认会发到你自己的 Telegram。

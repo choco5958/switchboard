@@ -21,6 +21,8 @@ Claude Code, Codex, Gemini CLI 세션이 결정을 묻고, 서로 일을 맡기�
 
 <br>
 
+<p align="center"><a href="https://github.com/choco5958/switchboard/blob/main/docs/intro-ko.mp4"><img src="docs/intro-ko.png" width="720" alt="소개 영상 (54초)"></a></p>
+
 ![홈 화면: 프로젝트별 작업, 결정 대기, 작업 로그](docs/screenshot-home.png)
 
 세션은 사람의 결정이 필요하면 질문을 결정 대기 큐에 올리고, 답을 기다리지 않고 다른 일을 이어 갑니다. 키 하나로 답하면 그 답이 해당 세션에 프롬프트로 들어갑니다. 세션끼리 일을 주고받고, 자리를 비운 동안에는 결정 질문과 권한 확인이 내 Telegram으로 옵니다.
