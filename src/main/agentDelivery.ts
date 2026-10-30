@@ -29,8 +29,24 @@ export type DeliveryOptions = {
 
 const MENU_TELL_MS = 60_000
 
+// A command the bridge handed over to be typed (/deliveries/take).
+type Command = { id: number; kind: string; payload?: unknown }
+
 // menuSince: when a menu on screen started holding typing back; told: the person heard of it.
-type Sub = { key: string; req: ClientRequest | null; timer: ReturnType<typeof setTimeout> | null; busy: boolean; closed: boolean; menuSince: number; told: boolean }
+// dirty: something arrived while a flush was under way, so another one follows it.
+// carried: commands taken but not typed. The bridge marks a command done when it hands it
+// over, even with `hold`, so the app keeps it here and types it with the next prompt.
+type Sub = {
+  key: string
+  req: ClientRequest | null
+  timer: ReturnType<typeof setTimeout> | null
+  busy: boolean
+  dirty: boolean
+  closed: boolean
+  menuSince: number
+  told: boolean
+  carried: Command[]
+}
 
 // Sessions the app types for: not Claude Code, in a terminal of this app that is still open.
 export function typedSessions(sessions: readonly Session[], terminal: (key: string) => TypingTarget | undefined): Session[] {
@@ -77,21 +93,36 @@ export function startAgentDelivery(options: DeliveryOptions) {
       // stays undelivered, for the session's next start (codex resume and the like).
       const reply = await options.call('POST', '/deliveries/take', { sessionId, hold: true })
       const items = (reply.json.items ?? []) as { id: string }[]
+      const taken = reply.ok && Array.isArray(reply.json.commands) ? (reply.json.commands as Command[]) : []
+      const commands = [...sub.carried, ...taken]
+      // Checked again: the CLI may have started printing or shown a menu during the take.
       const still = options.terminal(sub.key)
-      if (reply.ok && still?.alive && typePrompt(still, takenText(reply.json, lang()))) {
+      const ready = reply.ok && still !== undefined && typingBlock(still, now()) === null
+      if (ready && typePrompt(still, takenText({ items: reply.json.items, commands }, lang()))) {
+        sub.carried = []
         for (const item of items) await options.call('POST', `/deliveries/${item.id}/ack`)
-      } else if (reply.ok && items.length > 0) {
-        // Not typed: a cancel now finds them still waiting, as they are.
-        await options.call('POST', '/deliveries/unhold', { ids: items.map(item => item.id) })
+      } else {
+        // Not typed: a cancel now finds the items still waiting, as they are; the commands
+        // wait here, and another try follows.
+        sub.carried = commands
+        if (reply.ok && items.length > 0) await options.call('POST', '/deliveries/unhold', { ids: items.map(item => item.id) })
+        if (reply.ok && (items.length > 0 || commands.length > 0)) sub.dirty = true
       }
     } finally {
       sub.busy = false
+      // What arrived during the flush is not left for the bridge's next push a minute later.
+      if (sub.dirty && !sub.closed) {
+        sub.dirty = false
+        schedule(sessionId, RETRY_MS)
+      }
     }
   }
 
-  const schedule = (sessionId: string) => {
+  function schedule(sessionId: string, delay = 0) {
     const sub = subs.get(sessionId)
-    if (sub && !sub.timer && !sub.busy) sub.timer = setTimeout(() => void flush(sessionId), 0)
+    if (!sub) return
+    if (sub.busy) sub.dirty = true
+    else if (!sub.timer) sub.timer = setTimeout(() => void flush(sessionId), delay)
   }
 
   const listen = (sessionId: string, sub: Sub) => {
@@ -139,7 +170,7 @@ export function startAgentDelivery(options: DeliveryOptions) {
     for (const id of [...subs.keys()]) if (!wanted.has(id) || subs.get(id)?.key !== wanted.get(id)) close(id)
     for (const [id, key] of wanted) {
       if (subs.has(id)) continue
-      const sub: Sub = { key, req: null, timer: null, busy: false, closed: false, menuSince: 0, told: false }
+      const sub: Sub = { key, req: null, timer: null, busy: false, dirty: false, closed: false, menuSince: 0, told: false, carried: [] }
       subs.set(id, sub)
       listen(id, sub)
     }
