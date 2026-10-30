@@ -24,6 +24,18 @@ export function parseDetect(out: string): Record<string, string> {
   return found
 }
 
+// The first bytes of a native program: Mach-O (both byte orders, 32 and 64 bit, universal) and ELF.
+const NATIVE = ['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf', '7f454c46']
+
+// The program names that mean a terminal's CLI is in front (cliInFront). An npm-installed CLI runs
+// as node, so node counts too, unless the command on PATH is a native program (Homebrew's codex,
+// goose): then a node in front is something the person started, a REPL, not the CLI. `head`: the
+// command file's first bytes, null when it was not found or not read (node then counts).
+export function cliBins(command: string, head: Uint8Array | null): string[] {
+  const magic = head ? Buffer.from(head.subarray(0, 4)).toString('hex') : ''
+  return [command, ...(NATIVE.includes(magic) ? [] : ['node'])].filter(Boolean)
+}
+
 // The Node that runs a terminal's MCP server, or null when there is none to use. The installed
 // app runs it with its own Node through `launcher` (src/main/runtime.ts). On Windows that
 // launcher is a .cmd, which a Node-based CLI cannot start without a shell, so only the

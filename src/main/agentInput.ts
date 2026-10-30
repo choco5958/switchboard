@@ -20,7 +20,9 @@ export function cleanText(text: string): string {
 }
 
 // What goes into the pty before Enter. Without bracketed paste a newline would submit
-// early, so the lines are joined into one.
+// early, so the lines are joined into one. Typing goes on without it too (a CLI that never
+// turns the mode on would get nothing): the menu checks before the text and before Enter
+// guard it, and a menu that comes up in between could still take keys of the text.
 export function typedInput(text: string, bracketed: boolean): string {
   const clean = cleanText(text).trim()
   if (bracketed) return `${PASTE_START}${clean}${PASTE_END}`
@@ -37,13 +39,14 @@ export function pasteModeAfter(current: boolean, output: string): boolean {
 }
 
 // The pty's foreground process is the login shell again once the CLI has quit:
-// typing then would run the answer as shell commands.
+// typing then would run the answer as shell commands. Only the program names the
+// terminal was opened for (`expect`) count as the CLI: with none, nothing does.
 export function cliInFront(foreground: string, shell: string, expect: readonly string[] = []): boolean {
   const name = (path: string) => path.split(/[\\/]/).pop()?.replace(/^-/, '').replace(/\.(exe|cmd)$/i, '').toLowerCase() ?? ''
   const front = name(foreground)
   if (front === '' || front === name(shell) || SHELL_NAMES.includes(front)) return false
   // Another program the person started there (ssh, python) is not the CLI.
-  return expect.length === 0 || expect.some(bin => name(bin) === front)
+  return expect.some(bin => name(bin) === front)
 }
 
 // A menu the CLI shows now: its own "run this command?" confirmation, or a yes/no question
@@ -96,10 +99,18 @@ export function readyToType(t: Parameters<typeof typingBlock>[0], now: number): 
   return typingBlock(t, now) === null
 }
 
+// Whether the Enter that follows the typed text may still go: the CLI is in front and no menu
+// came up since the text went in. Its echo of the text makes the screen busy, which is no reason.
+export function enterAllowed(t: Parameters<typeof typingBlock>[0] | undefined): boolean {
+  return t !== undefined && typingBlock({ ...t, lastOutput: -Infinity }, 0) === null
+}
+
 // A terminal as the answer typing sees it, at the moment it asks.
-// `expect`: the program names of the terminal's CLI; when given, only they count as it.
+// `agent`: the CLI the app opened the terminal for; a session of another agent is never typed there.
+// `expect`: the program names of the terminal's CLI; only they count as it.
 // `platform`: process.platform, which decides how the CLI in front is told (cliInFrontOn).
 export type TypingTarget = {
+  agent?: string
   alive: boolean
   shell: string
   lastOutput: number

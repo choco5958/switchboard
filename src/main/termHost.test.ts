@@ -206,6 +206,7 @@ describe.skipIf(!unix)('the terminal host', () => {
     // Linux names the program by its path (/bin/cat), macOS by its name.
     await wait(() => seen.fg.split('/').pop() === 'cat')
     const target: TypingTarget = {
+      agent: 'codex',
       alive: true,
       shell: '/bin/zsh',
       get lastOutput() {

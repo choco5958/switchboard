@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { mcpNode, parseDetect } from './agentDetect'
+import { cliBins, mcpNode, parseDetect } from './agentDetect'
 import { cliInFront } from './agentInput'
 import { isAbsolutePath, loginShell, whereScript } from './shell'
 
@@ -22,7 +22,7 @@ test('where each CLI is, from either shell, keeps absolute paths only', () => {
 test('PowerShell in front of a terminal counts as the shell, not a CLI', () => {
   expect(cliInFront('powershell.exe', 'powershell.exe')).toBe(false)
   expect(cliInFront('C:\\Windows\\System32\\cmd.exe', 'powershell.exe')).toBe(false)
-  expect(cliInFront('node.exe', 'powershell.exe')).toBe(true)
+  expect(cliInFront('node.exe', 'powershell.exe', ['node'])).toBe(true)
 })
 
 test('answers go only to the CLI the terminal started, not to ssh or python started after it', () => {
@@ -31,6 +31,20 @@ test('answers go only to the CLI the terminal started, not to ssh or python star
   expect(cliInFront('ssh', '/bin/zsh', ['codex', 'node'])).toBe(false)
   expect(cliInFront('python3', '/bin/zsh', ['codex', 'node'])).toBe(false)
   expect(cliInFront('codex.exe', 'powershell.exe', ['codex', 'node'])).toBe(true)
+  // A terminal opened for no CLI has nothing in front that counts as one.
+  expect(cliInFront('codex', '/bin/zsh', [])).toBe(false)
+  expect(cliInFront('ssh', '/bin/zsh')).toBe(false)
+})
+
+test("node counts as the CLI only when the CLI's command is no native program", () => {
+  const script = new TextEncoder().encode('#!/usr/bin/env node\n')
+  expect(cliBins('gemini', script)).toEqual(['gemini', 'node'])
+  expect(cliBins('codex', Uint8Array.from([0xcf, 0xfa, 0xed, 0xfe]))).toEqual(['codex'])
+  expect(cliBins('codex', Uint8Array.from([0xca, 0xfe, 0xba, 0xbe]))).toEqual(['codex'])
+  expect(cliBins('goose', Uint8Array.from([0x7f, 0x45, 0x4c, 0x46]))).toEqual(['goose'])
+  // Not found or not read, and a custom command: node still counts.
+  expect(cliBins('qwen', null)).toEqual(['qwen', 'node'])
+  expect(cliBins('', null)).toEqual(['node'])
 })
 
 test("the MCP server's Node: the app's own launcher, but on Windows only the person's Node", () => {

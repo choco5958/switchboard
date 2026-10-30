@@ -1,13 +1,13 @@
 import { app, type IpcMain } from 'electron'
 import { execFile } from 'node:child_process'
-import { chmodSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, mkdirSync, openSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CUSTOM_AGENTS_KEY, PRESETS, TRUST_FOLDERS_KEY, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
-import { detectScript, mcpNode, parseDetect, serverFor } from './agentDetect'
+import { cliBins, detectScript, mcpNode, parseDetect, serverFor } from './agentDetect'
 import { openTerminal } from './terminals'
 import { nodeRoot } from './appRoot'
 import { nodeLauncher } from './runtime'
@@ -61,6 +61,22 @@ function writeFiles(launch: Launch): void {
   for (const f of launch.files) writeFileSync(f.path, f.content, { mode: 0o600 })
 }
 
+// The first bytes of a program file (through its symlinks), or null when it cannot be read.
+function headOf(path: string | undefined): Uint8Array | null {
+  if (!path) return null
+  try {
+    const fd = openSync(path, 'r')
+    try {
+      const head = new Uint8Array(4)
+      return readSync(fd, head, 0, 4, 0) === 4 ? head : null
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    return null
+  }
+}
+
 type Call = (method: string, path: string, body?: unknown) => Promise<Reply>
 
 const TRUSTED_AHEAD = ['codex', 'copilot', 'cursor']
@@ -89,8 +105,8 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
     rows,
     title: preset ? preset.bin : custom!.name,
     agent: id,
-    // npm-installed CLIs run as node.
-    bins: [preset ? preset.bin : (custom!.command.trim().split(/\s+/)[0] ?? ''), 'node'].filter(Boolean),
+    // npm-installed CLIs run as node (cliBins).
+    bins: preset ? cliBins(preset.bin, headOf(found.found[preset.bin])) : cliBins(custom!.command.trim().split(/\s+/)[0] ?? '', null),
     prepare: key => {
       const server = serverFor(node ?? 'node', join(nodeRoot(), 'mcp', 'server.ts'), id, key, process.env.CLAUDE_IDE_SOCKET)
       const configFile = join(DIR, `${key}-${id}.json`)

@@ -2,7 +2,7 @@ import { request, type ClientRequest } from 'node:http'
 import { parseFrame, takenText } from '../../mod/hooks/batch.ts'
 import type { Reply, Session } from '../shared/types'
 import { getLang, type Lang } from '../shared/i18n'
-import { ENTER, ENTER_DELAY_MS, typedInput, typingBlock, type TypingTarget } from './agentInput'
+import { ENTER, ENTER_DELAY_MS, enterAllowed, typedInput, typingBlock, type TypingTarget } from './agentInput'
 import type { RequestTarget } from '../../bridge/endpoint.ts'
 
 // Answers for agent CLIs that run in one of the app's terminals. The mod types
@@ -45,16 +45,31 @@ type Sub = {
   told: boolean
 }
 
-// Sessions the app types for: not Claude Code, in a terminal of this app that is still open.
+// Sessions the app types for: not Claude Code, in a terminal of this app that is still open and
+// that the app opened for that same agent. Any process can register a session naming any
+// terminal, so the terminal's own record decides, never the session's word alone.
 export function typedSessions(sessions: readonly Session[], terminal: (key: string) => TypingTarget | undefined): Session[] {
-  return sessions.filter(s => s.agent && s.agent !== 'claude' && s.terminal && terminal(s.terminal)?.alive)
+  return sessions.filter(s => {
+    const target = s.agent && s.agent !== 'claude' && s.terminal ? terminal(s.terminal) : undefined
+    return !!target?.alive && target.agent === s.agent && (target.expect?.length ?? 0) > 0
+  })
 }
 
 // Writes one prompt: the paste, then Enter after a pause. Returns false when there was nothing to type.
-export function typePrompt(target: TypingTarget, text: string, later: (fn: () => void, ms: number) => void = setTimeout): boolean {
+// `again`: the terminal as it is when Enter is due. A menu that came up in between, or the CLI
+// gone from the front, keeps Enter back: the text then waits in the CLI's input for the person.
+export function typePrompt(
+  target: TypingTarget,
+  text: string,
+  later: (fn: () => void, ms: number) => void = setTimeout,
+  again: () => TypingTarget | undefined = () => target,
+): boolean {
   if (!text.trim()) return false
   target.write(typedInput(text, target.paste))
-  later(() => target.write(ENTER), ENTER_DELAY_MS)
+  later(() => {
+    const now = again()
+    if (now && enterAllowed(now)) now.write(ENTER)
+  }, ENTER_DELAY_MS)
   return true
 }
 
@@ -95,7 +110,7 @@ export function startAgentDelivery(options: DeliveryOptions) {
       // Checked again: the CLI may have started printing or shown a menu during the take.
       const still = options.terminal(sub.key)
       const ready = reply.ok && still !== undefined && typingBlock(still, now()) === null
-      if (ready && typePrompt(still, takenText({ items: reply.json.items, commands }, lang()))) {
+      if (ready && typePrompt(still, takenText({ items: reply.json.items, commands }, lang()), setTimeout, () => options.terminal(sub.key))) {
         for (const item of items) await options.call('POST', `/deliveries/${item.id}/ack`)
         for (const command of commands) await options.call('POST', `/commands/${command.id}/done`, { result: { ok: true } })
       } else {
