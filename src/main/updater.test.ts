@@ -88,7 +88,7 @@ describe('updates', () => {
 
   it('tells which version a check refused for its signature', async () => {
     const refused: string[] = []
-    const checker = { isUpdateSupported: () => true }
+    const checker: { isUpdateSupported: (info: UpdateInfo) => boolean | Promise<boolean> } = { isUpdateSupported: () => true }
     requireSignature(checker, () => Promise.reject(new Error('bad signature')), info => refused.push(info.version))
     expect(await checker.isUpdateSupported({ version: '0.3.8' } as UpdateInfo)).toBe(false)
     expect(refused).toEqual(['0.3.8'])
