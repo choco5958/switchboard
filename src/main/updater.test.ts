@@ -1,18 +1,25 @@
 import { describe, expect, it, vi } from 'vitest'
-import { installsUpdates, stopBridgeNow } from './updater'
+import { installsUpdates, stopBridgeNow, terminalsClosing } from './updater'
 
 // The real modules would install Electron's binary while the tests run, and two workers doing
 // that at once collide (CI). These tests touch neither.
-vi.mock('electron', () => ({ app: {}, Notification: class {}, shell: {} }))
+vi.mock('electron', () => ({ app: {}, dialog: {}, Notification: class {}, powerMonitor: {}, shell: {} }))
 vi.mock('electron-updater', () => ({ default: { autoUpdater: {} } }))
 
 describe('updates', () => {
-  it('only Windows and the Linux AppImage install updates themselves', () => {
+  it('electron-updater installs only on Windows and the Linux AppImage (macOS: macUpdate.ts)', () => {
     expect(installsUpdates('win32', {})).toBe(true)
     expect(installsUpdates('linux', { APPIMAGE: '/home/me/Switchboard.AppImage' })).toBe(true)
     // A .deb: electron-updater would run pkexec or sudo for it.
     expect(installsUpdates('linux', {})).toBe(false)
     expect(installsUpdates('darwin', { APPIMAGE: '/x' })).toBe(false)
+  })
+
+  it('asks before installing now only while app terminals run, naming how many close', () => {
+    expect(terminalsClosing([])).toBe(0)
+    // Terminals whose shell has exited close with nothing running in them.
+    expect(terminalsClosing([{ alive: false }, { alive: false }])).toBe(0)
+    expect(terminalsClosing([{ alive: true }, { alive: false }, { alive: true }])).toBe(2)
   })
 
   it('stops the bridge serving at quit time, not one remembered from the download', async () => {

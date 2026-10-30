@@ -1,7 +1,7 @@
 // Switchboard bridge: one local process that every project's Claude Code session
 // (through the mod) and the Electron IDE talk to over a Unix socket.
 // Run directly with Node 24 (type stripping): node bridge/server.ts
-import { createServer } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { connect } from 'node:net'
 import { Readable } from 'node:stream'
@@ -2448,13 +2448,54 @@ function isAnswering(socketPath: string): Promise<boolean> {
   })
 }
 
+// The pid of the bridge answering on the socket when it runs without the app's key, else null.
+function keylessPid(socketPath: string): Promise<number | null> {
+  return new Promise(resolve => {
+    const req = httpRequest({ socketPath, path: '/health', timeout: 1000 }, res => {
+      let text = ''
+      res.on('data', chunk => (text += String(chunk)))
+      res.on('end', () => {
+        try {
+          const health = JSON.parse(text) as { app?: unknown; pid?: unknown }
+          resolve(health.app === false && typeof health.pid === 'number' && health.pid !== process.pid ? health.pid : null)
+        } catch {
+          resolve(null)
+        }
+      })
+    })
+    req.on('timeout', () => req.destroy())
+    req.on('error', () => resolve(null))
+    req.end()
+  })
+}
+
+// Stops a bridge and waits until its process is gone: an exiting bridge removes its socket
+// file as it closes, which must not happen after this one has made its own.
+async function stopped(pid: number, waitMs = 3000): Promise<boolean> {
+  try {
+    process.kill(pid)
+  } catch {
+    return !alive(pid)
+  }
+  for (let waited = 0; waited < waitMs && alive(pid); waited += 50) await new Promise(resolve => setTimeout(resolve, 50))
+  return !alive(pid)
+}
+
 // A live socket means another bridge already serves it (the IDE and a mod can
 // both try to start one at once): refuse rather than take the socket over.
-export async function listen(server: Server, socketPath: string): Promise<void> {
+// Except the app's own bridge (`ownsKey`) over one a session started without the key: the app
+// would replace that one anyway (src/main/index.ts ensureOwnBridge), and taking over at once
+// keeps a session that restarts the bridge while the app replaces it (an update) from leaving
+// a bridge the app cannot use.
+export async function listen(server: Server, socketPath: string, ownsKey = false): Promise<void> {
   privateDir(dirname(socketPath))
   if (existsSync(socketPath)) {
-    if (await isAnswering(socketPath)) throw new Error(tIn(resolveLang(undefined, systemLocale()), 'bridge.alreadyRunning', { where: socketPath }))
-    unlinkSync(socketPath)
+    if (await isAnswering(socketPath)) {
+      const pid = ownsKey ? await keylessPid(socketPath) : null
+      if (pid === null || !(await stopped(pid))) throw new Error(tIn(resolveLang(undefined, systemLocale()), 'bridge.alreadyRunning', { where: socketPath }))
+      console.log(`claude-ide bridge: replaced bridge ${pid}, which ran without the app's key`)
+    }
+    rmSync(socketPath, { force: true })
   }
   // Created private: no moment where the socket is open to others before the chmod.
   const mask = process.umask(0o077)
@@ -2492,7 +2533,7 @@ if (import.meta.main) {
   }
   try {
     let where = defaultSocketPath()
-    if (token === undefined) await listen(bridge.server, where)
+    if (token === undefined) await listen(bridge.server, where, appKey !== undefined)
     else where = `127.0.0.1:${await listenTcp(bridge.server, token)}`
     console.log(`claude-ide bridge listening on ${where}`)
     const serving = servingCheck(token === undefined ? { socketPath: where } : { home: homedir() })

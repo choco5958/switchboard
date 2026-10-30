@@ -12,7 +12,7 @@ import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
 import { BROWSER_PARTITION, BROWSER_WORLD, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
-import { onTerminalsChange, openClaudeIn, registerTerminals, typingTarget } from './terminals'
+import { onTerminalsChange, openClaudeIn, registerTerminals, terminalStates, typingTarget } from './terminals'
 import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
@@ -630,7 +630,7 @@ app.whenReady().then(async () => {
   startUpdates(async () => {
     const health = await call('GET', '/health')
     return health.ok && typeof health.json.pid === 'number' ? health.json.pid : null
-  })
+  }, terminalStates)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

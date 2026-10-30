@@ -1208,6 +1208,44 @@ describe("the database over the bridge's life", () => {
     rmSync(home, { recursive: true, force: true })
   })
 
+  test("the app's own bridge takes the socket over from one a session started without the key", async () => {
+    const home = mkdtempSync(join(tmpdir(), 'sb-take-'))
+    const sock = join(home, 'b.sock')
+    const child = spawn(process.execPath, [join(import.meta.dirname, 'server.ts')], {
+      env: { ...process.env, CLAUDE_IDE_SOCKET: sock, CLAUDE_IDE_DB: join(home, 'keyless.db') },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    await new Promise<void>((resolve, reject) => {
+      let out = ''
+      child.stdout!.on('data', chunk => {
+        out += String(chunk)
+        if (out.includes('listening')) resolve()
+        if (out.includes('not started')) reject(new Error(out))
+      })
+      child.on('error', reject)
+    })
+    const exited = new Promise<number | null>(resolve => child.on('exit', code => resolve(code)))
+    // Without the key it refuses, as before.
+    const keyless = createBridge(join(home, 'second.db'), 'ko-KR')
+    await assert.rejects(listen(keyless.server, sock), /이미|already|すでに|已在/)
+    keyless.db.close()
+    const own = createBridge(join(home, 'own.db'), 'ko-KR', { appKey: APP_KEY })
+    await listen(own.server, sock, true)
+    assert.equal(await exited, 0)
+    const health = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const req = request({ socketPath: sock, path: '/health' }, res => {
+        let text = ''
+        res.on('data', chunk => (text += String(chunk)))
+        res.on('end', () => resolve(JSON.parse(text)))
+      })
+      req.on('error', reject)
+      req.end()
+    })
+    assert.equal(health.app, true)
+    own.close()
+    rmSync(home, { recursive: true, force: true })
+  })
+
   test('pruning checkpoints the WAL back to nothing', async () => {
     await call('POST', '/sessions', { id: 'wal-1', cwd: '/w/wal' })
     for (let i = 0; i < 20; i++) await call('POST', '/events', { sessionId: 'wal-1', text: `기록 ${i} ${'x'.repeat(400)}` })
