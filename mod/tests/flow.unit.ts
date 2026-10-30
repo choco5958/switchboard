@@ -125,14 +125,14 @@ test('the progress bar fills by finished nodes', () => {
 test('counters and the subagent line', () => {
   const counts = countsOf(snapshot)
   assert.deepEqual(counts, { running: 1, completed: 1, waitingTasks: 1, decisions: 2 })
-  assert.equal(countsLine(counts), '실행 1  끝남 1  작업 대기 1  결정 2')
+  assert.equal(countsLine(counts), '실행 1  완료 1  작업 대기 1  결정 2')
   assert.equal(agentLine(snapshot.agents), '▸ 서브에이전트 2개 (끝난 1개 포함)')
   assert.equal(agentLine(snapshot.agents, true), '▾ 서브에이전트 2개 (끝난 1개 포함)')
   assert.deepEqual(
     countChips(counts).map(c => [c.label, c.color]),
     [
       ['실행 1', 'warning'],
-      ['끝남 1', 'success'],
+      ['완료 1', 'success'],
       ['작업 대기 1', 'suggestion'],
       ['결정 2', 'claude'],
     ],
@@ -183,7 +183,7 @@ test('the local summary has a line per task and one for the session', () => {
   const lines = summaryLines(snapshot)
   assert.equal(lines.length, 3)
   assert.match(lines[0]!, /^#12 정답지 고도화: 작업 단계, 하는 중, 노드 1\/5 끝, 지금 고도화 구현, 다음 원문 읽기, 실패 배포$/)
-  assert.equal(lines[2], '작업 2개, 결정 대기 2건, 서브에이전트 실행 1개, 끝남 1개')
+  assert.equal(lines[2], '작업 2개, 결정 대기 2건, 서브에이전트 실행 1개, 완료 1개')
 })
 
 function node(key: string, after: string[], status = '대기', extra: Partial<FlowNode> = {}): FlowNode {
@@ -219,8 +219,10 @@ test('the graph wraps its columns to the width', () => {
 
 test('a node box holds kind and title, then owner and status', () => {
   const nodes = snapshot.nodes
-  assert.deepEqual(nodeBox(nodes[0]!, nodes, 24), ['✓ 구현 IR 추출', '작업자, 끝'])
-  assert.deepEqual(nodeBox(nodes[1]!, nodes, 24), ['● 구현 고도화 구현', '작업자, 지금, 2회차'])
+  assert.deepEqual(nodeBox(nodes[0]!, nodes, 24), ['✓ 구현 IR 추출', '서브에이전트, 끝'])
+  // "서브에이전트" is wide: at 24 cells the round is cut.
+  assert.deepEqual(nodeBox(nodes[1]!, nodes, 24), ['● 구현 고도화 구현', '서브에이전트, 지금, 2회…'])
+  assert.deepEqual(nodeBox(nodes[1]!, nodes, 28), ['● 구현 고도화 구현', '서브에이전트, 지금, 2회차'])
   assert.deepEqual(nodeBox(nodes[2]!, nodes, 24), ['○ 검토 독립 검토', '검토자, 남음'])
   // Hangul counts two cells: a narrow box cuts the title.
   const [head] = nodeBox(nodes[1]!, nodes, 12)

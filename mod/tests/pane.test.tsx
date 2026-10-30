@@ -171,7 +171,7 @@ test('the pane shows this session\'s flow, on every surface', async ($, on) => {
     expect((await ui.find({ key: 'tab-decisions' }))?.text).toBe('2: 결정 대기 1')
     for (const [label, color] of [
       [' 실행 1 ', 'warning'],
-      [' 끝남 1 ', 'success'],
+      [' 완료 1 ', 'success'],
       [' 작업 대기 1 ', 'suggestion'],
       [' 결정 1 ', 'claude'],
     ] as const) {
@@ -183,7 +183,7 @@ test('the pane shows this session\'s flow, on every surface', async ($, on) => {
     // A box per node: kind and title, then owner and where it stands.
     expect(await ui.find({ type: 'Text', text: '✓ 구현 IR 추출' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '✓ 확인 원문 읽기' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '작업자, 지금, 2회차' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^서브에이전트, 지금, 2회/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '검토자, 남음' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '작업자 주석 고친 뒤 AI 검수 재채점' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '실행 중' })).toBeDefined()
@@ -215,7 +215,7 @@ test('keys 1 and 2 switch tabs, p toggles the local summary', async ($, on) => {
 
     await ui.press({ key: 'summary' })
     expect(await ui.find({ type: 'Text', text: /노드 2\/4 끝, 지금 고도화 구현/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '작업 2개, 결정 대기 1건, 서브에이전트 실행 1개, 끝남 1개' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '작업 2개, 결정 대기 1건, 서브에이전트 실행 1개, 완료 1개' })).toBeDefined()
     await ui.press({ key: 'summary' })
     expect(await ui.find({ type: 'Text', text: /노드 2\/4 끝/ })).toBeUndefined()
     await ui.unmount()
@@ -527,7 +527,7 @@ test('with lang set to en, the pane, band, prompts and command speak English', a
     expect((await ui.find({ type: 'Text', text: /2\/4/ }))?.text).toBe('██░░ 2/4  Active')
     expect(await ui.find({ type: 'Text', text: 'feat/calc-edit-integration, PR #293, Orchestrator plan' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '✓ Build IR 추출' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'Worker, now, round 2' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Subagent, now, round/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Reviewer, left' })).toBeDefined()
     expect((await ui.find({ key: 'agents-7' }))?.text).toBe('▸ 2 subagents (1 done)')
     expect((await ui.find({ key: 'summary' }))?.text).toBe('Summary (p)')

@@ -81,6 +81,9 @@ test('t puts values in and picks English plurals', () => {
   assert.equal(t('en', 'tool.taskDone', { title: '{n}' }), 'Updated task "{n}".')
 })
 
+// Stored values whose Korean label follows docs/용어.md instead of the value itself.
+const RENAMED: Record<string, string> = { 'owner.작업자': '서브에이전트', 'event.작업자': '서브에이전트' }
+
 test('stored values show as labels; Korean labels are the values, unknown ones pass through', () => {
   const groups: [(lang: Lang, value: string) => string, string][] = [
     [stageLabel, 'stage'],
@@ -96,7 +99,7 @@ test('stored values show as labels; Korean labels are the values, unknown ones p
       .map(key => key.slice(prefix.length + 1))
     assert.ok(values.length > 0, prefix)
     for (const value of values) {
-      assert.equal(label('ko', value), value)
+      assert.equal(label('ko', value), RENAMED[`${prefix}.${value}`] ?? value)
       for (const lang of ['en', 'ja', 'zh-CN'] as const) assert.doesNotMatch(label(lang, value), /[\uac00-\ud7a3]/, `${lang} ${value}`)
     }
     assert.equal(label('en', '모르는 값'), '모르는 값')
@@ -128,5 +131,5 @@ test('flow, batch and devtool lines follow the language and keep Korean by defau
     pendingLine({ id: 3, task_title: '', question: 'Q?', recommend: 'a', options: '[{"key":"a","label":"Yes"}]' }, 'en'),
     '- Q3 [no task] Q? recommended ➡ (a) Yes',
   )
-  assert.equal(openResultText({ ok: false, status: 502, json: {} }, 'en'), 'Could not open it in the IDE: status 502')
+  assert.equal(openResultText({ ok: false, status: 502, json: {} }, 'en'), 'Could not open it in Switchboard: status 502')
 })

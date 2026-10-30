@@ -1,7 +1,8 @@
 // Korean, the source language: its keys define every other dictionary.
 // {name} puts a value in; the other languages use the same names.
 // Keys under stage., taskStatus., nodeStatus., kind., owner. and event. are the
-// bridge's stored Korean values; their Korean labels are the values themselves.
+// bridge's stored Korean values; their Korean labels are the values themselves, except
+// where docs/용어.md names the thing otherwise (작업자 shows as 서브에이전트).
 export const ko = {
   // The pane
   'pane.reportPrompt':
@@ -58,7 +59,7 @@ export const ko = {
   'mark.left': '남음',
   'mark.failed': '실패',
   'chip.running': '실행 {n}',
-  'chip.completed': '끝남 {n}',
+  'chip.completed': '완료 {n}',
   'chip.waiting': '작업 대기 {n}',
   'chip.decisions': '결정 {n}',
   'flow.agents': '서브에이전트 {n}개 (끝난 {done}개 포함)',
@@ -76,7 +77,7 @@ export const ko = {
   'summary.now': '지금 {titles}',
   'summary.next': '다음 {titles}',
   'summary.failed': '실패 {titles}',
-  'summary.total': '작업 {tasks}개, 결정 대기 {decisions}건, 서브에이전트 실행 {running}개, 끝남 {completed}개',
+  'summary.total': '작업 {tasks}개, 결정 대기 {decisions}건, 서브에이전트 실행 {running}개, 완료 {completed}개',
   'agent.running': '실행 중',
   'agent.completed': '끝',
   'agent.failed': '실패',
@@ -110,7 +111,7 @@ export const ko = {
   'mod.stopped': 'IDE에서 정지했습니다. 도구를 더 쓰지 말고, 지금까지 한 일과 남은 일을 짧게 보고하고 끝내세요.',
   'mod.message': '[Switchboard에서 온 말] {text}',
   'mod.unknownCommand': '알 수 없는 명령: {kind}',
-  'mod.denyStopped': 'IDE에서 정지한 작업자입니다. 도구를 쓰지 말고 지금까지 한 일을 보고하고 끝내세요.',
+  'mod.denyStopped': 'Switchboard에서 정지한 서브에이전트입니다. 도구를 쓰지 말고 지금까지 한 일을 보고하고 끝내세요.',
   'mod.denyPaused': 'IDE에서 일시정지했습니다. 도구를 쓰지 말고 재개 메시지가 올 때까지 기다리세요.',
   'mod.agentStart': '시작: {text}',
   'mod.agentEnd': '끝: {text}',
@@ -146,31 +147,31 @@ export const ko = {
   'tool.askedAgain': '같은 질문이 이미 Q{id}로 올라가 있습니다. 다시 올리지 말고 다른 작업을 계속하세요.',
   'tool.taskFailed': '작업을 갱신하지 못했습니다: {error}',
   'tool.taskFailedPlain': '작업을 갱신하지 못했습니다.',
-  'tool.taskDone': '작업 "{title}"을 갱신했습니다.',
+  'tool.taskDone': '작업을 갱신했습니다: "{title}"',
   'tool.planFailed': '계획을 올리지 못했습니다: {error}',
   'tool.planFailedPlain': '계획을 올리지 못했습니다.',
   'tool.planDone': '노드 {n}개를 올렸습니다.',
   'tool.nodeFailed': '노드를 갱신하지 못했습니다: {error}',
   'tool.nodeFailedPlain': '노드를 갱신하지 못했습니다.',
   'tool.nodeDone': '노드 {key}: {status} ({round}회차)',
-  'wt.notRepo': '{path}은(는) git 레포가 아니라 워크트리를 만들 수 없습니다. repo에 레포 경로를 적어 다시 부르세요.',
-  'wt.badBase': '기준 브랜치 {base}는 쓸 수 없습니다. -로 시작하지 않는 브랜치 이름을 적어 다시 부르세요.',
-  'wt.outside': '{path}은(는) 세션 폴더 밖이라 워크트리를 만들 수 없습니다. repo에는 세션 폴더 안의 레포만 적을 수 있습니다.',
-  'wt.repoAddFailed': 'Orca에 레포를 등록하지 못했습니다: {error}',
+  'wt.notRepo': 'git 저장소가 아니라 워크트리를 만들 수 없습니다: {path}. repo에 저장소 경로를 적어 다시 부르세요.',
+  'wt.badBase': '쓸 수 없는 기준 브랜치입니다: {base}. -로 시작하지 않는 브랜치 이름을 적어 다시 부르세요.',
+  'wt.outside': '세션 폴더 밖이라 워크트리를 만들 수 없습니다: {path}. repo에는 세션 폴더 안의 저장소만 적을 수 있습니다.',
+  'wt.repoAddFailed': 'Orca에 저장소를 등록하지 못했습니다: {error}',
   'wt.createFailed': '워크트리를 만들지 못했습니다: {error}',
   'wt.createFailedPlain': '워크트리를 만들지 못했습니다.',
   'wt.saveFailed': ' (IDE 기록 실패: {error})',
   'wt.created':
     '워크트리를 만들었습니다{note}.\n경로: {path}\n브랜치: {branch}\n' +
     '이 노드를 맡길 서브에이전트의 프롬프트에 이 경로를 적고, 그 경로 안에서만 파일을 고치고 커밋하게 하세요.',
-  'dev.failed': 'IDE에서 열지 못했습니다: {error}',
+  'dev.failed': 'Switchboard에서 열지 못했습니다: {error}',
   'dev.status': '상태 {n}',
-  'dev.opening': 'IDE의 다이나믹 디버깅 탭에서 {url}을(를) 엽니다.',
-  'dev.created': '개발 서버 대상 "{name}"을(를) 새로 등록했습니다. IDE가 서버를 띄우고 응답하면 페이지를 엽니다.',
-  'dev.restart': '개발 서버 대상 "{name}"을(를) 고쳤습니다. IDE가 서버를 새로 띄웁니다.',
-  'dev.existing': '개발 서버 대상 "{name}"의 페이지입니다. 응답이 없으면 IDE가 서버를 띄웁니다.',
+  'dev.opening': 'Switchboard의 화면 보며 고치기 탭에서 엽니다: {url}',
+  'dev.created': '개발 서버 대상을 새로 등록했습니다: "{name}". Switchboard가 서버를 띄우고 응답하면 페이지를 엽니다.',
+  'dev.restart': '개발 서버 대상을 고쳤습니다: "{name}". Switchboard가 서버를 새로 띄웁니다.',
+  'dev.existing': '개발 서버 대상 "{name}"의 페이지입니다. 응답이 없으면 Switchboard가 서버를 띄웁니다.',
   'dev.appOff': '지금 Switchboard 앱이 꺼져 있습니다. 앱을 2분 안에 켜면 이 요청을 이어서 엽니다.',
-  'dev.unreachable': 'IDE에서 열지 못했습니다. 브리지에 연결할 수 없습니다.',
+  'dev.unreachable': 'Switchboard에서 열지 못했습니다. 백그라운드 서버에 연결할 수 없습니다.',
 
   // Deliveries
   'batch.head': '[Switchboard] 세션이 일하는 동안 {n}건이 도착했습니다. 아래를 모두 읽고 각각에 맞게 이어서 진행하세요.',
@@ -197,7 +198,7 @@ export const ko = {
   'kind.구현': '구현',
   'kind.검토': '검토',
   'kind.기타': '기타',
-  'owner.작업자': '작업자',
+  'owner.작업자': '서브에이전트',
   'owner.검토자': '검토자',
   'owner.사용자': '사용자',
   'owner.오케스트레이터': '오케스트레이터',
@@ -215,7 +216,7 @@ export const ko = {
   'event.실패': '실패',
   'event.대기': '대기',
   'event.메시지': '메시지',
-  'event.작업자': '작업자',
+  'event.작업자': '서브에이전트',
   'event.에이전트': '에이전트',
   'event.로그': '로그',
   // The Switchboard MCP server (mcp/server.ts) for agent CLIs other than Claude Code
