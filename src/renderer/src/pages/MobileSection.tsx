@@ -5,10 +5,12 @@ import { useToast } from '../parts'
 
 // Settings: phones that open the bridge's phone page (bridge/mobile.ts). Each phone is paired
 // with a QR code that carries its own key; the bridge never hands the key out again, so the
-// code is shown once.
+// code is shown once. The bridge is told which address the QR code links to: a key that goes
+// out in a plain HTTP link may not allow or write later, so one shown key never moves to
+// another address (changing the address hides it).
 
 type Address = { address: string; kind: 'name' | 'lan' | 'tailscale' | 'https'; url: string }
-type Device = { id: number; name: string; created_at: number; last_seen: number | null }
+type Device = { id: number; name: string; created_at: number; last_seen: number | null; strong: boolean; code: boolean }
 type Tailscale = { installed: boolean; domain: string; served: boolean; busy: boolean; funnel: boolean; funnelAllowed: boolean; funnelLink: string }
 type Status = { enabled: boolean; listening: boolean; port: number; error: string; lan: boolean; addresses: Address[]; devices: Device[]; tailscale: Tailscale }
 
@@ -58,7 +60,8 @@ export function MobileSection() {
   const [status, setStatus] = useState<Status | null>(null)
   const [address, setAddress] = useState('')
   const [name, setName] = useState('')
-  const [shown, setShown] = useState<{ id: number; key: string; code: string } | null>(null)
+  // `url`: the address this key was paired for, the only one its QR code may link to.
+  const [shown, setShown] = useState<{ id: number; key: string; code: string; url: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState('')
   // A Tailscale failure, kept on screen: its text often names a page to open.
@@ -82,6 +85,12 @@ export function MobileSection() {
     }
   }, [load])
 
+  const chosen = status ? (status.addresses.find(a => a.address === address) ?? status.addresses[0]) : undefined
+  // Another address picked (or the list changed under the QR code): that key stays with its own.
+  useEffect(() => {
+    if (shown && chosen?.url !== shown.url) setShown(null)
+  }, [shown, chosen?.url])
+
   const post = async (path: string, body?: unknown) => {
     setBusy(true)
     const reply = await window.ide.bridge('POST', path, body)
@@ -99,7 +108,9 @@ export function MobileSection() {
       </section>
     )
   }
-  const chosen = status.addresses.find(a => a.address === address) ?? status.addresses[0]
+  const showing = shown && chosen && shown.url === chosen.url ? shown : null
+  // The code goes once it is used, its phone comes with the QR code, or ten minutes pass.
+  const codeOpen = showing ? (status.devices.find(d => d.id === showing.id)?.code ?? false) : false
   return (
     <section id="settings-mobile" className="settings-row mobile">
       <h2>{t('mobile.title')}</h2>
@@ -141,16 +152,20 @@ export function MobileSection() {
                 </select>
               </label>
               {chosen?.kind === 'name' && <p className="quiet small">{t('mobile.nameHint')}</p>}
-              {!shown && (
+              {!showing && (
                 <div className="mobile-add actions">
                   <input placeholder={t('mobile.namePlaceholder')} aria-label={t('mobile.deviceName')} value={name} maxLength={60} onChange={e => setName(e.target.value)} />
                   <button
                     className="primary"
                     disabled={busy || !chosen}
                     onClick={async () => {
-                      const reply = await post('/mobile/pair', { name: name.trim() })
+                      if (!chosen) return
+                      const reply = await post('/mobile/pair', { name: name.trim(), kind: chosen.kind })
                       if (reply.ok) {
-                        setShown(reply.json as unknown as { id: number; key: string; code: string })
+                        // The new phone in the list first, so its open code shows.
+                        await load()
+                        setAddress(chosen.address)
+                        setShown({ ...(reply.json as unknown as { id: number; key: string; code: string }), url: chosen.url })
                         setName('')
                       }
                     }}
@@ -159,12 +174,13 @@ export function MobileSection() {
                   </button>
                 </div>
               )}
-              {shown && chosen && (
+              {showing && (
                 <div className="mobile-shown">
-                  <QrCode text={pairLink(chosen.url, shown.id, shown.key)} />
+                  <QrCode text={pairLink(showing.url, showing.id, showing.key)} />
                   <div>
                     <p className="small">{t('mobile.scan')}</p>
-                    {shown.code && <p className="small">{t('mobile.code', { code: `${shown.code.slice(0, 4)}-${shown.code.slice(4)}` })}</p>}
+                    {showing.code && codeOpen && <p className="small">{t('mobile.code', { code: `${showing.code.slice(0, 4)}-${showing.code.slice(4)}` })}</p>}
+                    {showing.code && !codeOpen && <p className="quiet small">{t('mobile.codeGone')}</p>}
                     <div className="actions">
                       <button onClick={() => setShown(null)}>{t('mobile.done')}</button>
                     </div>
@@ -261,6 +277,7 @@ export function MobileSection() {
             <li key={d.id}>
               <span>{d.name}</span>
               <span className="quiet small">{d.last_seen ? t('mobile.lastSeen', { time: agoText(Date.now() - d.last_seen) }) : t('mobile.never')}</span>
+              {!d.strong && <span className="quiet small">{t('mobile.weakDevice')}</span>}
               <button className="link small" disabled={busy} onClick={() => void post(`/mobile/devices/${d.id}/revoke`).then(load)}>
                 {t('mobile.revoke')}
               </button>

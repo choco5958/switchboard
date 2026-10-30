@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, listen } from './server.ts'
-import { clientOf, createMobile, mobileAddresses, mobileRouteAllowed, needsStrong, newPairCode, privateAddress, setTailscaleServe, strongTransport, tailscaleState, type Run } from './mobile.ts'
+import { clientOf, createMobile, mobileAddresses, mobileRouteAllowed, needsStrong, newPairCode, privateAddress, rateKey, setTailscaleServe, strongTransport, tailscaleState, type Run } from './mobile.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { encryptPush, pushAllowed, sendPush, validSubscription, vapidAuth, makeVapidKeys } from './push.ts'
 import { fromB64, fromUtf8, open, seal, toB64, utf8 } from './mobile/aead.js'
@@ -236,6 +236,152 @@ test('an address that keeps failing waits out the minute, before anything is dec
   await mobile.stop()
 })
 
+// A request to a phone server of its own (createMobile), with the headers Tailscale HTTPS would add.
+const raw = (port: number, method: string, path: string, body?: string, headers: Record<string, string> = {}) =>
+  new Promise<{ status: number; text: string }>((resolve, reject) => {
+    const req = request({ host: '127.0.0.1', port, method, path, headers: { 'content-type': 'application/json', ...headers } }, res => {
+      let text = ''
+      res.on('data', chunk => (text += chunk))
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, text }))
+    })
+    req.on('error', reject)
+    req.end(body)
+  })
+const sealedFor = (who: { id: number; key: string }, inner: unknown) => {
+  const nonce = randomBytes(12)
+  return JSON.stringify({ d: who.id, n: toB64(nonce), c: toB64(seal(fromB64(who.key), nonce, utf8(JSON.stringify(inner)), utf8(`sb1:req:${who.id}`))) })
+}
+const junkBody = () => JSON.stringify({ d: 1, n: toB64(randomBytes(12)), c: toB64(randomBytes(40)) })
+const quiet = () => ({ inner: async () => ({ status: 200, json: {} }), strings: () => ({}), vapid: makeVapidKeys })
+
+test('no request runs a tailscale command, and a name the bridge does not go by counts as a failure', async () => {
+  const calls: string[][] = []
+  const run: Run = async (_bin, args) => {
+    calls.push(args)
+    if (args[0] === 'status') return { ok: true, out: JSON.stringify({ BackendState: 'Running', CertDomains: ['mac.tail1.ts.net'] }) }
+    return { ok: true, out: '{}' }
+  }
+  const mobile = createMobile({ db: new DatabaseSync(':memory:'), ...quiet(), run, tailscale: '/bin/tailscale' })
+  await mobile.start(0, false)
+  const { port } = await mobile.status()
+  const phone = mobile.pair('폰', 'https')
+  const before = calls.length
+  assert.ok(before > 0, 'starting and the status look at Tailscale')
+  const host = { host: 'mac.tail1.ts.net' }
+  assert.equal((await raw(port, 'GET', '/', undefined, host)).status, 200, 'the name known since the start')
+  const routes: [string, string, string?][] = [
+    ['GET', '/app.js'],
+    ['GET', '/time'],
+    ['GET', '/strings'],
+    ['GET', '/events?d=1'],
+    ['POST', '/claim', '{"code":"ABCDEFGH"}'],
+    ['POST', '/api', junkBody()],
+    ['POST', '/api', sealedFor(phone, { t: Date.now(), method: 'GET', path: '/mobile/view' })],
+    ['GET', '/nothing'],
+  ]
+  for (const [method, path, body] of routes) await raw(port, method, path, body, host)
+  // Names under .ts.net it does not go by: refused without asking Tailscale, and counted.
+  for (let i = 0; i < 30; i++) assert.equal((await raw(port, 'GET', '/', undefined, { host: `other${i}.ts.net`, 'x-forwarded-for': '203.0.113.30' })).status, 403)
+  assert.equal(calls.length, before, 'no tailscale command ran for a request')
+  assert.equal((await raw(port, 'GET', '/time', undefined, { ...host, 'x-forwarded-for': '203.0.113.30' })).status, 429)
+  await mobile.stop()
+})
+
+test('slow uploads from one sender cannot hold every connection, and each body gets a few seconds', async () => {
+  const mobile = createMobile({ db: new DatabaseSync(':memory:'), ...quiet(), tailscale: null, bodyMs: 300 })
+  await mobile.start(0, false)
+  const { port } = await mobile.status()
+  const from = { 'x-forwarded-for': '203.0.113.40' }
+  // Headers, then one byte of a body that never comes.
+  const slow = () =>
+    new Promise<string>(resolve => {
+      const req = request({ host: '127.0.0.1', port, method: 'POST', path: '/api', agent: false, headers: { 'content-type': 'application/json', 'content-length': '20000', ...from } }, res => {
+        res.resume()
+        res.on('end', () => resolve(`answered ${res.statusCode}`))
+      })
+      req.on('error', () => resolve('closed'))
+      req.write('{')
+    })
+  const began = Date.now()
+  const hanging = Array.from({ length: 8 }, slow)
+  await new Promise(resolve => setTimeout(resolve, 100))
+  assert.equal((await raw(port, 'GET', '/time', undefined, from)).status, 429, 'eight open at once is the most')
+  assert.equal((await raw(port, 'GET', '/time', undefined, { 'x-forwarded-for': '198.51.100.40' })).status, 200, 'another phone gets in')
+  assert.deepEqual(await Promise.all(hanging), Array(8).fill('closed'))
+  assert.ok(Date.now() - began < 3000, 'cut off by the body deadline')
+  assert.equal((await raw(port, 'GET', '/time', undefined, from)).status, 200, 'its places are free again')
+  await mobile.stop()
+})
+
+test('pairing codes are tried at most thirty times a minute in all', async () => {
+  let clock = Date.now()
+  const mobile = createMobile({ db: new DatabaseSync(':memory:'), ...quiet(), tailscale: null, now: () => clock })
+  await mobile.start(0, false)
+  const { port } = await mobile.status()
+  const paired = mobile.pair('홈 화면', 'https')
+  const claim = (code: string, from: string) => raw(port, 'POST', '/claim', JSON.stringify({ code }), { 'x-forwarded-for': from })
+  for (let i = 0; i < 30; i++) assert.equal((await claim('WRONGXXX', `203.0.113.${100 + i}`)).status, 404)
+  assert.equal((await claim(paired.code, '198.51.100.60')).status, 429)
+  clock += 61_000
+  assert.equal((await claim(paired.code, '198.51.100.60')).status, 200, 'the code was kept')
+  await mobile.stop()
+})
+
+test('IPv6 senders are counted by their /64, and many senders never unblock a blocked one', async () => {
+  assert.equal(rateKey('2001:db8:1:2::9'), '2001:db8:1:2::/64')
+  assert.equal(rateKey('2001:db8:1:2:3:4:5:6'), rateKey('2001:db8:1:2::9'))
+  assert.notEqual(rateKey('2001:db8:1:3::9'), rateKey('2001:db8:1:2::9'))
+  assert.equal(rateKey('2001:DB8::1'), '2001:db8:0:0::/64')
+  assert.equal(rateKey('fe80::1%en0'), 'fe80:0:0:0::/64')
+  assert.equal(rateKey('::ffff:192.168.0.5'), '192.168.0.5')
+  assert.equal(rateKey('203.0.113.7'), '203.0.113.7')
+  const mobile = createMobile({ db: new DatabaseSync(':memory:'), ...quiet(), tailscale: null })
+  await mobile.start(0, false)
+  const { port } = await mobile.status()
+  const junk = (from: string) => raw(port, 'POST', '/api', junkBody(), { 'x-forwarded-for': from })
+  for (let i = 0; i < 30; i++) assert.equal((await junk('203.0.113.50')).status, 401)
+  assert.equal((await junk('203.0.113.50')).status, 429)
+  // More senders than the bridge keeps: the oldest that blocks nobody goes, never everyone.
+  for (let i = 0; i < 1001; i++) assert.equal((await junk(`2001:db8:${i.toString(16)}::1`)).status, 401)
+  assert.equal((await junk('203.0.113.50')).status, 429, 'still blocked')
+  // Every address of one /64 is one sender.
+  for (let i = 0; i < 30; i++) assert.equal((await junk(`2001:db8:ffff:1::${(i + 1).toString(16)}`)).status, 401)
+  assert.equal((await junk('2001:db8:ffff:1:aaaa::1')).status, 429)
+  await mobile.stop()
+})
+
+test('after a restart, a request recorded before it is refused', async () => {
+  let clock = Date.now()
+  const db = new DatabaseSync(':memory:')
+  const first = createMobile({ db, ...quiet(), tailscale: null, now: () => clock })
+  const phone = first.pair('폰', 'https')
+  await first.start(0, false)
+  const recorded = sealedFor(phone, { t: clock, method: 'GET', path: '/mobile/view' })
+  assert.equal((await raw((await first.status()).port, 'POST', '/api', recorded)).status, 200)
+  await first.stop()
+  // Thirty seconds later the bridge starts again, and no longer knows that nonce.
+  clock += 30_000
+  const second = createMobile({ db, ...quiet(), tailscale: null, now: () => clock })
+  await second.start(0, false)
+  const { port } = await second.status()
+  const replay = await raw(port, 'POST', '/api', recorded)
+  assert.equal(replay.status, 409)
+  assert.equal(JSON.parse(replay.text).now, clock, 'the page takes this time and sends again')
+  assert.equal((await raw(port, 'POST', '/api', sealedFor(phone, { t: clock, method: 'GET', path: '/mobile/view' }))).status, 200)
+  await second.stop()
+})
+
+test('phones paired before the bridge kept how count as paired over plain HTTP', async () => {
+  const db = new DatabaseSync(':memory:')
+  db.exec('create table mobile_devices (id integer primary key, name text not null, key text not null, created_at integer not null, last_seen integer, push text)')
+  db.prepare('insert into mobile_devices (name, key, created_at, last_seen) values (?, ?, ?, ?)').run('예전 폰', toB64(randomBytes(32)), Date.now(), Date.now())
+  const mobile = createMobile({ db, ...quiet(), tailscale: null })
+  const [old] = (await mobile.status()).devices
+  assert.equal(old?.strong, false)
+  assert.equal(mobile.pair('새 폰', 'https').id, 2)
+  assert.equal((await mobile.status()).devices[1]?.strong, true)
+})
+
 test('a phone reaches only what it is for', () => {
   assert.ok(mobileRouteAllowed('GET', '/mobile/view'))
   assert.ok(mobileRouteAllowed('POST', '/questions/3/answer'))
@@ -274,9 +420,9 @@ describe('a paired phone', () => {
       req.end()
     })
 
-  const http = (method: string, path: string, body?: string, host?: string): Promise<{ status: number; text: string; headers: Record<string, unknown> }> =>
+  const http = (method: string, path: string, body?: string, host?: string, extra: Record<string, string> = {}): Promise<{ status: number; text: string; headers: Record<string, unknown> }> =>
     new Promise((resolve, reject) => {
-      const headers: Record<string, string> = { 'content-type': 'application/json' }
+      const headers: Record<string, string> = { 'content-type': 'application/json', ...extra }
       if (host) headers.host = host
       const req = request({ host: '127.0.0.1', port, method, path, headers }, res => {
         let text = ''
@@ -300,12 +446,12 @@ describe('a paired phone', () => {
     const n = toB64(nonce)
     return { n, body: JSON.stringify({ d: who.id, n, c: toB64(seal(fromB64(who.key), nonce, utf8(JSON.stringify(inner)), utf8(`sb1:req:${who.id}`))) }) }
   }
-  const ask = async (method: string, path: string, body?: unknown, at = Date.now()) => {
-    const { n, body: wire } = sealed({ t: at, method, path, body })
+  const ask = async (method: string, path: string, body?: unknown, at = Date.now(), who = phone) => {
+    const { n, body: wire } = sealed({ t: at, method, path, body }, who)
     const res = await http('POST', '/api', wire)
     if (res.status !== 200) return { outer: res.status, status: 0, json: JSON.parse(res.text) as any }
     const out = JSON.parse(res.text) as { n: string; c: string }
-    const plain = open(fromB64(phone.key), fromB64(out.n), fromB64(out.c), utf8(`sb1:res:${phone.id}:${n}`))
+    const plain = open(fromB64(who.key), fromB64(out.n), fromB64(out.c), utf8(`sb1:res:${who.id}:${n}`))
     assert.ok(plain, 'the answer opens with the same key')
     return { outer: 200, ...(JSON.parse(fromUtf8(plain)) as { status: number; json: any }) }
   }
@@ -317,7 +463,8 @@ describe('a paired phone', () => {
     assert.equal(on.json.listening, true)
     port = on.json.port
     assert.equal((await call('POST', '/mobile/pair', { name: '내 아이폰' }, false)).status, 403, 'only the app pairs a phone')
-    phone = (await call('POST', '/mobile/pair', { name: '내 아이폰' })).json
+    // Shown for the Tailscale HTTPS address: it may allow and write.
+    phone = (await call('POST', '/mobile/pair', { name: '내 아이폰', kind: 'https' })).json
   })
   after(() => {
     bridge.close()
@@ -460,18 +607,77 @@ describe('a paired phone', () => {
     assert.equal((await http('GET', '/', undefined, `localhost:${port}`)).status, 200)
   })
 
-  test('a pairing code, typed on the phone instead of the QR link, works once', async () => {
-    const paired = (await call('POST', '/mobile/pair', { name: '홈 화면' })).json
+  // Each claim test comes as its own sender: tries are limited per sender.
+  const claim = (code: string, from: string) => http('POST', '/claim', JSON.stringify({ code }), undefined, { 'x-forwarded-for': from })
+  const codeOpen = async (id: number) => (await call('GET', '/mobile')).json.devices.find((d: { id: number }) => d.id === id)?.code
+
+  test('a pairing code, typed on the phone instead of the QR link, works once and hands over a key of its own', async () => {
+    // Shown for a Wi-Fi address: the QR code's key may have been read on the way.
+    const paired = (await call('POST', '/mobile/pair', { name: '홈 화면', kind: 'lan' })).json
     assert.match(paired.code, /^[A-Z2-9]{8}$/)
-    const claim = (code: string) => http('POST', '/claim', JSON.stringify({ code }))
-    const got = await claim(`${paired.code.slice(0, 4)}-${paired.code.slice(4).toLowerCase()}`)
+    assert.equal(await codeOpen(paired.id), true)
+    const got = await claim(`${paired.code.slice(0, 4)}-${paired.code.slice(4).toLowerCase()}`, '203.0.113.20')
     assert.equal(got.status, 200)
-    assert.deepEqual(JSON.parse(got.text), { id: paired.id, key: paired.key })
-    assert.equal((await claim(paired.code)).status, 404, 'once only')
-    // Guessing: after ten wrong codes every open code goes.
-    const next = (await call('POST', '/mobile/pair', { name: '또 하나' })).json
-    for (let i = 0; i < 10; i++) await claim(`WRONG${i}XX`)
-    assert.equal((await claim(next.code)).status, 404)
+    const claimed = JSON.parse(got.text) as { id: number; key: string }
+    assert.equal(claimed.id, paired.id)
+    assert.notEqual(claimed.key, paired.key, 'a new key, not the one in the QR code')
+    assert.equal(await codeOpen(paired.id), false, 'the app sees the code is gone')
+    assert.equal((await claim(paired.code, '203.0.113.20')).status, 404, 'once only')
+    const old = sealed({ t: Date.now(), method: 'GET', path: '/mobile/view' }, paired)
+    assert.equal((await http('POST', '/api', old.body)).status, 401, 'the QR code key no longer opens anything')
+    // Claimed over Tailscale HTTPS: this phone may allow.
+    assert.equal((await ask('GET', '/mobile/view', undefined, Date.now(), claimed)).json.pairedStrong, true)
+  })
+
+  test('wrong codes slow down the one guessing and leave everyone else’s codes open', async () => {
+    const next = (await call('POST', '/mobile/pair', { name: '또 하나', kind: 'https' })).json
+    for (let i = 0; i < 5; i++) assert.equal((await claim(`WRONG${i}XX`, '203.0.113.21')).status, 404)
+    assert.equal((await claim(next.code, '203.0.113.21')).status, 429, 'five tries a minute for one sender')
+    assert.equal(await codeOpen(next.id), true, 'the code is still open')
+    assert.equal((await claim(next.code, '203.0.113.22')).status, 200)
+  })
+
+  test('a code stops working once its phone comes with the QR code', async () => {
+    const paired = (await call('POST', '/mobile/pair', { name: 'QR 먼저', kind: 'https' })).json
+    assert.equal(await codeOpen(paired.id), true)
+    assert.equal((await ask('GET', '/mobile/view', undefined, Date.now(), paired)).status, 200)
+    assert.equal(await codeOpen(paired.id), false)
+    assert.equal((await claim(paired.code, '203.0.113.23')).status, 404)
+    // And the phone that came keeps its key.
+    assert.equal((await ask('GET', '/mobile/view', undefined, Date.now(), paired)).status, 200)
+  })
+
+  test('a phone paired with a link to a plain HTTP address may not allow or write, even through Tailscale', async () => {
+    await call('POST', '/sessions', { id: 'ph9', cwd: '/w/weak' })
+    for (const kind of ['lan', 'name', undefined]) {
+      const weak = (await call('POST', '/mobile/pair', { name: `HTTP ${kind}`, kind })).json
+      const view = await ask('GET', '/mobile/view', undefined, Date.now(), weak)
+      assert.equal(view.json.pairedStrong, false, String(kind))
+      const a = (await call('POST', '/approvals', { sessionId: 'ph9', tool: 'Bash', summary: 'ls', requestKey: `weak-${kind}` })).json
+      // This test comes from 127.0.0.1, as Tailscale HTTPS and Funnel do: the connection is fine.
+      const allow = await ask('POST', `/approvals/${a.id}/answer`, { decision: 'allow' }, Date.now(), weak)
+      assert.equal(allow.status, 403)
+      assert.deepEqual(allow.json, { error: 'strong', strong: true, pairAgain: true })
+      assert.equal((await ask('POST', '/outbox', { sessionId: 'ph9', text: 'x' }, Date.now(), weak)).status, 403)
+      assert.equal((await ask('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }, Date.now(), weak)).status, 200, 'denying is fine')
+    }
+    // A Tailscale address (WireGuard) keeps the key off the Wi-Fi too.
+    const viaTailscale = (await call('POST', '/mobile/pair', { name: 'Tailscale IP', kind: 'tailscale' })).json
+    assert.equal((await ask('GET', '/mobile/view', undefined, Date.now(), viaTailscale)).json.pairedStrong, true)
+    const devices = (await call('GET', '/mobile')).json.devices as { name: string; strong: boolean }[]
+    assert.equal(devices.find(d => d.name === 'HTTP lan')?.strong, false)
+    assert.equal(devices.find(d => d.name === 'Tailscale IP')?.strong, true)
+  })
+
+  test('the largest memo the page lets a person write fits, and a body larger than any real one is refused unread', async () => {
+    await call('POST', '/sessions', { id: 'ph8', cwd: '/w/long' })
+    const q = (await call('POST', '/questions', { sessionId: 'ph8', question: '길게?' })).json
+    // TEXT_MAX in mobile/app.js: 4000 characters, three bytes each.
+    assert.equal((await ask('POST', `/questions/${q.id}/answer`, { memo: '가'.repeat(4000) })).status, 200)
+    const big = JSON.stringify({ d: phone.id, n: toB64(randomBytes(12)), c: 'A'.repeat(40_000) })
+    // Answered 413 and closed at once: the client may see the close before the answer.
+    const refused = await http('POST', '/api', big, undefined, { 'x-forwarded-for': '203.0.113.24' }).catch(() => ({ status: 413 }))
+    assert.equal(refused.status, 413)
   })
 
   test('with phones turned off, no notification goes out', async () => {

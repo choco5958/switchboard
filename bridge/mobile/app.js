@@ -36,12 +36,19 @@ const FALLBACK = {
   homeNeedsHttps: 'A home screen app on iPhone connects only through the Tailscale HTTPS address. On the same Wi-Fi, open the QR link in Safari and use it there.',
   revoked: 'This phone was disconnected. Show a new QR code in the app to connect again.',
   offline: 'Cannot reach the computer. Check that it is on and on the same network.',
+  pairAgain: 'This phone was connected with a QR code for a Wi-Fi (HTTP) address, so it cannot allow permission asks or write to sessions. To do both, show a new QR code for the Tailscale HTTPS address in the app and scan it.',
 }
 const say = (key, vars = {}) => String(words[`mobile.page.${key}`] ?? FALLBACK[key] ?? '').replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ''))
 
 // Over Tailscale (HTTPS, or a 100.64.0.0/10 address) the page cannot have been swapped on the
 // way, and only then may it allow a permission ask or write to a session (bridge/mobile.ts).
 const strong = () => isSecureContext || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(location.hostname) || location.hostname === 'localhost'
+// The phone must also have been paired through such an address: a key that went out in a link to
+// a plain HTTP address may have been read on the way, so the bridge refuses it both (pairedStrong).
+const mayStrong = () => strong() && view?.pairedStrong !== false
+const strongWhy = () => say(strong() ? 'pairAgain' : 'needStrong')
+// The longest memo or message: the bridge refuses a request much larger (bridge/mobile.ts API_MAX).
+const TEXT_MAX = 4000
 
 // el('div', { className, onclick, ... }, ...children): strings become text, never markup.
 function el(tag, props = {}, ...children) {
@@ -138,7 +145,7 @@ function trouble(error) {
 async function act(method, path, body, done) {
   try {
     const result = await api(method, path, body)
-    if (result.json?.strong) return flash(say('needStrong'), true)
+    if (result.json?.strong) return flash(say(result.json.pairAgain ? 'pairAgain' : 'needStrong'), true)
     if (result.status >= 400) return flash(say('failed', { error: result.json?.error ?? result.status }), true)
     if (done) flash(done)
   } catch (error) {
@@ -376,7 +383,7 @@ function drawDecisions() {
             ),
           )
         : null,
-      el('textarea', { placeholder: say('memo'), value: memo, oninput: e => memos.set(q.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
+      el('textarea', { placeholder: say('memo'), value: memo, maxLength: TEXT_MAX, oninput: e => memos.set(q.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
       el(
         'div',
         { className: 'actions' },
@@ -420,7 +427,7 @@ function drawApprovals() {
             className: `btn ${armed === a.id ? 'armed' : 'allow'}`,
             // Allowing runs the command: the first tap only arms the button for five seconds.
             onclick: () => {
-              if (!strong()) return flash(say('needStrong'), true)
+              if (!mayStrong()) return flash(strongWhy(), true)
               if (armed !== a.id) {
                 armed = a.id
                 clearTimeout(armTimer)
@@ -436,7 +443,7 @@ function drawApprovals() {
         el('button', { className: 'btn deny', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }) }, say('deny')),
       ),
       el('div', { className: 'actions' }, el('button', { className: 'btn', onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'terminal' }) }, say('terminal'))),
-      el('p', { className: 'small' }, say(strong() ? 'terminalHint' : 'allowNeedsStrong')),
+      el('p', { className: 'small' }, mayStrong() ? say('terminalHint') : strong() ? say('pairAgain') : say('allowNeedsStrong')),
     ),
   )
 }
@@ -472,11 +479,11 @@ function drawSessions() {
       el('span', { className: 'chip' }, s.live ? say('live') : say('notLive')),
     )
     if (target !== s.id) return [row]
-    if (!strong()) return [row, el('div', { className: 'composer' }, el('p', { className: 'small' }, say('needStrong')))]
+    if (!mayStrong()) return [row, el('div', { className: 'composer' }, el('p', { className: 'small' }, strongWhy()))]
     const composer = el(
       'div',
       { className: 'composer' },
-      el('textarea', { placeholder: say('message'), value: drafts.get(s.id) ?? '', oninput: e => drafts.set(s.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
+      el('textarea', { placeholder: say('message'), value: drafts.get(s.id) ?? '', maxLength: TEXT_MAX, oninput: e => drafts.set(s.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
       el(
         'div',
         { className: 'actions' },
