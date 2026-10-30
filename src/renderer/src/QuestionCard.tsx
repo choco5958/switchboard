@@ -144,14 +144,20 @@ export function QuestionCard({
       )}
       {q.reason && <p className="md-rec">➡ ({q.recommend}). {q.reason}</p>}
 
-      <h3 className="q-section">{t('history.colAnswer')}</h3>
-      <ul className={`q-list ${isOpen ? '' : 'answered'}`}>
-        <li>
-          {t('question.picked', { value: isOpen ? '-' : q.choice ? `(${q.choice}) ${chosen?.label ?? ''}` : t('question.memoOnly') })}
-        </li>
-        <li>{t('question.how', { value: isOpen ? '-' : q.memo || t('question.noMemo') })}{!isOpen && ` ${q.delivered ? t('question.delivered') : reach === 'gone' ? t('question.notDeliveredGone') : t('question.notDelivered')}`}</li>
-        <li>{t('question.answeredAt', { time: q.answered_at ? clock(q.answered_at) : '-' })}</li>
-      </ul>
+      {/* Only once answered: before that the options below are where the answer goes. */}
+      {!isOpen && (
+        <>
+          <h3 className="q-section">{t('history.colAnswer')}</h3>
+          <ul className="q-list answered">
+            <li>{t('question.picked', { value: q.choice ? `(${q.choice}) ${chosen?.label ?? ''}` : t('question.memoOnly') })}</li>
+            <li>
+              {t('question.how', { value: q.memo || t('question.noMemo') })}{' '}
+              {q.delivered ? t('question.delivered') : reach === 'gone' ? t('question.notDeliveredGone') : t('question.notDelivered')}
+            </li>
+            <li>{t('question.answeredAt', { time: q.answered_at ? clock(q.answered_at) : '-' })}</li>
+          </ul>
+        </>
+      )}
 
       <h3 className="q-section">{t('question.source')}</h3>
       <ul className="small quiet source q-list">
