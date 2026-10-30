@@ -504,8 +504,11 @@ export const register: Register = on => {
     return started
   })
 
-  // The session's store keys go with it, so the 4 MiB store never fills up.
+  // The session's store keys go with it, so the 4 MiB store never fills up. A /clear or a
+  // resume is no end for this mod: no session.start follows, and it carries on under the id
+  // it has, whose keys it still needs (STALE_MS removes them once it is gone for good).
   on('session.end', async ($, e, next) => {
+    if (e.reason === 'clear' || e.reason === 'resume') return next(e)
     for (const kind of STORE_KINDS) await $.store.delete(storeKey(kind, e.sessionId)).catch(() => undefined)
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -645,12 +648,15 @@ export const register: Register = on => {
     if (agentId && stopped.has(agentId)) return { deny: t(currentLang(), 'mod.denyStopped') }
     if (agentId && paused.has(agentId)) return { deny: t(currentLang(), 'mod.denyPaused') }
     openTools += 1
-    turnSignalAt = Date.now()
+    // Only the main loop's calls show its turn still runs (settleRestored): a subagent's
+    // can go on after the turn that started it ended.
+    const main = agentId === undefined
+    if (main) turnSignalAt = Date.now()
     void reportActivity($).catch(() => undefined)
     try {
       return await next(e)
     } finally {
-      turnSignalAt = Date.now()
+      if (main) turnSignalAt = Date.now()
       openTools = Math.max(0, openTools - 1)
       void reportActivity($).catch(() => undefined)
     }
