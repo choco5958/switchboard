@@ -1,5 +1,6 @@
 import { after, before, test } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
 import { request } from 'node:http'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -130,8 +131,77 @@ test('fire puts the wait back into its session; waits lists the open ones', asyn
   const { json } = await call('POST', '/waits', { sessionId: 'c1', note: '배포 끝나면 스모크 테스트' })
   assert.match((await cli(['waits'])).out, new RegExp(`${json.id} \\[web\\] 배포 끝나면 스모크 테스트`))
   assert.equal((await cli(['fire', json.id, '배포', '완료'])).code, EXIT.done)
-  assert.equal((await cli(['fire', json.id])).code, EXIT.unreachable)
+  // Fired already: the bridge is there and refuses, which is a failure, not 5.
+  assert.equal((await cli(['fire', json.id])).code, EXIT.failed)
   assert.equal((await cli(['waits'])).out, 'no open waits')
   const items = (await call('POST', '/deliveries/take', { sessionId: 'c1' })).json.items as { text: string }[]
   assert.ok(items.some(item => /함께 온 내용:\n배포 완료/.test(item.text)))
+})
+
+// A call that answers each path from a table, one reply at a time; anything else is a 200 with nothing.
+type Scripted = Record<string, { status: number; json: Record<string, unknown> }[]>
+const scripted = (replies: Scripted) => async (_method: 'GET' | 'POST', path: string) => replies[path]?.shift() ?? { status: 200, json: {} }
+
+async function runWith(argv: string[], call: Parameters<typeof run>[1]) {
+  const out: string[] = []
+  const err: string[] = []
+  let clock = 0
+  const code = await run(argv, call, {
+    out: text => out.push(text),
+    err: text => err.push(text),
+    stdin: async () => '',
+    sleep: async ms => void (clock += ms),
+    now: () => clock,
+  })
+  return { code, out: out.join('\n'), err: err.join('\n') }
+}
+
+test('status: a bridge that refuses fails with 1, as JSON under --json, never a TypeError', async () => {
+  const refused = (): Scripted => ({ '/messages/7': [{ status: 403, json: { error: 'forbidden' } }] })
+  assert.deepEqual(await runWith(['status', 'm7'], scripted(refused())), { code: EXIT.failed, out: '', err: 'forbidden' })
+  const asJson = await runWith(['status', 'm7', '--json'], scripted(refused()))
+  assert.equal(asJson.code, EXIT.failed)
+  assert.deepEqual(JSON.parse(asJson.out), { ok: false, exitCode: EXIT.failed, error: 'forbidden' })
+  const broken = await runWith(['status', 'm7', '--json'], scripted({ '/messages/7': [{ status: 500, json: {} }] }))
+  assert.deepEqual(JSON.parse(broken.out), { ok: false, exitCode: EXIT.failed, error: 'bridge answered 500' })
+})
+
+test('send --wait looks again after a 5xx and stops at any other refusal', async () => {
+  const peers = () => [{ status: 200, json: { peers: [{ id: 's9', project: 'p9', cwd: '/p9', agent: 'claude', live: true, state: 'idle', task: '', now: '' }] } }]
+  const sent = () => [{ status: 200, json: { id: 'm9' } }]
+  const recovered = await runWith(
+    ['send', 'p9', 'hi', '--wait'],
+    scripted({
+      '/sessions/peers': peers(),
+      '/outbox': sent(),
+      '/messages/9': [{ status: 503, json: {} }, { status: 200, json: { answered: true, reply: 'done', delivered: true, live: true, questions: [] } }],
+    }),
+  )
+  assert.deepEqual([recovered.code, recovered.out], [EXIT.done, 'done'])
+  const refused = await runWith(
+    ['send', 'p9', 'hi', '--wait', '--json'],
+    scripted({ '/sessions/peers': peers(), '/outbox': sent(), '/messages/9': [{ status: 400, json: { error: 'bad id' } }] }),
+  )
+  assert.equal(refused.code, EXIT.failed)
+  assert.deepEqual(JSON.parse(refused.out), { ok: false, exitCode: EXIT.failed, error: 'bad id' })
+})
+
+test('fire: only a bridge out of reach is 5', async () => {
+  assert.equal((await runWith(['fire', 'w3'], () => Promise.reject(new Error('ECONNREFUSED')))).code, EXIT.unreachable)
+  assert.equal((await runWith(['fire', 'w3'], scripted({ '/waits/3/fire': [{ status: 404, json: { error: 'not found' } }] }))).code, EXIT.failed)
+})
+
+test('output past 64 KiB reaches a pipe whole', async () => {
+  await call('POST', '/sessions', { id: 'big', cwd: '/w/big' })
+  for (let i = 0; i < 300; i++) await call('POST', '/questions', { sessionId: 'big', question: `${i} ${'긴 질문 '.repeat(40)}`, options: [{ key: 'a', label: '예' }] })
+  const stdout = await new Promise<string>((resolve, reject) =>
+    execFile(
+      process.execPath,
+      [join(import.meta.dirname, 'switchboard.ts'), 'decisions', '--json'],
+      { env: { ...process.env, CLAUDE_IDE_SOCKET: socketPath }, maxBuffer: 64 * 1024 * 1024 },
+      (error, out) => (error ? reject(error) : resolve(out)),
+    ),
+  )
+  assert.ok(stdout.length > 64 * 1024)
+  assert.equal((JSON.parse(stdout) as { project: string }[]).filter(q => q.project === 'big').length, 300)
 })

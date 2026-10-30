@@ -152,7 +152,8 @@ export async function run(argv: readonly string[], call: Call, io: Io): Promise<
     const payload = args.length === 2 && args[1] === '-' ? await io.stdin() : args.slice(1).join(' ')
     const r = await ask('POST', `/waits/${id}/fire`, { payload })
     if (!r) return fail(EXIT.unreachable, 'the bridge is not running')
-    if (r.status !== 200) return fail(EXIT.unreachable, String(r.json.error ?? r.status))
+    // Reached, but refused (no such wait, already fired): a failure, not a bridge that is down.
+    if (r.status !== 200) return fail(EXIT.failed, String(r.json.error ?? r.status))
     print({ ok: true, id: `w${id}` }, `fired w${id}`)
     return EXIT.done
   }
@@ -203,12 +204,14 @@ export async function run(argv: readonly string[], call: Call, io: Io): Promise<
     const r = await ask('GET', `/messages/${id}`)
     if (!r) return waiting ? -1 : fail(EXIT.unreachable, 'the bridge is not running')
     if (r.status === 404) return fail(EXIT.unreachable, String(r.json.error ?? 'unknown message'))
+    // A bridge in trouble (5xx) may answer next time; any other refusal will not.
+    if (r.status !== 200) return waiting && r.status >= 500 ? -1 : fail(EXIT.failed, String(r.json.error ?? `bridge answered ${r.status}`))
     const s = r.json as { answered: boolean; reply: string | null; delivered: boolean; live: boolean; questions: { id: number; question: string }[] }
     if (s.answered && s.reply !== null) {
       print({ ok: true, id: `m${id}`, reply: s.reply }, s.reply)
       return EXIT.done
     }
-    if (s.questions.length > 0) {
+    if (Array.isArray(s.questions) && s.questions.length > 0) {
       const text = s.questions.map(q => `Q${q.id} ${q.question}`).join('\n')
       if (json) io.out(JSON.stringify({ ok: false, exitCode: EXIT.person, questions: s.questions }))
       else io.err(`the session waits for a decision (switchboard decisions):\n${text}`)
@@ -236,5 +239,7 @@ if (import.meta.main) {
     sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
     now: () => Date.now(),
   })
-  process.exit(code)
+  // Not process.exit: output to a pipe is written asynchronously, and exiting at once cuts what
+  // is past the first 64 KiB. Nothing else is left running, so the process ends by itself.
+  process.exitCode = code
 }
