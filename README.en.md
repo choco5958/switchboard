@@ -108,6 +108,7 @@ When a session needs a decision from you, it posts the question to a decision qu
 ### Display
 
 - The top bar shows Claude's 5-hour and weekly usage and context usage.
+- Group the sidebar's projects into folders made with `+ Folder`, and collapse or expand each folder. Drag a project onto a folder or move it with its ⋯ menu, and remove projects you no longer use from the list. Their files and work history stay, and you can show them again at any time.
 - Korean, English, Japanese and Simplified Chinese. It follows the OS language at first; change it in Settings.
 - 13 themes: Classic navy, Adventure journal, Phosphor terminal, Pixel dots, Subway map, Circuit board, Modern terminal, Blue DOS window, Dracula, Nord, Solarized Dark and Light, GitHub Light.
 - With Orca installed, each node can get its own worktree, and a Linear issue can start a task.
@@ -205,7 +206,7 @@ Sessions started after the install connect to the bridge. If the bridge is not r
 
 ## Usage
 
-1. Start the app and click `+ Claude` in the dock. The first time, choose a project folder with `+ Folder` at the top left.
+1. Start the app and click `+ Claude` in the dock. The first time, choose a project folder with `+ Project` at the top left.
 2. Give Claude Code work as usual. The tool descriptions say when to use them, so the session posts its task on its own and asks when it needs a decision.
 3. A number on the question-mark icon on the left means a decision or a permission ask is waiting; permission asks also show on the home screen. Open it and answer with a key.
 

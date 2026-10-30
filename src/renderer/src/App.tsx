@@ -15,7 +15,8 @@ import { HomePage } from './pages/HomePage'
 import { LinearPage } from './pages/LinearPage'
 import { LogPage } from './pages/LogPage'
 import { SettingsPage } from './pages/SettingsPage'
-import { isRunning, nameForFolder, pickSession, projectsOf, savedProjects, scopeFor, scopeState } from '../../shared/projects'
+import { HIDDEN_KEY, hiddenProjects, isRunning, nameForFolder, pickSession, projectFolders, projectsOf, savedProjects, scopeFor, scopeState } from '../../shared/projects'
+import { ProjectList } from './ProjectList'
 import { Dock } from './Dock'
 import { AgentBadge, ApprovalItem, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
@@ -233,7 +234,11 @@ export function App() {
   // Everything in the sidebar, home, log and dock is seen through the chosen project.
   const view = useMemo(() => scopeState(state, scope), [state, scope])
   const saved = useMemo(() => savedProjects(state.settings.projects), [state.settings.projects])
-  const projects = useMemo(() => projectsOf(state, saved), [state, saved])
+  // Every project, for names and folders; the switcher leaves out the ones taken off the list.
+  const allProjects = useMemo(() => projectsOf(state, saved), [state, saved])
+  const hidden = useMemo(() => hiddenProjects(state.settings[HIDDEN_KEY]), [state.settings])
+  const projects = useMemo(() => allProjects.filter(p => !hidden.includes(p.name)), [allProjects, hidden])
+  const folders = useMemo(() => projectFolders(state.settings.projectFolders), [state.settings])
   // Feature area: agent CLIs other than Claude Code. Badges by session, and the person's own CLIs.
   const customs = useMemo(() => customAgents(state.settings[CUSTOM_AGENTS_KEY]), [state.settings])
   const tags = useMemo(() => agentTags(state.sessions, customs), [state.sessions, customs])
@@ -298,15 +303,18 @@ export function App() {
   // A folder a terminal opened in becomes a project of its own in the switcher.
   const addProject = useCallback(
     async (cwd: string) => {
+      // A folder taken off the list comes back when it is added again.
+      const name = nameForFolder(allProjects, cwd)
+      if (hidden.includes(name)) await window.ide.bridge('POST', '/settings', { key: HIDDEN_KEY, value: hidden.filter(h => h !== name) })
       if (saved.some(p => p.cwd === cwd)) return
-      await window.ide.bridge('POST', '/settings', { key: 'projects', value: [...saved, { name: nameForFolder(projects, cwd), cwd }] })
+      await window.ide.bridge('POST', '/settings', { key: 'projects', value: [...saved, { name, cwd }] })
     },
-    [saved, projects],
+    [saved, allProjects, hidden],
   )
   const pickProject = async () => {
     const cwd = await window.ide.pickFolder()
     if (!cwd) return
-    const name = nameForFolder(projects, cwd)
+    const name = nameForFolder(allProjects, cwd)
     await addProject(cwd)
     setScope(name)
   }
@@ -510,28 +518,17 @@ export function App() {
             <button className="sidebar-close" title={t('sidebar.collapse')} onClick={() => setSidebarOpen(false)}>
               <Icon name="collapse" size={14} />
             </button>
-            <section className="projects">
-              <div className="projects-head">
-                <h2>{t('sidebar.projects')}</h2>
-                <button className="link small" onClick={() => void pickProject()}>
-                  {t('sidebar.addFolder')}
-                </button>
-              </div>
-              {[{ name: null as string | null, label: t('sidebar.all'), running: state.tasks.filter(isRunning).length, pending: state.questions.filter(q => q.status === 'pending').length }]
-                .concat(projects.map(p => ({ name: p.name, label: p.name, running: p.running, pending: p.pending })))
-                .map(p => (
-                  <button key={p.label} className={`project-row ${scope === p.name ? 'on' : ''}`} title={p.name ?? undefined} onClick={() => setScope(p.name)}>
-                    <span className="project-name">{p.label}</span>
-                    {p.name !== null && projectAgents(state.sessions, tags, p.name).map(tag => <AgentBadge key={tag.kind} tag={tag} />)}
-                    {p.running > 0 && <span className="quiet small project-running">{t('sidebar.running', { n: p.running })}</span>}
-                    {p.pending > 0 && (
-                      <span className="count warn" title={t('sidebar.pendingTitle', { n: p.pending })}>
-                        {p.pending}
-                      </span>
-                    )}
-                  </button>
-                ))}
-            </section>
+            <ProjectList
+              projects={projects}
+              hidden={hidden}
+              folders={folders}
+              scope={scope}
+              totals={{ running: state.tasks.filter(isRunning).length, pending: state.questions.filter(q => q.status === 'pending').length }}
+              badges={name => projectAgents(state.sessions, tags, name).map(tag => <AgentBadge key={tag.kind} tag={tag} />)}
+              onScope={setScope}
+              onAddProject={() => void pickProject()}
+              save={(key, value) => void window.ide.bridge('POST', '/settings', { key, value })}
+            />
             {section === 'home' && offline && (
               <section>
                 <h2>{t('sidebar.tasks')}</h2>

@@ -54,6 +54,47 @@ export function savedProjects(value: unknown): SavedProject[] {
   )
 }
 
+// Folders the person sorts projects into in the sidebar (setting `projectFolders`), and the
+// projects taken off the list (`hiddenProjects`). Both name projects by name, as the switcher
+// does; taking one off hides it and forgets nothing, so it can come back.
+export type ProjectFolder = { id: string; name: string; projects: string[]; closed: boolean }
+
+export const FOLDERS_KEY = 'projectFolders'
+export const HIDDEN_KEY = 'hiddenProjects'
+
+export function projectFolders(value: unknown): ProjectFolder[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((f): f is ProjectFolder => !!f && typeof f === 'object' && typeof f.id === 'string' && typeof f.name === 'string')
+    .map(f => ({ id: f.id, name: f.name, projects: Array.isArray(f.projects) ? f.projects.filter(p => typeof p === 'string') : [], closed: f.closed === true }))
+}
+
+export function hiddenProjects(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((p): p is string => typeof p === 'string') : []
+}
+
+export type FolderView = { folder: ProjectFolder; items: ProjectInfo[]; running: number; pending: number }
+
+// The sidebar's list: each folder with the projects in it, in the switcher's order, then the
+// projects in no folder. A name a folder keeps for a project no longer listed is passed over.
+export function sidebarGroups(projects: readonly ProjectInfo[], folders: readonly ProjectFolder[]): { folders: FolderView[]; loose: ProjectInfo[] } {
+  const placed = new Set<string>()
+  const views = folders.map(folder => {
+    const items = projects.filter(p => folder.projects.includes(p.name) && !placed.has(p.name))
+    for (const p of items) placed.add(p.name)
+    return { folder, items, running: items.reduce((n, p) => n + p.running, 0), pending: items.reduce((n, p) => n + p.pending, 0) }
+  })
+  return { folders: views, loose: projects.filter(p => !placed.has(p.name)) }
+}
+
+// A project sits in one folder at most: putting it in one takes it out of the others; null takes it out of all.
+export function moveToFolder(folders: readonly ProjectFolder[], project: string, folderId: string | null): ProjectFolder[] {
+  return folders.map(f => {
+    const rest = f.projects.filter(p => p !== project)
+    return { ...f, projects: f.id === folderId ? [...rest, project] : rest }
+  })
+}
+
 // Every project the IDE knows of: folders added by hand and ones sessions or
 // tasks name, the most recently active first so adding a folder never reorders
 // the list. The folder comes from the hand-added entry, else the newest session.

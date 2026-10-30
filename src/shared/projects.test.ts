@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BridgeState } from './types'
-import { isRunning, nameForFolder, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
+import { hiddenProjects, isRunning, moveToFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
 
 const state = {
   sessions: [
@@ -153,5 +153,50 @@ describe('terminal environment', () => {
 
   it('quotes paths for the shell', () => {
     expect(shellQuote("/Users/me/it's here")).toBe(`'/Users/me/it'\\''s here'`)
+  })
+})
+
+describe('project folders', () => {
+  const info = (name: string, running = 0, pending = 0) => ({ name, cwd: `/w/${name}`, running, pending, active: 0 })
+  const projects = [info('alpha', 1, 2), info('beta'), info('gamma', 2, 0), info('delta')]
+
+  it('reads only well-formed folders and hidden names', () => {
+    expect(projectFolders([{ id: 'f1', name: 'Work', projects: ['alpha', 3], closed: true }, { name: 'no id' }, null, 'x'])).toEqual([
+      { id: 'f1', name: 'Work', projects: ['alpha'], closed: true },
+    ])
+    expect(projectFolders({})).toEqual([])
+    expect(projectFolders([{ id: 'f2', name: 'Side' }])).toEqual([{ id: 'f2', name: 'Side', projects: [], closed: false }])
+    expect(hiddenProjects(['alpha', 1, null])).toEqual(['alpha'])
+    expect(hiddenProjects('alpha')).toEqual([])
+  })
+
+  it('groups projects into folders in list order, the rest loose', () => {
+    const folders = [
+      { id: 'f1', name: 'Work', projects: ['gamma', 'alpha', 'gone'], closed: false },
+      { id: 'f2', name: 'Empty', projects: [], closed: true },
+    ]
+    const groups = sidebarGroups(projects, folders)
+    expect(groups.folders.map(v => v.items.map(p => p.name))).toEqual([['alpha', 'gamma'], []])
+    expect(groups.folders[0]).toMatchObject({ running: 3, pending: 2 })
+    expect(groups.loose.map(p => p.name)).toEqual(['beta', 'delta'])
+  })
+
+  it('shows a project named by two folders only in the first', () => {
+    const folders = [
+      { id: 'f1', name: 'A', projects: ['beta'], closed: false },
+      { id: 'f2', name: 'B', projects: ['beta', 'delta'], closed: false },
+    ]
+    expect(sidebarGroups(projects, folders).folders.map(v => v.items.map(p => p.name))).toEqual([['beta'], ['delta']])
+  })
+
+  it('moves a project between folders and out of them', () => {
+    const folders = [
+      { id: 'f1', name: 'A', projects: ['alpha', 'beta'], closed: false },
+      { id: 'f2', name: 'B', projects: [], closed: false },
+    ]
+    const moved = moveToFolder(folders, 'alpha', 'f2')
+    expect(moved.map(f => f.projects)).toEqual([['beta'], ['alpha']])
+    expect(moveToFolder(moved, 'alpha', null).map(f => f.projects)).toEqual([['beta'], []])
+    expect(moveToFolder(folders, 'beta', 'f1').map(f => f.projects)).toEqual([['alpha', 'beta'], []])
   })
 })
