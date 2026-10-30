@@ -1,5 +1,7 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { request } from 'node:http'
+import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -7,8 +9,8 @@ import { createBridge, listen } from '../../bridge/server.ts'
 import type { Reply as BridgeReply } from '../shared/types'
 import { QUIET_MS, type TypingTarget } from './agentInput'
 import { startAgentDelivery } from './agentDelivery'
-import { launchHost, openHost, terminalHosts, type HostConnection, type HostEvents, type LaunchOptions } from './termClient'
-import { hostSocket, type Snapshot } from './termProtocol'
+import { launchHost, legacyHost, openHost, terminalHosts, type HostConnection, type HostEvents, type LaunchOptions } from './termClient'
+import { encode, hostSocket, newNonce, type Snapshot } from './termProtocol'
 
 // Real hosts, run by Node as the app runs them with its own executable. Unix sockets only
 // (the app keeps terminals in its own process on Windows).
@@ -136,6 +138,129 @@ describe.skipIf(!unix)('the terminal host', () => {
     pids.add((await connected('build-key')).pid)
     hosts.close()
   })
+
+  it('proves the key without sending it, and closes a connection that does not prove it soon', async () => {
+    const hosts = terminalHosts({ ...options('build-proof'), env: { ...process.env, SWITCHBOARD_TERMHOST_AUTH_MS: '400' } })
+    expect(await hosts.ready()).toBe(true)
+    pids.add((await connected('build-proof')).pid)
+    // What a connection gets and how long it stays open, for what it sends.
+    const tryWith = (lines: string) =>
+      new Promise<{ got: string; ms: number }>(resolve => {
+        const started = Date.now()
+        const socket = connect(hostSocket(dir, 'build-proof'))
+        let got = ''
+        socket.setEncoding('utf8')
+        socket.on('connect', () => lines && socket.write(lines))
+        socket.on('data', (chunk: string) => (got += chunk))
+        socket.on('error', () => undefined)
+        socket.on('close', () => resolve({ got, ms: Date.now() - started }))
+      })
+    // The greeting of 0.3.5 carries the key itself: refused, nothing said back.
+    expect((await tryWith(`${JSON.stringify({ t: 'hello', key: KEY, build: 'build-proof' })}\n`)).got).toBe('')
+    // A hello gets the host's proof, never the key; with no proof back the connection goes.
+    const silent = await tryWith(encode({ t: 'hello', build: 'build-proof', nonce: newNonce() }))
+    expect(silent.got).toContain('"challenge"')
+    expect(silent.got).not.toContain(KEY)
+    expect(silent.ms).toBeLessThan(3000)
+    // A wrong proof, a long line before the proof, and nothing at all are each refused.
+    expect((await tryWith(encode({ t: 'hello', build: 'b', nonce: newNonce() }) + encode({ t: 'auth', proof: 'f'.repeat(64) }))).got).not.toContain('"hello"')
+    expect((await tryWith('x'.repeat(8192))).got).toBe('')
+    expect((await tryWith('')).ms).toBeLessThan(3000)
+    hosts.close()
+  })
+
+  it('a program in a host\'s place gets no key: only a hello with a nonce, and no proof', async () => {
+    const path = hostSocket(dir, 'build-squat')
+    let got = ''
+    const { createServer } = await import('node:net')
+    const server = createServer(socket => {
+      socket.setEncoding('utf8')
+      socket.on('data', (chunk: string) => {
+        got += chunk
+        // It makes up a challenge: the app does not answer it.
+        socket.write(encode({ t: 'challenge', nonce: newNonce(), proof: '0'.repeat(64) }))
+      })
+    })
+    await new Promise<void>(resolve => server.listen(path, resolve))
+    expect(await openHost(path, KEY, 'build-x')).toBe('refused')
+    expect(got).toContain('"nonce"')
+    expect(got).not.toContain(KEY)
+    expect(got).not.toContain('"auth"')
+    server.close()
+  })
+
+  it('the app attaches to a host of 0.3.5 with its old greeting, and to nothing else that asks for the key', async () => {
+    // A stand-in for 0.3.5's host: the old greeting, list and attach. `record` keeps what it got.
+    const fake = (folder: string, name: string, build: string) => {
+      const script = join(dir, folder, 'src', 'main', name)
+      mkdirSync(join(dir, folder, 'src', 'main'), { recursive: true })
+      writeFileSync(
+        script,
+        `const { createServer } = require('node:net')
+const { appendFileSync, chmodSync } = require('node:fs')
+const [path, key, record] = process.argv.slice(2)
+const term = { id: 'legacy-t1', meta: { project: 'p', cwd: '/', title: 'shell', claude: false, shell: '/bin/sh', bins: [] }, alive: true, exitCode: null, fg: 'sh', lastOutput: 1, started: 1, cols: 80, rows: 24 }
+const server = createServer(socket => {
+  let buffer = ''
+  let authed = false
+  const send = message => socket.write(JSON.stringify(message) + '\\n')
+  socket.setEncoding('utf8')
+  socket.on('error', () => undefined)
+  socket.on('data', chunk => {
+    appendFileSync(record, chunk)
+    buffer += chunk
+    let end
+    while ((end = buffer.indexOf('\\n')) !== -1) {
+      const message = JSON.parse(buffer.slice(0, end))
+      buffer = buffer.slice(end + 1)
+      if (!authed) {
+        if (message.t !== 'hello' || message.key !== key) return socket.destroy()
+        authed = true
+        send({ t: 'hello', build: '${build}', pid: process.pid })
+      } else if (message.t === 'list') send({ t: 'reply', rid: message.rid, ok: true, terms: [term] })
+      else if (message.t === 'attach') send({ t: 'reply', rid: message.rid, ok: true, snapshot: { ...term, screen: 'old screen' } })
+    }
+  })
+})
+server.listen(path, () => chmodSync(path, 0o600))
+`,
+      )
+      const record = join(dir, `${folder}.record`)
+      writeFileSync(record, '')
+      const child = spawn(process.execPath, [script, hostSocket(dir, build), KEY, record], { stdio: 'ignore' })
+      pids.add(child.pid!)
+      return record
+    }
+    const legacy = '0.3.5-abcdef012345'
+    const record = fake('legacy', 'termHost.ts', legacy)
+    await wait(() => existsSync(hostSocket(dir, legacy)))
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(await legacyHost(dir, legacy)).toBe(true)
+    const found: Snapshot[] = []
+    const hosts = terminalHosts(options('build-after'))
+    await hosts.restore(snapshot => found.push(snapshot))
+    expect(found.map(one => [one.id, one.screen])).toEqual([['legacy-t1', 'old screen']])
+    expect(readFileSync(record, 'utf8')).toContain(KEY)
+    hosts.close()
+
+    // Named like one but run by another program: refused, and it never sees the key.
+    const other = '0.3.5-0123456789ab'
+    const squatted = fake('squat', 'server.ts', other)
+    await wait(() => existsSync(hostSocket(dir, other)))
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(await legacyHost(dir, other)).toBe(false)
+    // Open to others, or named after any other build: no old greeting either.
+    chmodSync(hostSocket(dir, legacy), 0o666)
+    expect(await legacyHost(dir, legacy)).toBe(false)
+    chmodSync(hostSocket(dir, legacy), 0o600)
+    expect(await legacyHost(dir, 'build-a')).toBe(false)
+    const again = terminalHosts(options('build-after2'))
+    const seen: Snapshot[] = []
+    await again.restore(snapshot => seen.push(snapshot))
+    expect(seen.map(one => one.id)).toEqual(['legacy-t1'])
+    expect(readFileSync(squatted, 'utf8')).not.toContain(KEY)
+    again.close()
+  }, 20_000)
 
   it('a host of an older build takes no new terminal, keeps its own and goes when they end', async () => {
     launchHost(options('build-old'))

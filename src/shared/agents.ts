@@ -192,9 +192,11 @@ export const SHOW_OTHER_AGENTS_KEY = 'showOtherAgents'
 export const CLOSE_TERMINALS_KEY = 'closeTerminalsOnQuit'
 export const showOtherAgents = (value: unknown): boolean => value !== false
 
-// Settings: record folder trust before Codex, Copilot or Cursor opens there (src/main/agentTrust.ts). On unless turned off.
+// Settings: record folder trust before Codex, Copilot or Cursor opens there (src/main/agentTrust.ts).
+// Off unless turned on: a trusted folder's own agent config runs (its MCP servers, its hooks), and
+// a folder just cloned is not the person's to vouch for yet.
 export const TRUST_FOLDERS_KEY = 'trustFolders'
-export const trustFolders = (value: unknown): boolean => value !== false
+export const trustFolders = (value: unknown): boolean => value === true
 
 export const PLACEHOLDERS = ['server', 'command', 'args', 'args_json', 'config_file', 'config_json', 'name'] as const
 
@@ -280,6 +282,15 @@ export function validateCustom(
   let id = `custom-${slug || 'cli'}`
   for (let n = 2; taken.has(id); n++) id = `custom-${slug || 'cli'}-${n}`
   return { entry: { id, name, command, mcp } }
+}
+
+// A custom CLI as saved, checked again as when it was saved before it runs (src/main/agentTerms.ts):
+// the line comes from the bridge's settings, and only an entry that passes runs.
+export function checkedCustom(listed: readonly CustomAgent[], id: string): CustomAgent | undefined {
+  const entry = listed.find(a => a.id === id)
+  if (!entry || !/^custom-[a-z0-9-]+$/.test(entry.id)) return undefined
+  const checked = validateCustom(entry, listed.filter(a => a !== entry))
+  return 'entry' in checked ? { ...checked.entry, id: entry.id } : undefined
 }
 
 // The name on a session's badge.

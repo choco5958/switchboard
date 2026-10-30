@@ -149,3 +149,25 @@ test('a bridge whose starter is gone leaves by itself', async () => {
     stopBridgeOf(home)
   }
 })
+
+test("over TCP the app's own bridge takes over from one a session started without the key, and only from that", async () => {
+  const home = tempHome()
+  const env = { HOME: home, USERPROFILE: home, CLAUDE_IDE_TCP: '1', CLAUDE_IDE_DB: join(home, 'ide.db'), CLAUDE_IDE_PARENT_PID: String(process.pid) }
+  const own = createBridge(join(home, 'own.db'), 'ko-KR', { token: newToken(), appKey: 'a'.repeat(64) })
+  try {
+    // A bridge a session started: no key.
+    assert.equal((await run([process.execPath, join(import.meta.dirname, 'start.ts')], env)).code, 0)
+    const { pid } = JSON.parse(readFileSync(endpointFile(home), 'utf8')) as { pid: number }
+    // Without the key the new one refuses, as before; with it, it stops the keyless one and serves.
+    const keyless = createBridge(join(home, 'second.db'), 'ko-KR', { token: newToken() })
+    await assert.rejects(listenTcp(keyless.server, 'x', home), /이미 돌고 있습니다/)
+    keyless.close()
+    const token = newToken()
+    const port = await listenTcp(own.server, token, home, true)
+    assert.throws(() => process.kill(pid, 0))
+    assert.deepEqual(JSON.parse(readFileSync(endpointFile(home), 'utf8')), { port, token, pid: process.pid })
+  } finally {
+    own.close()
+    stopBridgeOf(home)
+  }
+})

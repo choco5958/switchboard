@@ -67,11 +67,22 @@ export function hardenWebview(prefs: WebPreferences, params?: Record<string, str
   prefs.allowRunningInsecureContent = false
   if (params) {
     delete params.preload
+    // No windows of its own either: a page's window.open goes nowhere (index.ts web-contents-created).
+    delete params.allowpopups
     params.partition = BROWSER_PARTITION
   }
 }
 
 type AnyEvent = IpcMainEvent | IpcMainInvokeEvent
+
+type Frame = { processId: number; routingId: number } | null | undefined
+const sameFrame = (a: Frame, b: Frame) => !!a && !!b && (a === b || (a.processId === b.processId && a.routingId === b.routingId))
+
+// Whether the message came from `contents` itself (the main window) and from its top frame,
+// not a frame inside it or another window's page that happens to show the same address.
+export function fromMainFrame(event: { sender?: unknown; senderFrame?: Frame }, contents: { mainFrame: Frame }): boolean {
+  return event.sender === contents && sameFrame(event.senderFrame, contents.mainFrame)
+}
 type Listener = (event: AnyEvent, ...args: unknown[]) => unknown
 
 // ipcMain whose handlers only run for senders the check trusts. An invoke from

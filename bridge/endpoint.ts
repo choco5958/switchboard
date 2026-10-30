@@ -5,12 +5,24 @@
 // person's own profile. CLAUDE_IDE_TCP=1 takes that road anywhere (tests, trying it on a
 // Mac). mod/hooks/link.ts is the mod's twin of this file.
 
+import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 // The header the app proves itself with on the person-only routes (bridge/server.ts appOnly).
 export const APP_HEADER = 'x-switchboard-app'
+
+// Where the bridge proves it holds the app's key, before the app sends it (src/main/bridgeClient.ts).
+export const PROVE_PATH = '/app/prove'
+
+// The bridge's answer to the app's nonce. `bound`: where it listens, as the app finds it
+// (`inode:<n>` of its socket file, `port:<n>` over TCP), so a program that took the socket path
+// or another port cannot pass the bridge's answer on as its own. `pid`: the process the app may
+// stop as this bridge.
+export function bridgeProof(key: string, nonce: string, pid: number, bound: string): string {
+  return createHmac('sha256', key).update(`switchboard-bridge\n${nonce}\n${pid}\n${bound}`).digest('hex')
+}
 
 export type Endpoint = { kind: 'socket'; path: string } | { kind: 'tcp'; port: number; token: string }
 

@@ -5,6 +5,7 @@ import {
   PRESETS,
   agentBadges,
   agentLabel,
+  checkedCustom,
   customLaunch,
   fillTemplate,
   presetLaunch,
@@ -12,6 +13,7 @@ import {
   psQuote,
   shellWord,
   showOtherAgents,
+  trustFolders,
   validateCustom,
   type CustomAgent,
 } from './agents'
@@ -113,6 +115,18 @@ describe('custom CLIs', () => {
     expect(validateCustom({ name: 'b', command: 'x', mcp: '--mcp file.json' }, [])).toHaveProperty('error')
     expect(validateCustom({ name: 'b', command: 'x', mcp: "--mcp '{config_file}'" }, [])).toHaveProperty('error')
   })
+
+  it('an entry is checked again before it runs: one the app would not have saved does not', () => {
+    const saved: CustomAgent[] = [
+      { id: 'custom-llama', name: 'Llama', command: 'goose session', mcp: 'none' },
+      { id: 'custom-bad', name: 'Bad', command: 'x\nrm -rf ~', mcp: 'none' },
+      { id: 'codex', name: 'Other', command: 'y', mcp: 'none' },
+    ]
+    expect(checkedCustom(saved, 'custom-llama')).toEqual(saved[0])
+    expect(checkedCustom(saved, 'custom-bad')).toBeUndefined()
+    expect(checkedCustom(saved, 'codex')).toBeUndefined()
+    expect(checkedCustom(saved, 'custom-none')).toBeUndefined()
+  })
 })
 
 describe('badges', () => {
@@ -139,6 +153,12 @@ describe('badges', () => {
     // A folder with one in it cannot close the string and run what follows.
     const line = fillTemplate('--all {server}', { command: 'C:\\x\u2019; calc; \u2019\\node.exe', args: [] }, 'f.json', 'win32')
     expect(line).toBe("--all 'C:\\x\u2019\u2019; calc; \u2019\u2019\\node.exe'")
+  })
+})
+
+describe('folder trust setting', () => {
+  it('is off unless turned on', () => {
+    expect([undefined, null, 'true', 1, false, true].map(trustFolders)).toEqual([false, false, false, false, false, true])
   })
 })
 

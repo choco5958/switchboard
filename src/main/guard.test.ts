@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import type { IpcMain } from 'electron'
 import { describe, expect, it } from 'vitest'
-import { bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
+import { bridgePathAllowed, debugPathAllowed, fromMainFrame, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 
 const FILE_APP = 'file:///Applications/Claude%20IDE.app/Contents/Resources/app/out/renderer/index.html'
 
@@ -61,13 +61,13 @@ describe('bridgePathAllowed', () => {
 describe('hardenWebview', () => {
   it('strips the preload and Node from a webview', () => {
     const prefs = { preload: '/x/preload.js', nodeIntegration: true, contextIsolation: false, partition: 'persist:claude-ide' }
-    const params: Record<string, string> = { src: 'http://localhost:5173', partition: 'persist:other', preload: 'file:///x.js' }
+    const params: Record<string, string> = { src: 'http://localhost:5173', partition: 'persist:other', preload: 'file:///x.js', allowpopups: 'true' }
     hardenWebview(prefs, params)
     expect(prefs).toEqual({
       nodeIntegration: false, nodeIntegrationInSubFrames: false, contextIsolation: true, partition: 'persist:claude-ide',
       sandbox: true, webSecurity: true, allowRunningInsecureContent: false,
     })
-    // The page cannot pick another session or a preload of its own.
+    // The page cannot pick another session, a preload of its own or windows of its own.
     expect(params).toEqual({ src: 'http://localhost:5173', partition: 'persist:claude-ide' })
   })
 })
@@ -106,6 +106,19 @@ describe('guardIpc', () => {
     expect(got).toEqual(['ok'])
     guarded.off('w', listener)
     expect(emitter.listenerCount('w')).toBe(0)
+  })
+})
+
+describe('fromMainFrame', () => {
+  it('takes only the main window\'s top frame', () => {
+    const top = { processId: 4, routingId: 1 }
+    const contents = { mainFrame: top }
+    expect(fromMainFrame({ sender: contents, senderFrame: top }, contents)).toBe(true)
+    // The same frame, reached again: Electron may hand out another object for it.
+    expect(fromMainFrame({ sender: contents, senderFrame: { processId: 4, routingId: 1 } }, contents)).toBe(true)
+    expect(fromMainFrame({ sender: contents, senderFrame: { processId: 4, routingId: 7 } }, contents)).toBe(false)
+    expect(fromMainFrame({ sender: { mainFrame: top }, senderFrame: top }, contents)).toBe(false)
+    expect(fromMainFrame({ sender: contents, senderFrame: null }, contents)).toBe(false)
   })
 })
 

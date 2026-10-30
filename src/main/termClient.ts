@@ -3,12 +3,12 @@
 // terminals module (terminals.ts) sees one backend with the same calls and events.
 // Nothing here imports Electron, so the tests run all of it.
 
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { connect, type Socket } from 'node:net'
-import { closeSync, mkdirSync, openSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { closeSync, lstatSync, mkdirSync, openSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { createCore, type CoreEvents, type SpawnPty } from './termCore.ts'
-import { buildOfSocket, encode, hostSocket, lineReader, type Message, type Reply, type Request, type Snapshot, type SpawnRequest, type TermState } from './termProtocol.ts'
+import { buildOfSocket, encode, hostSocket, keyMatches, lineReader, MAX_GREETING, MAX_LINE, newNonce, proof, validNonce, type Message, type Reply, type Request, type Snapshot, type SpawnRequest, type TermState } from './termProtocol.ts'
 
 export type TermBackend = {
   // Whether its terminals keep running after the app quits.
@@ -117,8 +117,10 @@ export class HostConnection {
 }
 
 // 'dead': nothing listens there (a host that crashed left its socket). 'refused': something
-// listens but did not take the key (another install's host, or one that is not a host).
-export function openHost(path: string, key: string, build: string, timeoutMs = 3000): Promise<HostConnection | 'dead' | 'refused'> {
+// listens but did not prove the key or did not take the app's proof (another install's host,
+// or one that is not a host). The app's proof goes only to a host that proved the key first.
+// `legacy`: the greeting of 0.3.5's hosts, which carries the key itself (legacyHost below).
+export function openHost(path: string, key: string, build: string, timeoutMs = 3000, legacy = false): Promise<HostConnection | 'dead' | 'refused'> {
   return new Promise(resolve => {
     const socket = connect(path)
     let conn: HostConnection | null = null
@@ -132,19 +134,28 @@ export function openHost(path: string, key: string, build: string, timeoutMs = 3
     }
     const timer = setTimeout(() => settle('refused'), timeoutMs)
     let connected = false
+    const nonce = newNonce()
+    let proved = legacy
     socket.setEncoding('utf8')
     const read = lineReader(
       message => {
         if (conn) return conn.receive(message as Message)
+        if (!proved) {
+          if (message.t !== 'challenge' || !validNonce(message.nonce) || !keyMatches(message.proof, proof(key, 'host', nonce, message.nonce))) return settle('refused')
+          proved = true
+          socket.write(encode({ t: 'auth', proof: proof(key, 'app', nonce, message.nonce) }))
+          return
+        }
         if (message.t !== 'hello' || typeof message.pid !== 'number') return settle('refused')
         conn = new HostConnection(socket, String(message.build), message.pid)
         settle(conn)
       },
       () => socket.destroy(),
+      () => (conn ? MAX_LINE : MAX_GREETING),
     )
     socket.on('connect', () => {
       connected = true
-      socket.write(encode({ t: 'hello', key, build }))
+      socket.write(legacy ? `${JSON.stringify({ t: 'hello', key, build })}\n` : encode({ t: 'hello', build, nonce }))
     })
     socket.on('data', (chunk: string) => read(chunk))
     socket.on('error', () => undefined)
@@ -153,6 +164,37 @@ export function openHost(path: string, key: string, build: string, timeoutMs = 3
       settle(connected ? 'refused' : 'dead')
     })
   })
+}
+
+type Run = (file: string, args: string[]) => Promise<string>
+const runText: Run = (file, args) =>
+  new Promise(resolve => execFile(file, args, { timeout: 3000 }, (error, stdout) => resolve(error ? '' : String(stdout))))
+
+// The one release whose hosts greet with the key itself: 0.3.5, the first with a host. Its
+// terminals are to outlive the update to the build after it, so the app still speaks that
+// greeting, though only to a host that looks like one of 0.3.5's in every way it can check:
+// named after a 0.3.5 build, a socket of this user's alone (0600) in the private folder
+// (0700), held by one process that runs a termHost.ts. A program of the same user can make
+// all of that, and would get the key; the window lasts until those hosts end, and they take
+// no new terminals. Anything else that does not prove the key gets nothing.
+export const LEGACY_BUILD = /^0\.3\.5-[0-9a-f]{12}$/
+
+export async function legacyHost(dir: string, build: string, run: Run = runText): Promise<boolean> {
+  if (!LEGACY_BUILD.test(build) || typeof process.getuid !== 'function') return false
+  const uid = process.getuid()
+  const path = hostSocket(dir, build)
+  try {
+    const folder = lstatSync(dir)
+    const socket = lstatSync(path)
+    if (!folder.isDirectory() || folder.uid !== uid || (folder.mode & 0o777) !== 0o700) return false
+    if (!socket.isSocket() || socket.uid !== uid || (socket.mode & 0o777) !== 0o600) return false
+  } catch {
+    return false
+  }
+  const pids = (await run('lsof', ['-t', '--', path])).split('\n').map(Number).filter(n => Number.isInteger(n) && n > 0)
+  if (pids.length !== 1) return false
+  const command = await run('ps', ['-o', 'command=', '-p', String(pids[0])])
+  return /[\\/]src[\\/]main[\\/]termHost\.ts(\s|$)/.test(command.trim())
 }
 
 // The builds whose host has a socket in the folder: running, or crashed and not yet cleared.
@@ -229,7 +271,7 @@ export type Hosts = TermBackend & {
   close(): void
 }
 
-export function terminalHosts(options: LaunchOptions & { events: HostEvents; launch?: (options: LaunchOptions) => void }): Hosts {
+export function terminalHosts(options: LaunchOptions & { events: HostEvents; launch?: (options: LaunchOptions) => void; legacyHost?: (dir: string, build: string) => Promise<boolean> }): Hosts {
   const conns = new Map<string, HostConnection>()
   // Which host serves each terminal.
   const owner = new Map<string, HostConnection>()
@@ -273,7 +315,7 @@ export function terminalHosts(options: LaunchOptions & { events: HostEvents; lau
         }
       }
       if (typeof conn === 'string') {
-        console.error(`the terminal host of build ${options.build} is ${conn === 'refused' ? 'refusing the app key' : 'not answering'}`)
+        console.error(`the terminal host of build ${options.build} is ${conn === 'refused' ? 'not proving the app key' : 'not answering'}`)
         return null
       }
       adopt(conn)
@@ -295,13 +337,14 @@ export function terminalHosts(options: LaunchOptions & { events: HostEvents; lau
         const build = buildOfSocket(name)
         if (!build) continue
         const path = hostSocket(options.dir, build)
-        const conn = await openHost(path, options.key, options.build)
+        let conn = await openHost(path, options.key, options.build)
+        if (conn === 'refused' && (await (options.legacyHost ?? legacyHost)(options.dir, build))) conn = await openHost(path, options.key, options.build, 3000, true)
         if (conn === 'dead') {
           rmSync(path, { force: true })
           continue
         }
         if (conn === 'refused') {
-          console.error(`the terminal host at ${path} refused the app key; leaving it`)
+          console.error(`the terminal host at ${path} did not prove the app key; leaving it`)
           continue
         }
         adopt(conn)

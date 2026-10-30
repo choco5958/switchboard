@@ -849,7 +849,7 @@ export const en: Dict = {
   'agents.showOthers': 'Show other agent buttons',
   'agents.showOthersHint': 'On by default. Off: the dock shows only Claude and shell buttons. On: buttons for installed CLIs and the ones you added appear.',
   'agents.trustFolders': 'Answer folder trust ahead',
-  'agents.trustFoldersHint': 'For a folder where the app first opens Codex, Copilot or Cursor, records yes to that CLI\'s "trust this folder?" question ahead of time. A trust question on screen would stop the answers and scheduled prompts the app types in. The CLI\'s approval and sandbox settings stay as they are.',
+  'agents.trustFoldersHint': 'For a folder where the app first opens Codex, Copilot or Cursor, records yes to that CLI\'s "trust this folder?" question ahead of time. A trust question on screen would stop the answers and scheduled prompts the app types in. A CLI runs the MCP servers and hooks a trusted folder brings, so this is off by default, and even when on it skips a folder with agent config of its own (.codex, .cursor, .mcp.json, .vscode/mcp.json, .github/copilot*). The CLI\'s approval and sandbox settings stay as they are.',
   'agents.browserLan': 'Let sessions open private network pages in the in-app browser',
   'agents.browserLanHint': "Off by default. Off: the sessions' browser_* tools open only addresses on this computer (localhost, 127.0.0.1). On: private network addresses such as 192.168.x.x, 10.x.x.x and name.local too. A router's or NAS's admin page sits on the private network and the in-app browser keeps its sign-ins, so turn this on only when you need it. Pages you open yourself are not limited by this.",
   'agents.closeOnQuit': 'Close terminals when the app quits',

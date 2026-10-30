@@ -49,7 +49,7 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
   }
 
   const toggleTrust = async () => {
-    const reply = await saveSetting(TRUST_FOLDERS_KEY, trusting ? false : null)
+    const reply = await saveSetting(TRUST_FOLDERS_KEY, trusting ? null : true)
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 

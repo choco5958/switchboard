@@ -32,6 +32,17 @@ extraResources:
       - '!**/*.unit.ts'
 asarUnpack:
   - node_modules/node-pty/**
+# Fuses written into the executable (@electron/fuses). NODE_OPTIONS and --inspect would let any
+# program that starts the app, or sets the environment it starts with, run code of its own in
+# it, the app's key in reach. runAsNode stays on: the bridge and the terminal host run on the
+# app's own executable in Node mode (ELECTRON_RUN_AS_NODE, src/main/runtime.ts, termClient.ts).
+electronFuses:
+  runAsNode: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  # onlyLoadAppFromAsar and enableEmbeddedAsarIntegrityValidation: the bridge and the terminal
+  # host still ran with both on (a packaged macOS build in Node mode), but the window was not
+  # tried with them; turned on once a packaged app has been seen to open with them.
 mac:
   category: public.app-category.developer-tools
   icon: resources/icon.png
