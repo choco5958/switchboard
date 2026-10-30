@@ -3,6 +3,7 @@ import type { LinearIssue, Session } from '../../../shared/types'
 import { pickSession } from '../../../shared/projects'
 import { useToast } from '../parts'
 import { t, type Key } from '../../../shared/i18n'
+import { Button, Chip, EmptyState, Notice, Select } from '../ui'
 
 const FILTERS: [string, Key][] = [
   ['assigned', 'linear.assigned'],
@@ -67,9 +68,9 @@ export function LinearPage({ sessions }: { sessions: Session[] }) {
       <p className="quiet small">{t('linear.intro')}</p>
       <div className="linear-bar">
         {FILTERS.map(([key, label]) => (
-          <button key={key} className={`chip chip-button ${filter === key ? 'chip-on' : ''}`} onClick={() => setFilter(key)}>
+          <Chip key={key} on={filter === key} aria-pressed={filter === key} onClick={() => setFilter(key)}>
             {t(label)}
-          </button>
+          </Chip>
         ))}
         <span className="spacer" />
         <span className="small quiet">{t('linear.target')}</span>
@@ -78,24 +79,23 @@ export function LinearPage({ sessions }: { sessions: Session[] }) {
             {t('linear.none')}
           </span>
         ) : (
-          <select className="session-select inline" value={targetId} onChange={event => setTarget(event.target.value)}>
+          <Select compact aria-label={t('linear.target')} value={targetId} onChange={event => setTarget(event.target.value)}>
             {sessions.map(s => (
               <option key={s.id} value={s.id}>
                 {s.project} ({s.id.slice(0, 8)})
               </option>
             ))}
-          </select>
+          </Select>
         )}
       </div>
       {sessions.length === 0 && <p className="quiet small">{NO_SESSION}</p>}
       {loading && <p className="quiet">{t('linear.loading')}</p>}
       {error && (
-        <p className="error">
-          {t('linear.error')}
-          <span className="quiet small block-line">{error}</span>
-        </p>
+        <Notice tone="error" title={t('linear.error')}>
+          <span className="quiet small">{error}</span>
+        </Notice>
       )}
-      {!loading && !error && issues.length === 0 && <p className="quiet">{t('linear.empty')}</p>}
+      {!loading && !error && issues.length === 0 && <EmptyState>{t('linear.empty')}</EmptyState>}
       <table className="history">
         <tbody>
           {issues.map(issue => {
@@ -110,14 +110,14 @@ export function LinearPage({ sessions }: { sessions: Session[] }) {
                   </div>
                 </td>
                 <td>
-                  <button
-                    className="link"
+                  <Button
+                    variant="link"
                     disabled={!targetId || sent.includes(key)}
                     title={targetId ? undefined : NO_SESSION}
                     onClick={() => void send(issue)}
                   >
                     {sent.includes(key) ? t('linear.sentShort') : t('linear.send')}
-                  </button>
+                  </Button>
                 </td>
               </tr>
             )

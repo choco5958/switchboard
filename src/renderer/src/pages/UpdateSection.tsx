@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { t, type Key } from '../../../shared/i18n'
 import type { UpdateStatus } from '../../../shared/types'
+import { Button } from '../ui'
 
 const RELEASES_URL = 'https://github.com/choco5958/switchboard/releases/latest'
 
@@ -38,20 +39,20 @@ export function UpdateSection() {
       </p>
       <div className="settings-actions">
         {state === 'ready' ? (
-          <button className="primary" onClick={() => void window.ide.updateInstall()}>
+          <Button variant="primary" onClick={() => void window.ide.updateInstall()}>
             {t('update.installNow')}
-          </button>
+          </Button>
         ) : (
           state !== 'off' && (
-            <button disabled={busy} onClick={() => void window.ide.updateCheck().then(setStatus)}>
+            <Button disabled={busy} onClick={() => void window.ide.updateCheck().then(setStatus)}>
               {t('updates.check')}
-            </button>
+            </Button>
           )
         )}
         {(state === 'off' || state === 'manual' || state === 'refused' || state === 'error') && (
-          <button className="link small" onClick={() => window.open(RELEASES_URL)}>
+          <Button variant="link" size="sm" onClick={() => window.open(RELEASES_URL)}>
             {t('updates.releases')}
-          </button>
+          </Button>
         )}
       </div>
       {state !== 'off' && <p className="quiet small">{t('updates.auto')}</p>}

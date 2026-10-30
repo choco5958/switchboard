@@ -6,6 +6,7 @@ import { useToast } from '../parts'
 import { clock } from '../model'
 import { ROUTINE_FAIL_LIMIT } from '../../../../bridge/schedule.ts'
 import { agentLabel, routineAgents, type CustomAgent } from '../../../shared/agents'
+import { Button, Card, EmptyState, Input, Select, TextArea, cx } from '../ui'
 
 // Settings: scheduled prompts (bridge/schedule.ts). Each goes to a connected Claude Code
 // session of its project at its time; with none, the app opens one there.
@@ -106,11 +107,11 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
     <section id="settings-routines" className="settings-row routines">
       <h2>{t('routines.title')}</h2>
       <p className="quiet small">{t('routines.hint')}</p>
-      {routines.length === 0 && !draft && <p className="quiet">{t('routines.empty')}</p>}
+      {routines.length === 0 && !draft && <EmptyState>{t('routines.empty')}</EmptyState>}
       {routines.map(r => {
         const last = [...runs].reverse().find(run => run.routine_id === r.id)
         return (
-          <div key={r.id} className={`routine-row ${r.enabled ? '' : 'off'}`}>
+          <Card key={r.id} pad="sm" className={cx('routine-row', !r.enabled && 'off')}>
             <div className="routine-head">
               <strong>{r.name}</strong>
               <span className="quiet small">
@@ -123,14 +124,16 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
                 <input type="checkbox" checked={r.enabled === 1} onChange={() => toggle(r)} />
                 {t('routines.enabled')}
               </label>
-              <button className="link small" onClick={() => void call(`/routines/${r.id}/run`)}>
+              <Button variant="link" size="sm" onClick={() => void call(`/routines/${r.id}/run`)}>
                 {t('routines.runNow')}
-              </button>
-              <button className="link small" onClick={() => setDraft(draftOf(r))}>
+              </Button>
+              <Button variant="link" size="sm" onClick={() => setDraft(draftOf(r))}>
                 {t('routines.edit')}
-              </button>
-              <button
-                className={`link small ${deleting === r.id ? 'error' : ''}`}
+              </Button>
+              <Button
+                variant="link"
+                size="sm"
+                className={deleting === r.id ? 'error' : undefined}
                 onClick={() => {
                   if (deleting !== r.id) return setDeleting(r.id)
                   setDeleting(null)
@@ -138,7 +141,7 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
                 }}
               >
                 {deleting === r.id ? t('routines.deleteConfirm') : t('routines.delete')}
-              </button>
+              </Button>
             </div>
             {r.failed_off === 1 && !r.enabled && <div className="small error">{t('routines.failedOff', { n: ROUTINE_FAIL_LIMIT })}</div>}
             {last && (
@@ -147,13 +150,13 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
                 {(last.failure || last.result) && `: ${(last.failure || last.result).split('\n')[0]}`}
               </div>
             )}
-          </div>
+          </Card>
         )
       })}
       {draft ? (
-        <div className="routine-form">
-          <input placeholder={t('routines.name')} value={draft.name} onChange={e => set({ name: e.target.value })} />
-          <select className="session-select inline" value={draft.project} onChange={e => set({ project: e.target.value })}>
+        <Card className="routine-form">
+          <Input aria-label={t('routines.name')} placeholder={t('routines.name')} value={draft.name} onChange={e => set({ name: e.target.value })} />
+          <Select aria-label={t('routines.pickProject')} value={draft.project} onChange={e => set({ project: e.target.value })}>
             <option value="">{t('routines.pickProject')}</option>
             {own && <option value={own}>{own}</option>}
             {folders.map(p => (
@@ -161,48 +164,50 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
                 {p.name}
               </option>
             ))}
-          </select>
+          </Select>
           <label className="small">
             {t('routines.agent')}{' '}
-            <select className="session-select inline" value={draft.agent} onChange={e => set({ agent: e.target.value })}>
+            <Select compact value={draft.agent} onChange={e => set({ agent: e.target.value })}>
               {routineAgents(found, customs, draft.agent).map(a => (
                 <option key={a.id} value={a.id}>
                   {a.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
-          <textarea className="memo" placeholder={t('routines.prompt')} value={draft.prompt} onChange={e => set({ prompt: e.target.value })} />
+          <TextArea aria-label={t('routines.prompt')} placeholder={t('routines.prompt')} value={draft.prompt} onChange={e => set({ prompt: e.target.value })} />
           <div className="routine-when">
-            <select className="session-select inline" value={draft.kind} onChange={e => set({ kind: e.target.value as Draft['kind'] })}>
+            <Select compact aria-label={t('routines.when')} value={draft.kind} onChange={e => set({ kind: e.target.value as Draft['kind'] })}>
               <option value="daily">{t('routines.kind.daily')}</option>
               <option value="weekdays">{t('routines.kind.weekdays')}</option>
               <option value="interval">{t('routines.kind.interval')}</option>
               <option value="once">{t('routines.kind.once')}</option>
-            </select>
-            {(draft.kind === 'daily' || draft.kind === 'weekdays') && <input type="time" value={draft.time} onChange={e => set({ time: e.target.value })} />}
+            </Select>
+            {(draft.kind === 'daily' || draft.kind === 'weekdays') && (
+              <Input compact type="time" aria-label={t('routines.when')} value={draft.time} onChange={e => set({ time: e.target.value })} />
+            )}
             {draft.kind === 'interval' && (
               <label className="small">
-                <input type="number" min={5} value={draft.every} onChange={e => set({ every: e.target.value })} /> {t('routines.minutes')}
+                <Input compact type="number" min={5} value={draft.every} onChange={e => set({ every: e.target.value })} /> {t('routines.minutes')}
               </label>
             )}
-            {draft.kind === 'once' && <input type="datetime-local" value={draft.at} onChange={e => set({ at: e.target.value })} />}
+            {draft.kind === 'once' && <Input compact type="datetime-local" aria-label={t('routines.when')} value={draft.at} onChange={e => set({ at: e.target.value })} />}
             <label className="check-row small" title={t('routines.runMissedTitle')}>
               <input type="checkbox" checked={draft.runMissed} onChange={e => set({ runMissed: e.target.checked })} />
               {t('routines.runMissed')}
             </label>
           </div>
           <div className="actions">
-            <button className="primary" disabled={!draft.name.trim() || !draft.project || !draft.prompt.trim()} onClick={() => void save()}>
+            <Button variant="primary" disabled={!draft.name.trim() || !draft.project || !draft.prompt.trim()} onClick={() => void save()}>
               {t('routines.save')}
-            </button>
-            <button onClick={() => setDraft(null)}>{t('common.cancel')}</button>
+            </Button>
+            <Button onClick={() => setDraft(null)}>{t('common.cancel')}</Button>
           </div>
-        </div>
+        </Card>
       ) : (
-        <button className="link" disabled={folders.length === 0} onClick={() => setDraft({ ...EMPTY, project: folders[0]?.name ?? '' })}>
+        <Button variant="link" className="mt-sm" disabled={folders.length === 0} onClick={() => setDraft({ ...EMPTY, project: folders[0]?.name ?? '' })}>
           {t('routines.add')}
-        </button>
+        </Button>
       )}
     </section>
   )

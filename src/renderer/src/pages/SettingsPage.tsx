@@ -11,10 +11,13 @@ import type { Routine, RoutineRun } from '../../../shared/types'
 import type { ProjectInfo } from '../../../shared/projects'
 import { saveSetting } from '../settings'
 import { CUSTOM_AGENTS_KEY, customAgents } from '../../../shared/agents'
+import { DECISION_KEYS_KEY } from '../QuestionCard'
+import { Button, reducedMotion, surfaceClass } from '../ui'
 
 const SECTIONS: [string, Key][] = [
   ['settings-lang', 'settings.language'],
   ['settings-theme', 'settings.theme'],
+  ['settings-keys', 'settings.keys'],
   ['settings-agents', 'agents.title'],
   ['settings-routines', 'routines.title'],
   ['settings-telegram', 'telegram.title'],
@@ -84,15 +87,22 @@ export function SettingsPage({
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 
+  // The decision card's single-letter keys: only while the card has focus (the default), or anywhere.
+  const keysAnywhere = settings[DECISION_KEYS_KEY] === true
+  const toggleKeys = async () => {
+    const reply = await saveSetting(DECISION_KEYS_KEY, keysAnywhere ? null : true)
+    if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
+  }
+
   return (
     <div className="card wide settings">
       <h1>{t('rail.settings')}</h1>
       {/* The page is long: one click to each part. */}
       <nav className="settings-toc" aria-label={t('settings.toc')}>
         {SECTIONS.map(([id, key]) => (
-          <button key={id} className="link small" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+          <Button key={id} variant="link" size="sm" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' })}>
             {t(key)}
-          </button>
+          </Button>
         ))}
       </nav>
       <section id="settings-lang" className="settings-row settings-lang">
@@ -101,9 +111,10 @@ export function SettingsPage({
           {LANGS.map(one => (
             <button
               key={one.id}
+              type="button"
               role="radio"
               lang={one.id}
-              className={`lang-option ${one.id === lang ? 'on' : ''}`}
+              className={surfaceClass({ on: one.id === lang }, 'lang-option')}
               aria-checked={one.id === lang}
               onClick={() => void saveLang(one.id)}
             >
@@ -113,9 +124,9 @@ export function SettingsPage({
         </div>
         <p className="quiet small">
           {langSet ? (
-            <button className="link small inline-link" onClick={() => void saveLang(null)}>
+            <Button variant="link" size="sm" className="inline-link" onClick={() => void saveLang(null)}>
               {t('settings.languageSystem')}
-            </button>
+            </Button>
           ) : (
             t('settings.languageFollowing')
           )}
@@ -127,7 +138,8 @@ export function SettingsPage({
           {THEMES.map(theme => (
             <button
               key={theme.id}
-              className={`theme-option ${theme.id === current ? 'on' : ''}`}
+              type="button"
+              className={surfaceClass({ on: theme.id === current }, 'theme-option')}
               aria-pressed={theme.id === current}
               disabled={status === 'saving'}
               onClick={() => void save(theme.id)}
@@ -146,20 +158,28 @@ export function SettingsPage({
         </div>
         {(devMenu || import.meta.env.DEV) && (
           <p className="quiet small">
-            <button className="link small inline-link" onClick={openGallery}>
+            <Button variant="link" size="sm" className="inline-link" onClick={openGallery}>
               {t('settings.galleryLink')}
-            </button>
+            </Button>
           </p>
         )}
       </section>
       <div className="actions">
-        <button disabled={status === 'saving' || isDefault} onClick={() => void save(null)}>
+        <Button disabled={status === 'saving' || isDefault} onClick={() => void save(null)}>
           {t('settings.defaultTheme')}
-        </button>
+        </Button>
         {status === 'saving' && <span className="quiet small">{t('settings.saving')}</span>}
         {status === 'saved' && <span className="answered small">{t('settings.saved')}</span>}
         {error && <span className="error small">{error}</span>}
       </div>
+      <section id="settings-keys" className="settings-row settings-keys">
+        <h2>{t('settings.keys')}</h2>
+        <label className="check-row">
+          <input type="checkbox" checked={keysAnywhere} onChange={() => void toggleKeys()} />
+          {t('settings.decisionKeysAnywhere')}
+          <span className="quiet small">{t('settings.decisionKeysAnywhereHint')}</span>
+        </label>
+      </section>
       <AgentSettings settings={settings} />
       <RoutinesSection routines={routines} runs={runs} projects={projects} customs={customAgents(settings[CUSTOM_AGENTS_KEY])} />
       <TelegramSection />

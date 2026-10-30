@@ -1026,6 +1026,16 @@ export const ko = {
   'mobile.loadFailed': '휴대폰 연결 상태를 읽지 못했습니다: {error}',
   // Design system: shared parts (ui.tsx), dialogs, the light default theme
   'theme.a3light': '기본 남색 (밝음)',
+  'tabbar.label': '열린 화면',
+  'dock.tabsLabel': '작업 로그와 터미널',
+  'dock.closeTerm': '{title} 터미널 닫기',
+  'question.memoLabel': '덧붙일 메모',
+  'home.stagesDone': '단계 {total}개 중 {done}개 끝남',
+  'routines.when': '실행 시각',
+  'telegram.tokenLabel': '봇 토큰',
+  'settings.keys': '단축키',
+  'settings.decisionKeysAnywhere': '결정 카드의 한 글자 단축키를 창 어디서나 받기',
+  'settings.decisionKeysAnywhereHint': '꺼 두면(기본) 결정 카드를 눌러 초점이 카드에 있을 때만 a, b, 1, 2, Enter, H, M이 답합니다. 터미널이나 다른 칸에서 친 글자는 답이 되지 않습니다.',
 } satisfies Record<string, string>
 
 export type Dict = Record<keyof typeof ko, string>

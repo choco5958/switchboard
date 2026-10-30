@@ -5,6 +5,7 @@ import { debugStore, sendable, sessionFor, useDebugStore, waitUntilAnswering, wh
 import { t } from '../../../shared/i18n'
 import { composing } from '../ime'
 import { saveSetting } from '../settings'
+import { Badge, Button, Card, EmptyState, Input, Notice, Select, TextArea, surfaceClass } from '../ui'
 
 const POLL_MS = 3000
 const EMPTY_DRAFT: DevDraft = { name: '', description: '', repo: '', command: '', url: '' }
@@ -188,8 +189,9 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
       <h2>{t('rail.debug')}</h2>
 
       <div className="direct">
-        <textarea
-          className="memo direct-input"
+        <TextArea
+          className="direct-input"
+          aria-label={t('dev.directPlaceholder')}
           placeholder={t('dev.directPlaceholder')}
           value={text}
           onChange={event => setText(event.target.value)}
@@ -199,14 +201,16 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
         />
         <div className="direct-row">
           <span className="small quiet direct-where">{t('dev.sendTo', { where: session ? whereTo(session, selected) : t('dev.noLiveSession') })}</span>
-          <button className="primary-button" disabled={!text.trim() || !session} onClick={() => void sendDirect()}>
+          <Button variant="primary" size="sm" disabled={!text.trim() || !session} onClick={() => void sendDirect()}>
             {t('dev.send')}
-          </button>
+          </Button>
         </div>
         {choices.length > 1 && (
-          <select
-            className="session-select"
+          <Select
+            compact
+            className="wide"
             title={t('dev.sessionTitle')}
+            aria-label={t('dev.sessionTitle')}
             value={session?.id ?? ''}
             onChange={event => debugStore.setSession(event.target.value)}
           >
@@ -215,7 +219,7 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
                 {s.project} ({s.id.slice(0, 8)})
               </option>
             ))}
-          </select>
+          </Select>
         )}
         {!session && <p className="small quiet">{scope ? t('dev.noSessionIn', { project: scope }) : t('dev.noSessionNow')}</p>}
         {sent && <p className="small quiet">{sent}</p>}
@@ -223,8 +227,9 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
 
       <div className="sidebar-meta dev-head">
         <h3>{t('dev.servers')}</h3>
-        <button
-          className="link small"
+        <Button
+          variant="link"
+          size="sm"
           onClick={() => {
             setErrors({})
             setSaveError('')
@@ -232,21 +237,29 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
           }}
         >
           {t('dev.add')}
-        </button>
+        </Button>
       </div>
-      {targets.length === 0 && !form && <p className="quiet small">{t('dev.empty')}</p>}
+      {targets.length === 0 && !form && <EmptyState className="small">{t('dev.empty')}</EmptyState>}
       <div className="dev-list">
-        {targets.map(t => {
-          const s = statuses[t.id]
-          const g = gits[t.id]
+        {targets.map(target => {
+          const s = statuses[target.id]
+          const g = gits[target.id]
+          // The dot's colour and the word beside it say the same thing.
           const state = s?.responding ? 'good' : s?.running || s?.listening ? 'warn' : 'off'
+          const word = state === 'good' ? t('dev.responding') : state === 'warn' ? t('dev.notResponding') : t('dev.down')
           return (
-            <button key={t.id} className={`dev-target ${t.id === debug.targetId ? 'active' : ''}`} onClick={() => select(t)}>
+            <button
+              key={target.id}
+              type="button"
+              className={surfaceClass({ pad: 'sm', sunk: true, interactive: true, on: target.id === debug.targetId }, 'dev-target')}
+              onClick={() => select(target)}
+            >
               <div className="dev-target-title">
-                <span className={`dot dot-${state}`}>●</span> {t.name} {g?.branch && <span className="quiet">{g.branch}</span>} {t.port !== null && <span className="quiet mono-inline">({t.port})</span>}
+                {target.name} {g?.branch && <span className="quiet">{g.branch}</span>} {target.port !== null && <span className="quiet mono-inline">({target.port})</span>}{' '}
+                <span className={`dev-state-mark ${state}`}>{word}</span>
               </div>
               <div className="quiet small mono-inline">
-                {hostPort(t.url)}, {g?.commit || 'HEAD'}
+                {hostPort(target.url)}, {g?.commit || 'HEAD'}
               </div>
             </button>
           )
@@ -254,7 +267,7 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
       </div>
 
       {form && (
-        <div className="dev-form">
+        <Card sunk className="dev-form">
           <h3>{form.id ? t('dev.editTitle') : t('dev.newTitle')}</h3>
           {(
             [
@@ -267,9 +280,9 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
           ).map(([key, label, placeholder]) => (
             <label key={key} className={`field ${errors[key] ? 'field-bad' : ''}`}>
               <span className="small quiet">{label}</span>
-              <input
+              <Input
                 name={key}
-                className={`filter ${key === 'repo' || key === 'command' || key === 'url' ? 'mono-input' : ''}`}
+                mono={key === 'repo' || key === 'command' || key === 'url'}
                 placeholder={placeholder}
                 value={form.draft[key]}
                 aria-invalid={!!errors[key]}
@@ -281,18 +294,22 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
               {errors[key] && <span className="small error field-error">{errors[key]}</span>}
             </label>
           ))}
-          {saveError && <p className="small error">{saveError}</p>}
+          {saveError && (
+            <Notice tone="error" className="small">
+              {saveError}
+            </Notice>
+          )}
           <div className="actions dev-form-actions">
-            <button className="primary" onClick={() => void submitForm()}>
+            <Button variant="primary" onClick={() => void submitForm()}>
               {t('picker.save')}
-            </button>
-            <button onClick={() => setForm(null)}>{t('picker.cancel')}</button>
+            </Button>
+            <Button onClick={() => setForm(null)}>{t('picker.cancel')}</Button>
           </div>
-        </div>
+        </Card>
       )}
 
       {selected && !form && (
-        <div className="dev-detail">
+        <Card sunk className="dev-detail">
           <dl className="dev-facts">
             <dt>{t('dev.target')}</dt>
             <dd>
@@ -304,10 +321,10 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
             <dt>{t('props.branch')}</dt>
             <dd>
               {git?.ok ? <span className="mono-inline">{git.branch}</span> : <span className="quiet small" title={git?.error}>{git ? gitErrorText(git.error) || t('dev.checking') : t('dev.checking')}</span>}{' '}
-              {git?.ok && <span className="tag-chip good">{t('dev.gitOk')}</span>}{' '}
-              <button className="link small inline-link" onClick={() => void checkGit(selected)}>
+              {git?.ok && <Badge tone="good">{t('dev.gitOk')}</Badge>}{' '}
+              <Button variant="link" size="sm" className="inline-link" onClick={() => void checkGit(selected)}>
                 {t('dev.recheck')}
-              </button>
+              </Button>
             </dd>
             <dt>{t('dev.commit')}</dt>
             <dd>
@@ -323,15 +340,16 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
             <dd className="mono-inline small">{selected.command}</dd>
             <dt>{t('dev.fieldUrl')}</dt>
             <dd>
-              <button className="link small inline-link mono-inline" onClick={() => debugStore.openUrl(selected.url)}>
+              <Button variant="link" size="sm" className="inline-link mono-inline" onClick={() => debugStore.openUrl(selected.url)}>
                 {selected.url}
-              </button>{' '}
-              {status && <span className={`tag-chip ${status.responding ? 'good' : 'bad'}`}>{status.responding ? t('dev.responding') : t('dev.notResponding')}</span>}
+              </Button>{' '}
+              {status && <Badge tone={status.responding ? 'good' : 'bad'}>{status.responding ? t('dev.responding') : t('dev.notResponding')}</Badge>}
             </dd>
           </dl>
 
           <div className="dev-actions">
-            <button
+            <Button
+              size="sm"
               onClick={() => {
                 setErrors({})
                 setSaveError('')
@@ -339,19 +357,19 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
               }}
             >
               {t('dev.edit')}
-            </button>
-            <button className={confirmDelete ? 'danger' : ''} onClick={() => void remove(selected)}>
+            </Button>
+            <Button size="sm" variant={confirmDelete ? 'danger' : 'default'} onClick={() => void remove(selected)}>
               {confirmDelete ? t('dev.deleteConfirm') : t('dev.delete')}
-            </button>
-            <button className="primary" disabled={!!busy} onClick={() => void restart(selected)}>
+            </Button>
+            <Button size="sm" variant="primary" disabled={!!busy} onClick={() => void restart(selected)}>
               {busy === 'restart' ? t('dev.restarting') : t('dev.restart')}
-            </button>
-            <button disabled={!!busy} title="git pull --ff-only" onClick={() => void pull(selected)}>
+            </Button>
+            <Button size="sm" disabled={!!busy} title="git pull --ff-only" onClick={() => void pull(selected)}>
               {busy === 'pull' ? t('dev.pulling') : t('dev.pull')}
-            </button>
-            <button disabled={!!busy || !status?.running} onClick={() => void stop(selected)}>
+            </Button>
+            <Button size="sm" disabled={!!busy || !status?.running} onClick={() => void stop(selected)}>
               {t('dev.stop')}
-            </button>
+            </Button>
           </div>
           <label className="check-row small">
             <input
@@ -369,15 +387,15 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
           </div>
           {message && <p className="small">{message}</p>}
           {pullOut && <pre className="dev-out">{pullOut}</pre>}
-          <button className="link small" onClick={() => setShowLog(on => !on)}>
+          <Button variant="link" size="sm" className="mt-sm" aria-expanded={showLog} onClick={() => setShowLog(on => !on)}>
             {showLog ? t('dev.hideLog') : t('dev.showLog')}
-          </button>
+          </Button>
           {showLog && (
             <pre ref={logBox} className="dev-out dev-log">
               {log.length ? log.join('\n') : t('dev.noLog')}
             </pre>
           )}
-        </div>
+        </Card>
       )}
     </section>
   )

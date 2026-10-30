@@ -7,8 +7,14 @@ import type { AgentTag } from '../../shared/agents'
 import { t } from '../../shared/i18n'
 import { tx } from './tx'
 import { composing } from './ime'
+import { Icon } from './Icons'
+import { Badge, Button, Notice, Select, TextArea, surfaceClass } from './ui'
 
 const HOLD_AGAIN_MS = 2000
+
+// Settings: the single-letter keys (a, b, 1, 2, Enter, H, M) answer from anywhere in the window,
+// not only while the decision card holds focus.
+export const DECISION_KEYS_KEY = 'decisionKeysAnywhere'
 
 export function QuestionCard({
   q,
@@ -18,6 +24,7 @@ export function QuestionCard({
   peers = [],
   onDone,
   onOpenTask,
+  keysAnywhere = false,
 }: {
   q: Question
   agent?: AgentTag // the agent CLI that asked, once other agents than Claude are around
@@ -26,6 +33,7 @@ export function QuestionCard({
   peers?: { id: string; name: string; label: string }[] // connected sessions other than the asker, to hand the question to
   onDone: () => void
   onOpenTask: (() => void) | null
+  keysAnywhere?: boolean // settings: DECISION_KEYS_KEY
 }) {
   const options = optionsOf(q)
   const [choice, setChoice] = useState<string>('')
@@ -36,6 +44,7 @@ export function QuestionCard({
   const [holdArmed, setHoldArmed] = useState(0)
   const [busy, setBusy] = useState(false)
   const memoBox = useRef<HTMLTextAreaElement>(null)
+  const card = useRef<HTMLDivElement>(null)
   const isOpen = q.status !== 'answered'
   const [forwardTo, setForwardTo] = useState('')
   const forwardedTo = q.forwarded_to ? (peers.find(p => p.id === q.forwarded_to)?.name ?? q.forwarded_to) : ''
@@ -73,11 +82,17 @@ export function QuestionCard({
     onDone()
   }
 
-  // Keys work anywhere in the window except while typing in a field, so the
-  // next question is answerable without clicking it first.
+  // The card takes focus when it opens, so the next question is answerable without clicking it
+  // first. Its single-letter keys work while focus is in the card (a click anywhere on it puts it
+  // there), not while typing in a field; a key typed into the terminal or another pane stays
+  // there (WCAG 2.1.4). The setting lets them work from anywhere in the window, as before.
+  useEffect(() => {
+    if (!card.current?.contains(document.activeElement)) card.current?.focus({ preventScroll: true })
+  }, [q.id])
   const onKey = useRef<(event: KeyboardEvent) => void>(() => undefined)
   onKey.current = event => {
     const target = event.target as HTMLElement | null
+    if (!keysAnywhere && !(target && card.current?.contains(target))) return
     const typing = target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT' || target?.tagName === 'SELECT'
     // Enter or Space on a focused button, link, tab or menu entry presses that control, not Send.
     // The card's own option buttons are the exception: pick one with the mouse, then Enter sends it.
@@ -113,17 +128,19 @@ export function QuestionCard({
   }
 
   return (
-    <div className="card">
+    <div className="card decision-card" ref={card} tabIndex={-1} aria-label={`Q${q.id} ${q.question}`}>
       <div className="card-head">
         <span className="qid">Q{q.id}</span>
         <span className="tag">[{q.task_title || q.project}]</span>
         <span className="spacer" />
         {reach === 'gone' && (isOpen || !q.delivered) && (
-          <span className="chip" title={t('question.goneTitle')}>{t('question.gone')}</span>
+          <Badge shape="pill" title={t('question.goneTitle')}>
+            {t('question.gone')}
+          </Badge>
         )}
-        <span className={`chip ${q.status === 'pending' ? 'chip-warn' : q.status === 'held' ? '' : 'chip-good'}`}>
+        <Badge shape="pill" tone={q.status === 'pending' ? 'warn' : q.status === 'held' ? 'neutral' : 'good'}>
           {t(q.status === 'pending' ? 'palette.qPending' : q.status === 'held' ? 'palette.qHeld' : 'palette.qAnswered')}
-        </span>
+        </Badge>
       </div>
       <h1>{q.question}</h1>
       {q.task_title && <p className="quiet small">{t('question.task', { task: q.task_title })}</p>}
@@ -136,13 +153,25 @@ export function QuestionCard({
           <ul className="q-list">
             {options.map(o => (
               <li key={o.key}>
-                ({o.key}) {o.label} {q.recommend === o.key && <span className="recommend">{t('question.recommended')}</span>}
+                ({o.key}) {o.label}{' '}
+                {q.recommend === o.key && (
+                  <Badge tone="good" fill="solid" className="recommend">
+                    {t('question.recommended')}
+                  </Badge>
+                )}
               </li>
             ))}
           </ul>
         </>
       )}
-      {q.reason && <p className="md-rec">➡ ({q.recommend}). {q.reason}</p>}
+      {q.reason && (
+        <p className="md-rec">
+          <Icon name="expand" size="sm" />
+          <span>
+            ({q.recommend}). {q.reason}
+          </span>
+        </p>
+      )}
 
       {/* Only once answered: before that the options below are where the answer goes. */}
       {!isOpen && (
@@ -175,10 +204,14 @@ export function QuestionCard({
           const picked = isOpen ? choice === o.key : q.choice === o.key
           return (
             <li key={o.key}>
-              <button className={`option ${picked ? 'picked' : ''}`} disabled={!isOpen} onClick={() => setChoice(o.key)}>
+              <button type="button" className={surfaceClass({ on: picked }, 'option')} aria-pressed={picked} disabled={!isOpen} onClick={() => setChoice(o.key)}>
                 <kbd>{o.key}</kbd>
                 <span>{o.label}</span>
-                {q.recommend === o.key && <span className="recommend">{t('question.recommended')}</span>}
+                {q.recommend === o.key && (
+                  <Badge tone="good" fill="solid" className="recommend">
+                    {t('question.recommended')}
+                  </Badge>
+                )}
                 <span className="quiet small num">{i + 1}</span>
               </button>
             </li>
@@ -188,28 +221,33 @@ export function QuestionCard({
 
       {isOpen ? (
         <>
-          <textarea
+          <TextArea
             ref={memoBox}
             className="memo"
+            aria-label={t('question.memoLabel')}
             placeholder={t('question.memoPlaceholder')}
             value={memo}
             onChange={event => setMemo(event.target.value)}
             onKeyDown={onMemoKey}
           />
-          {error && <p className="error">{error}</p>}
+          {error && (
+            <Notice tone="error" className="mt-sm">
+              {error}
+            </Notice>
+          )}
           {holdArmed > 0 && Date.now() - holdArmed < HOLD_AGAIN_MS && <p className="quiet small">{t('question.holdAgain')}</p>}
           {forwardedTo && <p className="quiet small">{t('question.forwarded', { session: forwardedTo })}</p>}
           <div className="actions">
-            <button className="primary" disabled={busy || !choice} onClick={() => void submit(choice, memo)}>
+            <Button variant="primary" disabled={busy || !choice} onClick={() => void submit(choice, memo)}>
               {choice ? t('question.sendChoice', { key: choice }) : t('question.pickFirst')}
-            </button>
-            <button disabled={busy || !memo.trim()} onClick={() => void submit('', memo)}>
+            </Button>
+            <Button disabled={busy || !memo.trim()} onClick={() => void submit('', memo)}>
               {t('question.sendMemo')}
-            </button>
+            </Button>
             {q.status === 'pending' && (
-              <button disabled={busy} onClick={() => void hold()}>
+              <Button disabled={busy} onClick={() => void hold()}>
                 {t('palette.qHeld')}
-              </button>
+              </Button>
             )}
             <span className="spacer" />
             <span className="quiet small">
@@ -218,25 +256,25 @@ export function QuestionCard({
           </div>
           {peers.length > 0 && (
             <div className="forward">
-              <select className="session-select inline" value={forwardTo} disabled={busy} onChange={event => setForwardTo(event.target.value)} title={t('question.forwardTitle')}>
+              <Select compact value={forwardTo} disabled={busy} onChange={event => setForwardTo(event.target.value)} title={t('question.forwardTitle')} aria-label={t('question.forwardTitle')}>
                 <option value="">{t('question.forwardPick')}</option>
                 {peers.map(p => (
                   <option key={p.id} value={p.id}>
                     {p.label}
                   </option>
                 ))}
-              </select>
-              <button disabled={busy || !forwardTo} onClick={() => void forward()}>
+              </Select>
+              <Button size="sm" disabled={busy || !forwardTo} onClick={() => void forward()}>
                 {t('question.forward')}
-              </button>
+              </Button>
             </div>
           )}
         </>
       ) : null}
       {onOpenTask && (
-        <button className="link" onClick={onOpenTask}>
+        <Button variant="link" className="mt-sm" onClick={onOpenTask}>
           {t('question.toTask', { task: q.task_title })}
-        </button>
+        </Button>
       )}
     </div>
   )

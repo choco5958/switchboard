@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react'
 import { Icon } from './Icons'
 import { composing } from './ime'
 import { useToast } from './parts'
+import { Button, IconButton, Input, Menu, MenuItem, MenuSeparator, cx } from './ui'
 import { t } from '../../shared/i18n'
 import {
   FOLDERS_KEY,
@@ -19,7 +20,7 @@ import {
 // them into (each opens and closes), and the projects taken off the list. A project moves by
 // dragging it onto a folder or through its ⋯ menu (also on right-click). Keys: F2 renames a
 // focused folder and Delete (or Backspace) deletes it, Delete takes a focused project off the
-// list, and the menu takes arrows and Esc.
+// list, and the menu (ui.tsx Menu) takes arrows and Esc and hands focus back.
 
 const DRAG_TYPE = 'application/x-switchboard-project'
 
@@ -45,49 +46,9 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
   const [editing, setEditing] = useState<string | null>(null)
   const [showHidden, setShowHidden] = useState(false)
   const [dropOn, setDropOn] = useState<string | null>(null)
-  const menuRef = useRef<HTMLDivElement | null>(null)
-  const listRef = useRef<HTMLElement | null>(null)
+  // The row (with its ⋯ button) whose menu is open: a press inside it is not a click outside.
+  const menuRow = useRef<HTMLDivElement | null>(null)
 
-  // Closing from the keyboard puts focus back on the ⋯ button that opened the menu.
-  const closeMenu = (refocus: boolean) => {
-    const key = menu
-    setMenu(null)
-    if (refocus && key) listRef.current?.querySelector<HTMLButtonElement>(`[data-more="${CSS.escape(key)}"]`)?.focus()
-  }
-
-  useEffect(() => {
-    if (!menu) return
-    // The first entry takes focus, so the arrows work right away.
-    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
-    const close = (event: globalThis.MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenu(null)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [menu])
-
-  const menuKeys = (event: KeyboardEvent<HTMLDivElement>) => {
-    const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])]
-    const at = items.indexOf(document.activeElement as HTMLButtonElement)
-    const focus = (i: number) => items[(i + items.length) % items.length]?.focus()
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      event.stopPropagation()
-      closeMenu(true)
-    } else if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      focus(at + 1)
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      focus(at - 1)
-    } else if (event.key === 'Home') {
-      event.preventDefault()
-      focus(0)
-    } else if (event.key === 'End') {
-      event.preventDefault()
-      focus(items.length - 1)
-    } else if (event.key === 'Tab') closeMenu(false)
-  }
   const openMenuAt = (key: string) => (event: MouseEvent) => {
     event.preventDefault()
     setMenu(key)
@@ -146,28 +107,24 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
   }
 
   const moreButton = (key: string, label: string) => (
-    <button
+    <IconButton
+      icon="more"
+      size="sm"
       className="row-more"
       data-more={key}
-      title={label}
-      aria-label={label}
+      label={label}
       aria-haspopup="menu"
       aria-expanded={menu === key}
       onClick={() => setMenu(menu === key ? null : key)}
-    >
-      <Icon name="more" size={14} />
-    </button>
+    />
   )
-  // Each entry closes the menu first and returns focus to the row's ⋯ button.
-  const item = (run: () => void) => () => {
-    closeMenu(true)
-    run()
-  }
 
   const projectRow = (p: ProjectInfo, folder: ProjectFolder | null) => (
-    <div key={p.name} className="project-line" ref={menu === `p:${p.name}` ? menuRef : undefined}>
+    <div key={p.name} className="project-line" ref={menu === `p:${p.name}` ? menuRow : undefined}>
       <button
-        className={`project-row ${scope === p.name ? 'on' : ''} ${folder ? 'in-folder' : ''}`}
+        type="button"
+        className={cx('row project-row', scope === p.name && 'on', folder && 'in-folder')}
+        aria-current={scope === p.name ? 'true' : undefined}
         title={p.cwd || p.name}
         draggable
         onDragStart={event => {
@@ -195,29 +152,23 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
       </button>
       {moreButton(`p:${p.name}`, t('sidebar.projectMenu'))}
       {menu === `p:${p.name}` && (
-        <div className="row-menu" role="menu" aria-label={t('sidebar.projectMenu')} onKeyDown={menuKeys}>
+        <Menu label={t('sidebar.projectMenu')} className="row-menu" within={menuRow} onClose={() => setMenu(null)}>
           {folders
             .filter(f => f.id !== folder?.id)
             .map(f => (
-              <button key={f.id} role="menuitem" onClick={item(() => move(p.name, f.id))}>
-                <Icon name="folder" size={13} />
+              <MenuItem key={f.id} icon="folder" onSelect={() => move(p.name, f.id)}>
                 {t('sidebar.moveTo', { name: f.name })}
-              </button>
+              </MenuItem>
             ))}
-          <button role="menuitem" onClick={item(() => newFolder(p.name))}>
-            <Icon name="folder" size={13} />
+          <MenuItem icon="folder" onSelect={() => newFolder(p.name)}>
             {t('sidebar.moveToNew')}
-          </button>
-          {folder && (
-            <button role="menuitem" onClick={item(() => move(p.name, null))}>
-              {t('sidebar.moveOut')}
-            </button>
-          )}
-          <hr />
-          <button role="menuitem" title={t('sidebar.hideTitle')} onClick={item(() => hide(p.name))}>
+          </MenuItem>
+          {folder && <MenuItem onSelect={() => move(p.name, null)}>{t('sidebar.moveOut')}</MenuItem>}
+          <MenuSeparator />
+          <MenuItem title={t('sidebar.hideTitle')} onSelect={() => hide(p.name)}>
             {t('sidebar.hide')}
-          </button>
-        </div>
+          </MenuItem>
+        </Menu>
       )}
     </div>
   )
@@ -226,7 +177,6 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
 
   return (
     <section
-      ref={listRef}
       className={`projects ${dropOn === 'loose' ? 'drop-on' : ''}`}
       onDragOver={dragOver('loose')}
       onDragLeave={() => setDropOn(null)}
@@ -235,15 +185,15 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
       <div className="projects-head">
         <h2>{t('sidebar.projects')}</h2>
         <span className="projects-actions">
-          <button className="link small" title={t('sidebar.newFolderTitle')} onClick={() => newFolder()}>
+          <Button variant="link" size="sm" title={t('sidebar.newFolderTitle')} onClick={() => newFolder()}>
             {t('sidebar.newFolder')}
-          </button>
-          <button className="link small" onClick={onAddProject}>
+          </Button>
+          <Button variant="link" size="sm" onClick={onAddProject}>
             {t('sidebar.addFolder')}
-          </button>
+          </Button>
         </span>
       </div>
-      <button className={`project-row ${scope === null ? 'on' : ''}`} onClick={() => onScope(null)}>
+      <button type="button" className={cx('row project-row', scope === null && 'on')} aria-current={scope === null ? 'true' : undefined} onClick={() => onScope(null)}>
         <span className="project-name">{t('sidebar.all')}</span>
         {totals.running > 0 && <span className="quiet small project-running">{t('sidebar.running', { n: totals.running })}</span>}
         {totals.pending > 0 && (
@@ -254,9 +204,10 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
       </button>
       {groups.folders.map(({ folder, items, running, pending }) => (
         <div key={folder.id} className={`project-folder ${dropOn === folder.id ? 'drop-on' : ''}`} onDragOver={dragOver(folder.id)} onDrop={drop(folder.id)}>
-          <div className="project-line" ref={menu === `f:${folder.id}` ? menuRef : undefined}>
+          <div className="project-line" ref={menu === `f:${folder.id}` ? menuRow : undefined}>
             {editing === folder.id ? (
-              <input
+              <Input
+                compact
                 className="folder-name-input"
                 aria-label={t('sidebar.folderName')}
                 defaultValue={folder.name}
@@ -272,7 +223,8 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
             ) : (
               // One click opens or closes; renaming is F2 or the ⋯ menu, so a double click never toggles twice.
               <button
-                className="project-row folder-row"
+                type="button"
+                className="row project-row folder-row"
                 aria-expanded={!folder.closed}
                 title={t(folder.closed ? 'sidebar.openFolder' : 'sidebar.closeFolder')}
                 onClick={() => toggle(folder.id)}
@@ -289,9 +241,9 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
                 }}
               >
                 <span className={`folder-chevron ${folder.closed ? '' : 'open'}`}>
-                  <Icon name="expand" size={12} />
+                  <Icon name="expand" size="sm" />
                 </span>
-                <Icon name="folder" size={14} />
+                <Icon name="folder" size="sm" />
                 <span className="project-name">{folder.name}</span>
                 <span className="quiet small">{items.length}</span>
                 {folder.closed && running > 0 && <span className="quiet small project-running">{t('sidebar.running', { n: running })}</span>}
@@ -304,14 +256,12 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
             )}
             {moreButton(`f:${folder.id}`, t('sidebar.folderMenu'))}
             {menu === `f:${folder.id}` && (
-              <div className="row-menu" role="menu" aria-label={t('sidebar.folderMenu')} onKeyDown={menuKeys}>
-                <button role="menuitem" onClick={() => (setMenu(null), setEditing(folder.id))}>
-                  {t('sidebar.renameFolder')}
-                </button>
-                <button role="menuitem" title={t('sidebar.removeFolderTitle')} onClick={item(() => ungroup(folder))}>
+              <Menu label={t('sidebar.folderMenu')} className="row-menu" within={menuRow} onClose={() => setMenu(null)}>
+                <MenuItem onSelect={() => setEditing(folder.id)}>{t('sidebar.renameFolder')}</MenuItem>
+                <MenuItem title={t('sidebar.removeFolderTitle')} onSelect={() => ungroup(folder)}>
                   {t('sidebar.removeFolder')}
-                </button>
-              </div>
+                </MenuItem>
+              </Menu>
             )}
           </div>
           {!folder.closed && (
@@ -325,7 +275,7 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
       {groups.loose.map(p => projectRow(p, null))}
       {hidden.length > 0 && (
         <div className="hidden-projects">
-          <button className="link small" aria-expanded={showHidden} onClick={() => setShowHidden(open => !open)}>
+          <Button variant="link" size="sm" aria-expanded={showHidden} onClick={() => setShowHidden(open => !open)}>
             {t('sidebar.hidden', { n: hidden.length })}
             {hiddenWaiting > 0 && (
               <>
@@ -335,7 +285,7 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
                 </span>
               </>
             )}
-          </button>
+          </Button>
           {showHidden &&
             hidden.map(name => (
               <div key={name} className="hidden-project">
@@ -345,9 +295,9 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
                     {hiddenPending[name]}
                   </span>
                 )}
-                <button className="link small" onClick={() => unhide(name)}>
+                <Button variant="link" size="sm" onClick={() => unhide(name)}>
                   {t('sidebar.unhide')}
-                </button>
+                </Button>
               </div>
             ))}
         </div>

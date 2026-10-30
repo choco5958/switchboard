@@ -26,8 +26,8 @@
   --term-12: #d6acff; --term-13: #ff92df; --term-14: #a4ffff; --term-15: #ffffff;
   --term-cursor: #f8f8f2;
   --term-selection: #44475a;
+  --tab-indicator: inset 0 -2px 0 var(--accent);
 }
 
 [data-theme='dracula'] h1,
 [data-theme='dracula'] .brand { color: var(--task-3); }
-[data-theme='dracula'] .tab.on { box-shadow: inset 0 -2px 0 var(--accent); }

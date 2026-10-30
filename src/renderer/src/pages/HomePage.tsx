@@ -5,6 +5,7 @@ import { stageLabel, t } from '../../../shared/i18n'
 import { tx } from '../tx'
 import { STAGES, ago } from '../model'
 import { AgentBadge, ApprovalItem, NumberBadge } from '../parts'
+import { Button, VisuallyHidden, cx, surfaceClass } from '../ui'
 import type { AgentTag } from '../../../shared/agents'
 
 // What a first start looks like: no tasks yet, so instead of four zeros, how to get going.
@@ -18,9 +19,9 @@ function FirstRun({ sessions, onPickFolder }: { sessions: number; onPickFolder: 
           <p className="quiet">
             {tx('home.step1Body', { folder: <span className="kbd-like">{t('sidebar.addFolder')}</span> })}
           </p>
-          <button className="link small inline-link" onClick={onPickFolder}>
+          <Button variant="link" size="sm" className="inline-link" onClick={onPickFolder}>
             {t('home.pickNow')}
-          </button>
+          </Button>
         </li>
         <li>
           <b>{t('home.step2')}</b>
@@ -92,10 +93,10 @@ export function HomePage({
   return (
     <div className="home">
       <div className="home-stats">
-        <div className="stat"><b>{running.length}</b><span>{t('home.statRunning')}</span></div>
-        <div className="stat"><b>{pending.length}</b><span>{t('rail.questions')}</span></div>
-        <div className="stat"><b>{agents.length}</b><span>{t('home.statAgents')}</span></div>
-        <div className="stat"><b>{state.answeredCount}</b><span>{t('home.statAnswered')}</span></div>
+        <div className={surfaceClass({}, 'stat')}><b>{running.length}</b><span>{t('home.statRunning')}</span></div>
+        <div className={surfaceClass({}, 'stat')}><b>{pending.length}</b><span>{t('rail.questions')}</span></div>
+        <div className={surfaceClass({}, 'stat')}><b>{agents.length}</b><span>{t('home.statAgents')}</span></div>
+        <div className={surfaceClass({}, 'stat')}><b>{state.answeredCount}</b><span>{t('home.statAnswered')}</span></div>
       </div>
       {asks}
       <div className="home-grid">
@@ -103,16 +104,21 @@ export function HomePage({
           const nodes = nodesOf.get(task.id) ?? []
           const done = nodes.filter(n => n.status === '끝').length
           const status = taskState(task)
+          const at = STAGES.indexOf(task.stage)
           return (
-            <button key={task.id} className="home-card" onClick={() => onOpenTask(task.id)}>
+            <button key={task.id} type="button" className={surfaceClass({}, 'home-card')} onClick={() => onOpenTask(task.id)}>
               <div className="task-title"><NumberBadge task={task} /> {task.title} <AgentBadge tag={badges[task.session_id]} /></div>
               <div className="quiet small">
                 <span className={`status status-${status}`}>{taskStateLabel(status)}</span>, {task.project}, {stageLabel(task.stage)}, {t('home.nodes', { done, total: nodes.length })}, {ago(task.updated_at)}
               </div>
               {task.now && <div className="small">{t('task.now', { now: task.now })}</div>}
-              <div className="mini-stages">
-                {STAGES.map((s, i) => <span key={s} className={i < STAGES.indexOf(task.stage) ? 'done' : s === task.stage ? 'now' : ''} />)}
+              {/* Done stages are solid, the current one striped, the ones ahead only outlined; the words are for screen readers. */}
+              <div className="mini-stages" aria-hidden="true">
+                {STAGES.map((s, i) => (
+                  <span key={s} className={cx(i < at && 'done', i === at && 'now')} />
+                ))}
               </div>
+              <VisuallyHidden>{t('home.stagesDone', { done: Math.max(0, at), total: STAGES.length })}</VisuallyHidden>
             </button>
           )
         })}
@@ -121,9 +127,9 @@ export function HomePage({
         <>
           <h3>{t('home.pendingQuestions')}</h3>
           {pending.map(q => (
-            <button key={q.id} className="link block" onClick={() => onOpenQuestion(q.id)}>
+            <Button key={q.id} variant="link" className="block" onClick={() => onOpenQuestion(q.id)}>
               <span className="qid">Q{q.id}</span> [{q.task_title || q.project}] {q.question}
-            </button>
+            </Button>
           ))}
         </>
       )}

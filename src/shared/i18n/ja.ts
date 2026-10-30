@@ -1027,4 +1027,14 @@ export const ja: Dict = {
   'mobile.loadFailed': 'スマートフォン接続の状態を読めませんでした: {error}',
   // Design system: shared parts (ui.tsx), dialogs, the light default theme
   'theme.a3light': 'ベーシック紺 ライト',
+  'tabbar.label': '開いている画面',
+  'dock.tabsLabel': '作業ログとターミナル',
+  'dock.closeTerm': '{title} ターミナルを閉じる',
+  'question.memoLabel': '添えるメモ',
+  'home.stagesDone': '{total} 段階のうち {done} 段階が完了',
+  'routines.when': '実行のタイミング',
+  'telegram.tokenLabel': 'ボットのトークン',
+  'settings.keys': 'ショートカット',
+  'settings.decisionKeysAnywhere': '決定カードの1文字ショートカットをウィンドウのどこでも受け付ける',
+  'settings.decisionKeysAnywhereHint': 'オフ(既定)のときは、決定カードをクリックしてカードにフォーカスがある間だけ a, b, 1, 2, Enter, H, M で答えます。ターミナルや別の欄で打った文字は答えになりません。',
 }

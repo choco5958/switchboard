@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import type { AgentDetect } from '../../../shared/types'
 import { CLOSE_TERMINALS_KEY, CUSTOM_AGENTS_KEY, PLACEHOLDERS, PRESETS, SHOW_OTHER_AGENTS_KEY, TRUST_FOLDERS_KEY, customAgents, showOtherAgents, trustFolders, validateCustom } from '../../../shared/agents'
 import { AGENTS_FOUND } from '../Dock'
-import { useToast } from '../parts'
+import { agentTone, useToast } from '../parts'
+import { Badge, Button, EmptyState, Input } from '../ui'
 import { t } from '../../../shared/i18n'
 import { tx } from '../tx'
 import { saveSetting } from '../settings'
@@ -106,18 +107,25 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
           return (
             <li key={p.id} className="agent-row">
               <span className="agent-row-name">
-                <span className={`agent-badge agent-${p.id}`}>{p.label}</span> <span className="mono-inline small">{p.bin}</span>
+                <Badge tone={agentTone(p.id)} className="agent-badge">
+                  {p.label}
+                </Badge>{' '}
+                <span className="mono-inline small">{p.bin}</span>
               </span>
               {found === null ? (
                 <span className="quiet small">{t('agents.looking')}</span>
               ) : path ? (
-                <span className="chip chip-good" title={path}>
+                <Badge shape="pill" tone="good" title={path}>
                   {t('agents.installed')}
-                </span>
+                </Badge>
               ) : (
-                <span className="chip">{t('agents.missing')}</span>
+                <Badge shape="pill">{t('agents.missing')}</Badge>
               )}
-              {p.mcp === null && <span className="chip" title={t(p.how)}>{t('agents.terminalOnly')}</span>}
+              {p.mcp === null && (
+                <Badge shape="pill" title={t(p.how)}>
+                  {t('agents.terminalOnly')}
+                </Badge>
+              )}
               <span className="quiet small agent-row-how">{p.mcp ? t('agents.via', { how: t(p.how) }) : t(p.how)}</span>
               {found !== null && !path && (
                 <span className="small agent-row-install">{tx('agents.installHint', { command: <code>{p.install}</code> })}</span>
@@ -130,36 +138,36 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
         })}
       </ul>
       <p className="quiet small">
-        <button className="link small inline-link" disabled={looking} onClick={() => void look(true)}>
+        <Button variant="link" size="sm" className="inline-link" disabled={looking} onClick={() => void look(true)}>
           {looking ? t('agents.looking') : t('agents.lookAgain')}
-        </button>{' '}
+        </Button>{' '}
         {t('agents.lookNote')}
       </p>
 
       <h3>{t('agents.customTitle')}</h3>
-      {customs.length === 0 && <p className="quiet small">{t('agents.customNone')}</p>}
+      {customs.length === 0 && <EmptyState className="small">{t('agents.customNone')}</EmptyState>}
       <ul className="agent-list">
         {customs.map(c => (
           <li key={c.id} className="agent-row">
             <span className="agent-row-name">
-              <span className="agent-badge">{c.name}</span> <span className="mono-inline small">{c.command}</span>
+              <Badge className="agent-badge">{c.name}</Badge> <span className="mono-inline small">{c.command}</span>
             </span>
             <span className="quiet small agent-row-how">{c.mcp === 'none' ? t('agents.customPlain') : t('agents.via', { how: c.mcp })}</span>
-            <button className="link small" onClick={() => void save(customs.filter(o => o.id !== c.id))}>
+            <Button variant="link" size="sm" onClick={() => void save(customs.filter(o => o.id !== c.id))}>
               {t('agents.remove')}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
       <div className="agent-form">
         <label>
           <span className="small">{t('agents.name')}</span>
-          <input className="filter" placeholder={t('agents.namePlaceholder')} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+          <Input placeholder={t('agents.namePlaceholder')} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
         </label>
         <label>
           <span className="small">{t('agents.command')}</span>
-          <input
-            className="filter mono-inline"
+          <Input
+            mono
             placeholder={t('agents.commandPlaceholder')}
             value={form.command}
             onChange={e => setForm({ ...form, command: e.target.value })}
@@ -167,8 +175,8 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
         </label>
         <label>
           <span className="small">{t('agents.mcp')}</span>
-          <input
-            className="filter mono-inline"
+          <Input
+            mono
             placeholder={t('agents.mcpPlaceholder', { example: '{server}' })}
             value={form.mcp}
             onChange={e => setForm({ ...form, mcp: e.target.value })}
@@ -180,9 +188,9 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
         <p className="quiet small">{t('agents.llama', { example: '{server}' })}</p>
         {error && <p className="error small">{error}</p>}
         <div className="actions">
-          <button disabled={!form.name.trim() || !form.command.trim()} onClick={() => void add()}>
+          <Button disabled={!form.name.trim() || !form.command.trim()} onClick={() => void add()}>
             {t('agents.add')}
-          </button>
+          </Button>
           <span className="quiet small">{t('agents.addNote')}</span>
         </div>
       </div>

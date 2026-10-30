@@ -1027,4 +1027,14 @@ export const zhCN: Dict = {
   'mobile.loadFailed': '无法读取手机连接状态: {error}',
   // Design system: shared parts (ui.tsx), dialogs, the light default theme
   'theme.a3light': '经典藏青 浅色',
+  'tabbar.label': '打开的页面',
+  'dock.tabsLabel': '工作日志和终端',
+  'dock.closeTerm': '关闭 {title} 终端',
+  'question.memoLabel': '附加备注',
+  'home.stagesDone': '{total} 个阶段中已完成 {done} 个',
+  'routines.when': '运行时间',
+  'telegram.tokenLabel': '机器人令牌',
+  'settings.keys': '快捷键',
+  'settings.decisionKeysAnywhere': '在窗口任何位置接受决定卡片的单键快捷键',
+  'settings.decisionKeysAnywhereHint': '关闭(默认)时,只有决定卡片获得焦点(例如点击卡片后)时 a, b, 1, 2, Enter, H, M 才会作答。在终端或其他窗格中输入的按键不会成为答案。',
 }

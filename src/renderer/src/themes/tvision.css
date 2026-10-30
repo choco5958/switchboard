@@ -23,32 +23,45 @@
   --button: #00aa00;
   --mono: 'D2Coding', 'SF Mono', Menlo, monospace;
   --sans: var(--mono);
+  /* Square corners everywhere. */
+  --r-sm: 0;
+  --r-md: 0;
+  --r-lg: 0;
+  --r-pill: 0;
+  --tab-indicator: none;
+  --sel-bar: 0 0 #0000;
+  /* Green buttons drawn as < 버튼 > with a black shadow they press into. */
+  --btn-bg: var(--button);
+  --btn-shadow: 6px 4px 0 #000000;
+  --press: translate(6px, 4px);
+  --btn-primary-bg: #55ff55;
+  --btn-primary-line: transparent;
+  --btn-primary-text: #000000;
+  --btn-primary-weight: 700;
 }
 
-[data-theme='tvision'] * { border-radius: 0 !important; }
 [data-theme='tvision'] h1,
 [data-theme='tvision'] .count,
 [data-theme='tvision'] .tag { color: var(--warn); }
 [data-theme='tvision'] .qid { color: var(--text); }
 
-/* Menu bar and status line in grey with black text. */
-[data-theme='tvision'] .topbar,
-[data-theme='tvision'] .worklog-head { background: var(--menu); color: #000000; border-color: #000000; }
+/* Menu bar in grey with black text. */
+[data-theme='tvision'] .topbar { background: var(--menu); color: #000000; border-color: #000000; }
 [data-theme='tvision'] .topbar .quiet,
-[data-theme='tvision'] .worklog-head .link,
-[data-theme='tvision'] .topbar .brand { color: #000000; }
+[data-theme='tvision'] .topbar .brand,
+[data-theme='tvision'] .topbar .icon-btn { color: #000000; }
 [data-theme='tvision'] .topbar .brand::first-letter { color: #aa0000; }
-[data-theme='tvision'] .topbar .chip { color: #000000; border-color: #000000; }
-[data-theme='tvision'] .topbar .chip-warn { background: var(--warn); }
-[data-theme='tvision'] .topbar .chip-good { background: var(--good); }
-[data-theme='tvision'] .topbar .chip-bad { background: #ff5555; }
-[data-theme='tvision'] .topbar .chip-on { background: var(--accent); }
+[data-theme='tvision'] .topbar .badge { color: #000000; border-color: #000000; }
+[data-theme='tvision'] .topbar .badge.tone-warn { background: var(--warn); }
+[data-theme='tvision'] .topbar .badge.tone-good { background: var(--good); }
+[data-theme='tvision'] .topbar .badge.tone-bad { background: #ff5555; }
+[data-theme='tvision'] .topbar .badge.tone-accent { background: var(--accent); }
 [data-theme='tvision'] .topbar .meter-track { background: #000080; }
 [data-theme='tvision'] .searchbox { background: #000080; color: #ffffff; border-color: #000000; }
 
 /* Windows: white double border and a black drop shadow. */
 [data-theme='tvision'] .card,
-[data-theme='tvision'] .palette,
+[data-theme='tvision'] .dialog,
 [data-theme='tvision'] .stat,
 [data-theme='tvision'] .home-card { border: 3px double #ffffff; box-shadow: 8px 8px 0 #000000; }
 [data-theme='tvision'] .node { border: 3px double var(--line); box-shadow: 6px 6px 0 #000000; overflow: visible; }
@@ -57,57 +70,37 @@
 [data-theme='tvision'] .node-실패 { border-color: var(--bad); }
 [data-theme='tvision'] .graph-scroll { background: #000080; }
 
-/* Cyan selection with black text. */
-[data-theme='tvision'] .queue-item.active,
-[data-theme='tvision'] .option.picked,
-[data-theme='tvision'] .palette-item.on,
-[data-theme='tvision'] .rail-button.on,
-[data-theme='tvision'] .tab.on,
-[data-theme='tvision'] .task.active,
-[data-theme='tvision'] .pipeline li.now,
-[data-theme='tvision'] .theme-option.on { background: var(--accent-soft); color: #000000; border-color: var(--accent-soft); box-shadow: none; }
-[data-theme='tvision'] .queue-item.active *,
-[data-theme='tvision'] .option.picked *,
-[data-theme='tvision'] .palette-item.on *,
-[data-theme='tvision'] .task.active *,
-[data-theme='tvision'] .pipeline li.now *,
-[data-theme='tvision'] .theme-option.on * { color: #000000; }
-[data-theme='tvision'] .option.picked .recommend { color: #000000; }
-/* The selected project row and task: grey counts, yellow chips and bright stage bars vanish on cyan. */
-[data-theme='tvision'] .project-row.on { background: var(--accent-soft); color: #000000; border-color: var(--accent-soft); }
-[data-theme='tvision'] .project-row.on * { color: #000000; }
-[data-theme='tvision'] .task.active .tag-chip { border-color: #000000; }
-[data-theme='tvision'] .task.active .stages li { border-color: #006060; }
-[data-theme='tvision'] .task.active .stages li.done { border-color: #000080; }
-[data-theme='tvision'] .task.active .stages li.now { border-color: #000000; font-weight: 700; }
+/* Cyan selection with black text: everything in a selected row turns black. */
+[data-theme='tvision'] .row.on,
+[data-theme='tvision'] .surface.on,
+[data-theme='tvision'] .tab-item.on,
+[data-theme='tvision'] .icon-btn.on,
+[data-theme='tvision'] .pipeline li.now { background: var(--accent-soft); color: #000000; border-color: var(--accent-soft); }
+[data-theme='tvision'] .row.on *,
+[data-theme='tvision'] .surface.on *,
+[data-theme='tvision'] .tab-item.on *,
+[data-theme='tvision'] .pipeline li.now * { color: #000000; }
+/* The selected task: grey chips and bright stage bars vanish on cyan. */
+[data-theme='tvision'] .surface.on .badge { border-color: #000000; }
+[data-theme='tvision'] .task.on .stages li { border-color: #006060; }
+[data-theme='tvision'] .task.on .stages li.done { border-color: #000080; }
+[data-theme='tvision'] .task.on .stages li.now { border-color: #000000; font-weight: 700; }
 
-/* Green buttons drawn as < 버튼 > with a black shadow. */
-[data-theme='tvision'] .actions button,
-[data-theme='tvision'] .browser-bar button {
+[data-theme='tvision'] .btn {
   border: none;
   padding: 2px 6px;
   margin-right: 8px;
   margin-bottom: 4px;
-  background: var(--button);
   color: #000000;
-  box-shadow: 6px 4px 0 #000000;
 }
-[data-theme='tvision'] .actions button::before,
-[data-theme='tvision'] .browser-bar button::before { content: '<\00a0'; }
-[data-theme='tvision'] .actions button::after,
-[data-theme='tvision'] .browser-bar button::after { content: '\00a0>'; }
-[data-theme='tvision'] .actions button.primary,
-[data-theme='tvision'] .browser-bar button.primary { background: #55ff55; color: #000000; font-weight: 700; }
-[data-theme='tvision'] .node-detail .actions button.danger { background: #aa0000; color: #ffffff; }
-[data-theme='tvision'] .actions button:disabled { opacity: 1; background: #005500; color: #55aa55; }
-[data-theme='tvision'] .actions button:active:not(:disabled) { transform: translate(6px, 4px); box-shadow: none; }
+[data-theme='tvision'] .btn::before { content: '<\00a0'; }
+[data-theme='tvision'] .btn::after { content: '\00a0>'; }
+[data-theme='tvision'] .btn-danger { background: #aa0000; color: #ffffff; }
+[data-theme='tvision'] .btn:disabled { opacity: 1; background: #005500; color: #55aa55; }
 
-[data-theme='tvision'] .memo,
-[data-theme='tvision'] .filter,
-[data-theme='tvision'] .address,
-[data-theme='tvision'] .session-select,
+[data-theme='tvision'] .input,
 [data-theme='tvision'] .palette-input { background: #000080; color: #ffffff; border-color: var(--accent); }
-[data-theme='tvision'] .recommend { background: var(--warn); color: #000000; }
+[data-theme='tvision'] .recommend { background: var(--warn); border-color: var(--warn); color: #000000; }
 [data-theme='tvision'] kbd { background: var(--menu); color: #000000; border-color: #000000; }
 [data-theme='tvision'] ::-webkit-scrollbar-track { background: #00aaaa; }
 [data-theme='tvision'] ::-webkit-scrollbar-thumb { background: #000080; }

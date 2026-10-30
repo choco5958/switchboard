@@ -3,6 +3,7 @@ import type { Agent, GraphNode } from '../../shared/types'
 import { ago, clock } from './model'
 import { t, type Key } from '../../shared/i18n'
 import { composing } from './ime'
+import { Badge, Button, Card, Dialog, EmptyState, Input, type Tone } from './ui'
 
 const STATUS: Record<Agent['status'], Key> = {
   pending: 'agent.pending',
@@ -17,6 +18,8 @@ const STATUS: Record<Agent['status'], Key> = {
 }
 
 const COMMAND = { pause: 'worker.pause', resume: 'worker.resume', stop: 'worker.stop', message: 'worker.message' } as const
+
+const TONE: Partial<Record<Agent['status'], Tone>> = { running: 'accent', paused: 'warn', failed: 'bad' }
 
 type Transcript = { role: string; text: string }[]
 
@@ -64,7 +67,7 @@ export function WorkerLane({ sessionId, agents, nodes }: { sessionId: string; ag
         {t('worker.head')} <span className="quiet small">{t('worker.headHint')}</span>
       </h3>
       {agents.length === 0 ? (
-        <p className="quiet small">{t('worker.none')}</p>
+        <EmptyState className="small">{t('worker.none')}</EmptyState>
       ) : (
         <p className="quiet small">
           {t('worker.count', { n: agents.length })}{done > 0 ? t('worker.countDone', { n: done }) : ''}
@@ -73,28 +76,43 @@ export function WorkerLane({ sessionId, agents, nodes }: { sessionId: string; ag
       {agents.map(agent => {
         const live = ['running', 'waiting', 'idle', 'pending', 'paused'].includes(agent.status)
         return (
-          <div key={agent.id} className={`worker worker-${agent.status}`}>
+          <Card key={agent.id} sunk pad="sm" className={`worker worker-${agent.status}`}>
             <div className="worker-head">
-              <span className={`chip ${agent.status === 'running' ? 'chip-on' : agent.status === 'paused' ? 'chip-warn' : agent.status === 'failed' ? 'chip-bad' : ''}`}>
+              <Badge shape="pill" tone={TONE[agent.status] ?? 'neutral'}>
                 {STATUS[agent.status] ? t(STATUS[agent.status]) : agent.status}
-              </span>
+              </Badge>
               <span className="worker-node">{agent.node_key ? nodeTitle(agent.node_key) : t('worker.noNode')}</span>
               <span className="quiet small">{ago(agent.updated_at)}</span>
               <span className="spacer" />
               {live && agent.status !== 'paused' && (
-                <button onClick={() => void send('pause', agent)}>{t('worker.pause')}</button>
+                <Button size="sm" onClick={() => void send('pause', agent)}>
+                  {t('worker.pause')}
+                </Button>
               )}
-              {agent.status === 'paused' && <button onClick={() => void send('resume', agent)}>{t('worker.resume')}</button>}
-              {live && <button onClick={() => void send('stop', agent)}>{t('worker.stop')}</button>}
-              <button onClick={() => setTalking(talking === agent.id ? null : agent.id)}>{t('worker.message')}</button>
-              <button onClick={() => void openTranscript(agent)}>{t('worker.transcript')}</button>
+              {agent.status === 'paused' && (
+                <Button size="sm" onClick={() => void send('resume', agent)}>
+                  {t('worker.resume')}
+                </Button>
+              )}
+              {live && (
+                <Button size="sm" onClick={() => void send('stop', agent)}>
+                  {t('worker.stop')}
+                </Button>
+              )}
+              <Button size="sm" aria-expanded={talking === agent.id} onClick={() => setTalking(talking === agent.id ? null : agent.id)}>
+                {t('worker.message')}
+              </Button>
+              <Button size="sm" onClick={() => void openTranscript(agent)}>
+                {t('worker.transcript')}
+              </Button>
             </div>
             <div className="small">{agent.description.replace(/^\[[^\]]+\]\s*/, '')}</div>
             {feedback[agent.id] && <div className={`small ${feedback[agent.id]!.bad ? 'error' : 'quiet'}`}>{feedback[agent.id]!.text}</div>}
             {talking === agent.id && (
               <div className="worker-talk">
-                <input
+                <Input
                   autoFocus
+                  aria-label={t('worker.messagePlaceholder')}
                   value={text}
                   placeholder={t('worker.messagePlaceholder')}
                   onChange={event => setText(event.target.value)}
@@ -109,29 +127,27 @@ export function WorkerLane({ sessionId, agents, nodes }: { sessionId: string; ag
                 />
               </div>
             )}
-          </div>
+          </Card>
         )
       })}
       {transcript && (
-        <div className="transcript-backdrop" onMouseDown={() => setTranscript(null)}>
-          <div className="transcript" onMouseDown={event => event.stopPropagation()}>
-            <div className="card-head">
-              <b>{transcript.agent.description}</b>
-              <span className="spacer" />
-              <button className="link" onClick={() => setTranscript(null)}>
-                {t('common.close')}
-              </button>
-            </div>
-            {transcript.lines === null && <p className="quiet">{t('worker.loading')}</p>}
-            {transcript.error && <p className="error">{transcript.error}</p>}
-            {transcript.lines?.map((line, i) => (
-              <div key={i} className={`transcript-line role-${line.role}`}>
-                <span className="quiet small">{line.role === 'user' ? t('worker.roleUser') : t('worker.roleAgent')}</span>
-                <pre>{line.text}</pre>
-              </div>
-            ))}
+        <Dialog label={transcript.agent.description} onClose={() => setTranscript(null)} className="transcript" scrimClassName="transcript-scrim">
+          <div className="card-head">
+            <b>{transcript.agent.description}</b>
+            <span className="spacer" />
+            <Button variant="link" onClick={() => setTranscript(null)}>
+              {t('common.close')}
+            </Button>
           </div>
-        </div>
+          {transcript.lines === null && <p className="quiet">{t('worker.loading')}</p>}
+          {transcript.error && <p className="error">{transcript.error}</p>}
+          {transcript.lines?.map((line, i) => (
+            <div key={i} className={`transcript-line role-${line.role}`}>
+              <span className="quiet small">{line.role === 'user' ? t('worker.roleUser') : t('worker.roleAgent')}</span>
+              <pre>{line.text}</pre>
+            </div>
+          ))}
+        </Dialog>
       )}
     </div>
   )

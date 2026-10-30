@@ -27,6 +27,5 @@
   --term-12: #81a1c1; --term-13: #b48ead; --term-14: #8fbcbb; --term-15: #eceff4;
   --term-cursor: #d8dee9;
   --term-selection: #434c5e;
+  --tab-indicator: inset 0 -2px 0 var(--accent);
 }
-
-[data-theme='nord'] .tab.on { box-shadow: inset 0 -2px 0 var(--accent); }

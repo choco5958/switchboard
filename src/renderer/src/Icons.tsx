@@ -1,4 +1,5 @@
-// Line icons for the rail, drawn in currentColor so every theme recolors them.
+// Line icons, drawn in currentColor so every theme recolors them. Text glyphs (×, ▶, ▾, ✓, « »)
+// are icons here instead, so they line up and scale with the rest.
 const PATHS = {
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
   question: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01',
@@ -11,8 +12,17 @@ const PATHS = {
   gallery: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   linear: 'M4 15l5 5M4 10l10 10M5 6l13 13M9 4l11 11M14 4l6 6',
   search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.3-4.3',
+  // Chevrons: collapse points left, expand right; up and down for menus and folds.
   collapse: 'M15 6l-6 6 6 6',
   expand: 'M9 6l6 6-6 6',
+  chevronDown: 'M6 9l6 6 6-6',
+  chevronUp: 'M6 15l6-6 6 6',
+  // Two chevrons: a side panel opens toward the left, closes toward the right.
+  panelOpen: 'M13 6l-6 6 6 6M19 6l-6 6 6 6',
+  panelClose: 'M11 6l6 6-6 6M5 6l6 6-6 6',
+  close: 'M6 6l12 12M18 6L6 18',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
+  play: 'M8 5.5v13l10.5-6.5z',
   folder: 'M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   sidebar: 'M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM9 4v16',
@@ -23,9 +33,27 @@ const PATHS = {
 
 export type IconName = keyof typeof PATHS
 
-export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
+// Three sizes only: sm sits in a line of small text and in small buttons, md in toolbars, lg in the rail.
+export const ICON_PX = { sm: 14, md: 16, lg: 18 } as const
+export type IconSize = keyof typeof ICON_PX
+
+export function Icon({ name, size = 'md' }: { name: IconName; size?: IconSize }) {
+  const px = ICON_PX[size]
+  // The play mark is a filled shape; the rest are lines.
+  const filled = name === 'play'
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      className="icon"
+      width={px}
+      height={px}
+      viewBox="0 0 24 24"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth={filled ? 1 : 1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d={PATHS[name]} />
     </svg>
   )

@@ -4,6 +4,8 @@ import { taskStateLabel, taskState } from '../../shared/projects'
 import { eventKindLabel, stageLabel, t } from '../../shared/i18n'
 import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent, type Attention } from './model'
 import type { AgentTag } from '../../shared/agents'
+import { Icon } from './Icons'
+import { Badge, Button, Card, EmptyState, IconButton, VisuallyHidden, cx, surfaceClass, type Tone } from './ui'
 
 // Enter or Space on a focused row or box that is not a button runs what a click runs.
 // Keys pressed on a control inside it (a close button) are left to that control.
@@ -21,11 +23,17 @@ export function taskColor(task: Pick<Task, 'number'>): string {
 }
 
 export function NumberBadge({ task, title }: { task: Pick<Task, 'number'>; title?: string }) {
+  const color = taskColor(task)
   return (
-    <span className="num-badge" style={{ background: taskColor(task) }} title={title}>
+    <Badge shape="count" tone="accent" className="num-badge" style={{ background: color, borderColor: color }} title={title}>
       {task.number}
-    </span>
+    </Badge>
   )
+}
+
+// The colour of an agent's badge: Claude in the accent, the two best known others in their own.
+export function agentTone(kind: string): Tone {
+  return kind === 'claude' ? 'accent' : kind === 'codex' ? 'good' : kind === 'gemini' ? 'warn' : 'neutral'
 }
 
 // Which agent CLI a session runs in (Claude, Codex, Gemini, ...). Shown only once a
@@ -33,17 +41,21 @@ export function NumberBadge({ task, title }: { task: Pick<Task, 'number'>; title
 export function AgentBadge({ tag }: { tag: AgentTag | undefined }) {
   if (!tag) return null
   return (
-    <span className={`agent-badge agent-${tag.kind.replace(/[^a-z0-9-]/g, '')}`} title={t('agents.badgeTitle', { label: tag.label })}>
+    <Badge tone={agentTone(tag.kind)} className="agent-badge" title={t('agents.badgeTitle', { label: tag.label })}>
       {tag.label}
-    </span>
+    </Badge>
   )
 }
 
 export function QueueItem({ q, active, gone, onClick }: { q: Question; active: boolean; gone?: boolean; onClick: () => void }) {
   return (
-    <button className={`queue-item ${active ? 'active' : ''}`} onClick={onClick}>
+    <button type="button" className={cx('row queue-item', active && 'on')} aria-current={active ? 'true' : undefined} onClick={onClick}>
       <span className="qid">Q{q.id}</span> <span className="tag">[{q.task_title || q.project}]</span>
-      {gone && <span className="gone-mark" title={t('question.goneTitle')}>{t('question.gone')}</span>}
+      {gone && (
+        <Badge className="gone-mark" title={t('question.goneTitle')}>
+          {t('question.gone')}
+        </Badge>
+      )}
       <span className="qtext">{q.question}</span>
       <span className="quiet small">{ago(q.created_at)}</span>
     </button>
@@ -72,7 +84,12 @@ export function TaskItem({
   const at = STAGES.indexOf(task.stage)
   const state = taskState(task)
   return (
-    <button className={`task ${active ? 'active' : ''}`} onClick={onClick}>
+    <button
+      type="button"
+      className={surfaceClass({ pad: 'sm', sunk: true, interactive: true, on: active }, 'task')}
+      aria-current={active ? 'true' : undefined}
+      onClick={onClick}
+    >
       <div className="task-title">
         <span className={`status status-${state}`}>{taskStateLabel(state)}</span> <NumberBadge task={task} />{' '}
         {task.title} <AgentBadge tag={agent} />
@@ -82,35 +99,27 @@ export function TaskItem({
       <ol className="stages">
         {STAGES.map((stage, i) => (
           <li key={stage} className={i < at ? 'done' : i === at ? 'now' : ''}>
+            {i < at && <Icon name="check" size="sm" />}
             {stageLabel(stage)}
+            {i < at && <VisuallyHidden>{`, ${t('taskState.done')}`}</VisuallyHidden>}
           </li>
         ))}
       </ol>
       <div className="task-tags">
         {attention === 'stalled' && (
-          <span className="tag-chip warn" title={t('task.stalledTitle')}>
+          <Badge tone="warn" title={t('task.stalledTitle')}>
             {t('task.stalled')}
-          </span>
+          </Badge>
         )}
         {attention === 'limited' && (
-          <span className="tag-chip warn" title={t('task.limitedTitle')}>
+          <Badge tone="warn" title={t('task.limitedTitle')}>
             {t('task.limited')}
-          </span>
+          </Badge>
         )}
-        {attention === 'offline' && (
-          <span className="tag-chip" title={t('task.offlineTitle')}>
-            {t('question.gone')}
-          </span>
-        )}
-        {openQuestions > 0 && <span className="tag-chip warn">{t('task.openQuestions', { n: openQuestions })}</span>}
-        {task.restored_at && Date.now() - task.restored_at < 24 * 3600_000 && (
-          <span className="tag-chip accent">{t('task.restoredTag')}</span>
-        )}
-        {nodeCount === 0 && (
-          <span className="tag-chip" title={t('task.noPlanTitle')}>
-            {t('task.noPlan')}
-          </span>
-        )}
+        {attention === 'offline' && <Badge title={t('task.offlineTitle')}>{t('question.gone')}</Badge>}
+        {openQuestions > 0 && <Badge tone="warn">{t('task.openQuestions', { n: openQuestions })}</Badge>}
+        {task.restored_at && Date.now() - task.restored_at < 24 * 3600_000 && <Badge tone="accent">{t('task.restoredTag')}</Badge>}
+        {nodeCount === 0 && <Badge title={t('task.noPlanTitle')}>{t('task.noPlan')}</Badge>}
       </div>
     </button>
   )
@@ -123,7 +132,7 @@ export function History({ questions, onOpen }: { questions: Question[]; onOpen: 
       <h1>{t('rail.history')}</h1>
       <p className="quiet small">{t('history.recent')}</p>
       {answered.length === 0 ? (
-        <p className="quiet">{t('history.empty')}</p>
+        <EmptyState>{t('history.empty')}</EmptyState>
       ) : (
         <table className="history">
           <thead>
@@ -171,7 +180,7 @@ export function LogLines({
   empty?: string
   agents?: Record<string, AgentTag> // session id to its agent badge
 }) {
-  if (events.length === 0 && empty) return <p className="quiet log-empty">{empty}</p>
+  if (events.length === 0 && empty) return <EmptyState className="log-empty">{empty}</EmptyState>
   return (
     <>
       {events.map(e => {
@@ -232,19 +241,19 @@ export function Toast({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (
         <div key={item.id} className={`toast toast-${item.kind}`}>
           <span>{item.text}</span>
           {item.action && (
-            <button
-              className="link small toast-action"
+            <Button
+              variant="link"
+              size="sm"
+              className="toast-action"
               onClick={() => {
                 onDismiss(item.id)
                 item.action?.run()
               }}
             >
               {item.action.label}
-            </button>
+            </Button>
           )}
-          <button className="toast-close" title={t('common.close')} onClick={() => onDismiss(item.id)}>
-            ×
-          </button>
+          <IconButton icon="close" size="sm" label={t('common.close')} className="toast-close" onClick={() => onDismiss(item.id)} />
         </div>
       ))}
     </div>
@@ -255,7 +264,7 @@ export function Toast({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (
 // it here; 'in the terminal' hands it back to Claude Code's own dialog.
 export function ApprovalItem({ a, onAnswer }: { a: Approval; onAnswer: (decision: 'allow' | 'deny' | 'terminal') => void }) {
   return (
-    <div className="approval-item">
+    <Card pad="sm" tone="warn" className="approval-item">
       <div>
         <span className="qid">A{a.id}</span> <span className="tag">[{a.project}]</span> <strong>{a.tool}</strong>
         <span className="quiet small"> {ago(a.created_at)}</span>
@@ -265,15 +274,17 @@ export function ApprovalItem({ a, onAnswer }: { a: Approval; onAnswer: (decision
       </pre>
       {a.reason && <div className="small">{t('approval.reason', { reason: a.reason })}</div>}
       {a.cwd && <div className="quiet small">{t('approval.cwd', { cwd: a.cwd })}</div>}
-      <div className="approval-actions">
-        <button className="primary" onClick={() => onAnswer('allow')}>
+      <div className="actions approval-actions">
+        <Button variant="primary" size="sm" onClick={() => onAnswer('allow')}>
           {t('approval.allow')}
-        </button>
-        <button onClick={() => onAnswer('deny')}>{t('approval.deny')}</button>
-        <button className="link small" title={t('approval.terminalTitle')} onClick={() => onAnswer('terminal')}>
+        </Button>
+        <Button size="sm" onClick={() => onAnswer('deny')}>
+          {t('approval.deny')}
+        </Button>
+        <Button variant="link" size="sm" title={t('approval.terminalTitle')} onClick={() => onAnswer('terminal')}>
           {t('approval.terminal')}
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   )
 }

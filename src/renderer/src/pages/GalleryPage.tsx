@@ -382,7 +382,7 @@ export function GalleryPage() {
         </select>
         <Row>
           <button className="searchbox">
-            <Icon name="search" size={14} /> 찾기 <kbd>⌘K</kbd>
+            <Icon name="search" size="sm" /> 찾기 <kbd>⌘K</kbd>
           </button>
         </Row>
       </Part>

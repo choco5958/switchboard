@@ -1027,4 +1027,14 @@ export const en: Dict = {
   'mobile.loadFailed': 'Could not read the phone access state: {error}',
   // Design system: shared parts (ui.tsx), dialogs, the light default theme
   'theme.a3light': 'Classic navy (light)',
+  'tabbar.label': 'Open screens',
+  'dock.tabsLabel': 'Work log and terminals',
+  'dock.closeTerm': 'Close the {title} terminal',
+  'question.memoLabel': 'Memo to add',
+  'home.stagesDone': '{done} of {total} stages done',
+  'routines.when': 'When it runs',
+  'telegram.tokenLabel': 'Bot token',
+  'settings.keys': 'Shortcuts',
+  'settings.decisionKeysAnywhere': 'Take the decision card\'s one-key shortcuts anywhere in the window',
+  'settings.decisionKeysAnywhereHint': 'Off (the default): a, b, 1, 2, Enter, H and M answer only while the decision card has focus, for example after a click on it. Keys typed in a terminal or another pane never answer.',
 }

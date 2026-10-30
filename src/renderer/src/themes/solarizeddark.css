@@ -27,6 +27,5 @@
   --term-12: #839496; --term-13: #6c71c4; --term-14: #93a1a1; --term-15: #fdf6e3;
   --term-cursor: #93a1a1;
   --term-selection: #073642;
+  --tab-indicator: inset 0 -2px 0 var(--accent);
 }
-
-[data-theme='solarizeddark'] .tab.on { box-shadow: inset 0 -2px 0 var(--accent); }

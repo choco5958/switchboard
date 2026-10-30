@@ -17,6 +17,7 @@ import { debugStore, failureReason, sessionFor, useDebugStore, waitUntilAnswerin
 import { CaptureLimiter, makeNonce, parseMessage, pickerSource, type PickMessage } from './picker'
 import { commentStatusLabel, t, type Key } from '../../shared/i18n'
 import { composing } from './ime'
+import { Badge, Button, Card, Chip, EmptyState, IconButton, Input, Select, cx } from './ui'
 import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
 import { focusScript, isLocalUrl, pointScript, refRevision, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
 
@@ -452,23 +453,23 @@ export function BrowserView({
   return (
     <div className={`browser ${visible ? '' : 'browser-hidden'}`}>
       <div className="browser-bar">
-        <button title={t('browser.back')} onClick={() => ready.current && view.current?.goBack()}>
-          &lt;
-        </button>
-        <button title={t('browser.forward')} onClick={() => ready.current && view.current?.goForward()}>
-          &gt;
-        </button>
-        <button title={t('browser.reload')} onClick={() => ready.current && view.current?.reload()}>
+        <IconButton icon="collapse" label={t('browser.back')} onClick={() => ready.current && view.current?.goBack()} />
+        <IconButton icon="expand" label={t('browser.forward')} onClick={() => ready.current && view.current?.goForward()} />
+        <Button size="sm" onClick={() => ready.current && view.current?.reload()}>
           {t('browser.reload')}
-        </button>
-        <input
+        </Button>
+        <Input
+          compact
+          mono
           className="address"
+          aria-label={t('browser.address')}
           value={address}
           onChange={event => setAddress(event.target.value)}
           onKeyDown={event => event.key === 'Enter' && !composing(event) && load(address)}
         />
-        <button
-          className={`switch ${commenting ? 'switch-on' : ''}`}
+        <Button
+          size="sm"
+          className={cx('switch', commenting && 'switch-on')}
           role="switch"
           aria-checked={commenting}
           title={t('browser.commentModeTitle')}
@@ -478,38 +479,39 @@ export function BrowserView({
             <span className="switch-knob" />
           </span>
           {t('browser.commentMode')} <kbd>⌥M</kbd>
-        </button>
-        <button className="primary" disabled={openComments.length === 0 || !targetId} onClick={() => void sendAll()}>
-          {t('browser.sendToClaude')}{openComments.length > 0 ? ` (${openComments.length})` : ''}
-        </button>
+        </Button>
+        <Button variant="primary" size="sm" disabled={openComments.length === 0 || !targetId} onClick={() => void sendAll()}>
+          {t('browser.sendToClaude')}
+          {openComments.length > 0 ? ` (${openComments.length})` : ''}
+        </Button>
       </div>
       <div className="browser-body">
         <div className="webview-wrap">
           <webview ref={view} src={src} partition="persist:claude-ide" className="webview" />
           {failure && (
             <div className="load-failure" role="alert">
-              <div className="load-failure-box">
+              <Card pad="none" className="load-failure-box">
                 <h2>{t('browser.loadFailed')}</h2>
                 <p className="mono load-failure-url">{failure.url}</p>
                 <p>{failureReason(failure.code)}</p>
                 <p className="quiet small mono">{failure.code}</p>
                 <div className="actions">
-                  <button className="primary" onClick={() => load(failure.url)}>
+                  <Button variant="primary" onClick={() => load(failure.url)}>
                     {t('browser.retry')}
-                  </button>
+                  </Button>
                   {failedTarget ? (
-                    <button disabled={starting} onClick={() => void startFailed(failedTarget)}>
+                    <Button disabled={starting} onClick={() => void startFailed(failedTarget)}>
                       {starting ? t('browser.starting') : t('browser.start', { name: failedTarget.name })}
-                    </button>
+                    </Button>
                   ) : (
-                    <button
+                    <Button
                       onClick={() => {
                         debugStore.requestTarget(failure.url)
                         onShow?.()
                       }}
                     >
                       {t('browser.addTarget')}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 <p className="quiet small">
@@ -517,36 +519,46 @@ export function BrowserView({
                     ? t('browser.targetHint', { name: failedTarget.name })
                     : t('browser.noTargetHint')}
                 </p>
-              </div>
+              </Card>
             </div>
           )}
         </div>
         <aside className="comment-panel">
           <div className="comment-head">
             <h2>{t(HEADINGS[filter])}</h2>
-            <select className="comment-filter" value={filter} title={t('browser.filterTitle')} onChange={event => setFilter(event.target.value as CommentFilter)}>
+            <Select
+              compact
+              mono
+              className="comment-filter"
+              value={filter}
+              title={t('browser.filterTitle')}
+              aria-label={t('browser.filterTitle')}
+              onChange={event => setFilter(event.target.value as CommentFilter)}
+            >
               {(['열림', '보냄', '해결', '전체'] as CommentFilter[]).map(f => (
                 <option key={f} value={f}>
                   {commentStatusLabel(f)} {counts[f]}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           {shown.length === 0 && (
-            <p className="quiet small">
-              {filter !== '열림'
-                ? t(EMPTY[filter])
-                : commenting
-                  ? t('browser.emptyCommenting')
-                  : t('browser.emptyOpen')}
-            </p>
+            <EmptyState className="small">
+              {filter !== '열림' ? t(EMPTY[filter]) : commenting ? t('browser.emptyCommenting') : t('browser.emptyOpen')}
+            </EmptyState>
           )}
           {shown.map(c => {
             const n = openComments.indexOf(c)
             return (
-              <div key={c.id} className={`kept kept-${c.status}`}>
+              <Card key={c.id} sunk pad="sm" className={`kept kept-${c.status}`}>
                 <div className="kept-head">
-                  {n >= 0 ? <span className="mark-num">{n + 1}</span> : <span className="tag-chip kept-status">{commentStatusLabel(c.status)}</span>}
+                  {n >= 0 ? (
+                    <Badge shape="count" tone="warn" className="mark-num">
+                      {n + 1}
+                    </Badge>
+                  ) : (
+                    <Badge className="kept-status">{commentStatusLabel(c.status)}</Badge>
+                  )}
                   <span className="small quiet kept-where">{c.place || c.element}</span>
                 </div>
                 <div className="kept-text">{c.text}</div>
@@ -557,20 +569,20 @@ export function BrowserView({
                 </div>
                 <div className="kept-actions">
                   {c.status !== '해결' && (
-                    <button className="link small" title={t('browser.resolveTitle')} onClick={() => void setStatusOf([c], '해결')}>
+                    <Button variant="link" size="sm" title={t('browser.resolveTitle')} onClick={() => void setStatusOf([c], '해결')}>
                       {t('commentStatus.resolved')}
-                    </button>
+                    </Button>
                   )}
                   {c.status !== '열림' && (
-                    <button className="link small" title={t('browser.reopenTitle')} onClick={() => void setStatusOf([c], '열림')}>
+                    <Button variant="link" size="sm" title={t('browser.reopenTitle')} onClick={() => void setStatusOf([c], '열림')}>
                       {t('browser.reopen')}
-                    </button>
+                    </Button>
                   )}
-                  <button className="link small" title={t('browser.deleteTitle')} onClick={() => void remove(c)}>
+                  <Button variant="link" size="sm" title={t('browser.deleteTitle')} onClick={() => void remove(c)}>
                     {t('dev.delete')}
-                  </button>
+                  </Button>
                 </div>
-              </div>
+              </Card>
             )
           })}
 
@@ -588,9 +600,9 @@ export function BrowserView({
         </span>
         {title && !failure && <span className="status-part status-title">{title}</span>}
         {failure && <span className="status-part error">{t('browser.failedShort')}</span>}
-        <button className={`status-mode ${commenting ? 'status-mode-on' : ''}`} title={t('browser.toggleTitle')} onClick={() => setCommenting(on => !on)}>
+        <Chip on={commenting} className="status-mode" title={t('browser.toggleTitle')} onClick={() => setCommenting(on => !on)}>
           {commenting ? t('browser.modeOn') : t('browser.modeOff')}
-        </button>
+        </Chip>
       </div>
     </div>
   )

@@ -3,6 +3,8 @@ import type { BridgeState, GraphNode } from '../../shared/types'
 import { clock } from './model'
 import type { Tab } from './tabs'
 import { nodeKindLabel, nodeOwnerLabel, nodeStatusLabel, stageLabel, t, taskStatusLabel } from '../../shared/i18n'
+import { Icon } from './Icons'
+import { EmptyState, IconButton } from './ui'
 
 const OPEN_KEY = 'claude-ide:props-open'
 
@@ -93,9 +95,11 @@ export function PropsPanel({ tab, state, node }: { tab: Tab; state: BridgeState;
   if (!open) {
     return (
       <aside className="props-panel closed">
-        <button className="props-toggle" title={t('props.expand')} onClick={() => setOpen(true)}>
-          <span>«</span>
-          <span className="props-vertical">{t('props.title')}</span>
+        <button type="button" className="props-toggle" title={t('props.expand')} aria-label={t('props.expand')} aria-expanded={false} onClick={() => setOpen(true)}>
+          <Icon name="panelOpen" size="sm" />
+          <span className="props-vertical" aria-hidden="true">
+            {t('props.title')}
+          </span>
         </button>
       </aside>
     )
@@ -105,11 +109,9 @@ export function PropsPanel({ tab, state, node }: { tab: Tab; state: BridgeState;
     <aside className="props-panel">
       <div className="props-head">
         <h2>{t('props.title')}</h2>
-        <button className="link" title={t('props.collapse')} onClick={() => setOpen(false)}>
-          »
-        </button>
+        <IconButton icon="panelClose" size="sm" label={t('props.collapse')} aria-expanded onClick={() => setOpen(false)} />
       </div>
-      {groups.length === 0 && <p className="quiet small">{t('props.empty')}</p>}
+      {groups.length === 0 && <EmptyState className="small">{t('props.empty')}</EmptyState>}
       {groups.map(group => (
         <section key={group.title}>
           <h3>{group.title}</h3>

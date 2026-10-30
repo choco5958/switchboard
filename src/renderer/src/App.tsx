@@ -3,7 +3,7 @@ import type { BridgeState, CommandKind, GraphNode, Question, Task } from '../../
 import { Icon, type IconName } from './Icons'
 import { Palette, type PaletteItem } from './Palette'
 import { PropsPanel } from './PropsPanel'
-import { QuestionCard } from './QuestionCard'
+import { DECISION_KEYS_KEY, QuestionCard } from './QuestionCard'
 import { TaskView } from './TaskView'
 import { TopBar } from './TopBar'
 import { nextAfter, queueOf, reachOf, taskFacts, tasksByProject, waitingFirst, type Attention } from './model'
@@ -20,6 +20,7 @@ import { HIDDEN_KEY, hiddenProjects, isRunning, nameForFolder, pickSession, proj
 import { ProjectList } from './ProjectList'
 import { Dock } from './Dock'
 import { AgentBadge, ApprovalItem, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
+import { Badge, Button, Chip, EmptyState, IconButton, Notice, TabList } from './ui'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
 import { stalledSessions } from '../../shared/stall'
 import { limitedUntil } from '../../shared/limit'
@@ -531,6 +532,7 @@ export function App() {
             })}
           onDone={() => void advance(q.id)}
           onOpenTask={task ? () => openTask(task.id) : null}
+          keysAnywhere={state.settings[DECISION_KEYS_KEY] === true}
         />
       )
     }
@@ -565,12 +567,23 @@ export function App() {
 
         <nav className="rail">
           {rail.map(item => (
-            <button
+            <IconButton
               key={item.label}
-              title={railLabel(item.label)}
+              icon={item.icon}
+              size="lg"
+              label={railLabel(item.label)}
               data-rail={item.icon}
-              className={`rail-button ${item.icon === railOn ? 'on' : ''}`}
+              className="rail-button"
+              on={item.icon === railOn}
               aria-current={item.icon === railOn ? 'page' : undefined}
+              badge={
+                item.section === 'questions' &&
+                pending.length + pendingApprovals.length > 0 && (
+                  <Badge shape="count" tone="warn" className="rail-badge">
+                    {pending.length + pendingApprovals.length}
+                  </Badge>
+                )
+              }
               onClick={() => {
                 setRailPick(item.icon)
                 if (item.section) {
@@ -579,18 +592,13 @@ export function App() {
                 }
                 if (item.tab) open(item.tab)
               }}
-            >
-              <Icon name={item.icon} />
-              {item.section === 'questions' && pending.length + pendingApprovals.length > 0 && <span className="rail-badge">{pending.length + pendingApprovals.length}</span>}
-            </button>
+            />
           ))}
         </nav>
 
         {sidebarOpen && (
           <aside className="sidebar">
-            <button className="sidebar-close" title={t('sidebar.collapse')} onClick={() => setSidebarOpen(false)}>
-              <Icon name="collapse" size={14} />
-            </button>
+            <IconButton icon="collapse" size="sm" label={t('sidebar.collapse')} className="sidebar-close" onClick={() => setSidebarOpen(false)} />
             <ProjectList
               projects={projects}
               hidden={hidden}
@@ -606,7 +614,7 @@ export function App() {
             {section === 'home' && offline && (
               <section>
                 <h2>{t('sidebar.tasks')}</h2>
-                <p className="quiet">{t('sidebar.offline')}</p>
+                <EmptyState>{t('sidebar.offline')}</EmptyState>
               </section>
             )}
             {section === 'home' && !offline && (
@@ -617,15 +625,15 @@ export function App() {
                     {t('sidebar.taskCounts', { running: view.tasks.filter(isRunning).length, done: doneCount })}
                   </span>
                   {doneCount > 0 && (
-                    <button className="link small" onClick={() => void archiveDone()}>
+                    <Button variant="link" size="sm" onClick={() => void archiveDone()}>
                       {t('sidebar.archiveDone', { n: doneCount })}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {view.tasks.length === 0 && (
-                  <p className="quiet" title={t('sidebar.noTasksTitle')}>
-                    {t('sidebar.noTasks')}
-                  </p>
+                  <EmptyState>
+                    <span title={t('sidebar.noTasksTitle')}>{t('sidebar.noTasks')}</span>
+                  </EmptyState>
                 )}
                 {waitingTasks.waiting.length > 0 && (
                   <div className="project waiting-group">
@@ -663,13 +671,13 @@ export function App() {
                 <h2>
                   {t('rail.questions')} <span className="count">{pending.length}</span>
                 </h2>
-                {pending.length === 0 && <p className="quiet">{t('sidebar.noQuestions')}</p>}
+                {pending.length === 0 && <EmptyState>{t('sidebar.noQuestions')}</EmptyState>}
                 {pending.map(q => (
                   <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} gone={reachOfQuestion(q) === 'gone'} onClick={() => openQuestion(q.id)} />
                 ))}
-                <button className="link" onClick={() => open({ kind: 'history' })}>
+                <Button variant="link" className="mt-sm" onClick={() => open({ kind: 'history' })}>
                   {t('rail.history')} <span className="count">{view.answeredCount}</span>
-                </button>
+                </Button>
                 {held.length > 0 && (
                   <>
                     <h3>{t('sidebar.held', { n: held.length })}</h3>
@@ -686,13 +694,13 @@ export function App() {
                 <h2>
                   {t('rail.archive')} <span className="count">{view.archived.length}</span>
                 </h2>
-                {view.archived.length === 0 && <p className="quiet">{t('sidebar.noArchived')}</p>}
+                {view.archived.length === 0 && <EmptyState>{t('sidebar.noArchived')}</EmptyState>}
                 {view.archived.slice(0, 30).map(task => (
                   <div key={task.id} className="archived-row small">
                     <span className="archived-title">{task.title}</span>
-                    <button className="link small" onClick={() => void restore(task.id)}>
+                    <Button variant="link" size="sm" onClick={() => void restore(task.id)}>
                       {t('sidebar.restore')}
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </section>
@@ -703,85 +711,58 @@ export function App() {
         <div className="tabbar" ref={tabbarRef}>
           {!sidebarOpen && (
             <div className="tabbar-scope">
-              <button className="tabbar-expand" title={t('tabbar.expand')} aria-label={t('tabbar.expand')} onClick={() => setSidebarOpen(true)}>
-                <Icon name="expand" size={14} />
-              </button>
-              <button className="chip chip-button scope-chip" title={t('tabbar.changeProject')} onClick={() => setSidebarOpen(true)}>
+              <IconButton icon="expand" size="sm" label={t('tabbar.expand')} className="tabbar-expand" onClick={() => setSidebarOpen(true)} />
+              <Chip className="scope-chip" title={t('tabbar.changeProject')} onClick={() => setSidebarOpen(true)}>
                 {scope ?? t('sidebar.all')}
-              </button>
+              </Chip>
             </div>
           )}
-          {shownTabs.map(tab => {
-            const key = tabKey(tab)
-            const task = tab.kind === 'task' ? state.tasks.find(t => t.id === tab.id) : undefined
-            const icon = TAB_ICON[tab.kind]
-            return (
-              <div
-                key={key}
-                role="tab"
-                tabIndex={0}
-                aria-selected={key === tabKey(active)}
-                className={`tab ${key === tabKey(active) ? 'on' : ''}`}
-                onClick={() => setTabs(current => ({ ...current, active: key }))}
-                // The middle button closes a tab, as in a browser; pressing it down would start autoscroll.
-                onMouseDown={event => {
-                  if (event.button === 1) event.preventDefault()
-                }}
-                onAuxClick={event => {
-                  if (event.button !== 1 || tab.kind === 'home') return
-                  event.preventDefault()
-                  setTabs(current => closeTab(current, key))
-                }}
-                onKeyDown={event => {
-                  if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
-                  event.preventDefault()
-                  setTabs(current => ({ ...current, active: key }))
-                }}
-              >
-                {task ? <NumberBadge task={task} /> : icon && <Icon name={icon} size={13} />}
-                <span className="tab-title">{tabTitle(tab)}</span>
-                {tab.kind !== 'home' && (
-                  <button
-                    className="tab-close"
-                    aria-label={t('tabbar.close', { title: tabTitle(tab) })}
-                    title={t('tabbar.close', { title: tabTitle(tab) })}
-                    onClick={event => {
-                      event.stopPropagation()
-                      setTabs(current => closeTab(current, key))
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            )
-          })}
+          <TabList
+            label={t('tabbar.label')}
+            active={activeKey}
+            onSelect={key => setTabs(current => ({ ...current, active: key }))}
+            items={shownTabs.map(tab => {
+              const key = tabKey(tab)
+              const task = tab.kind === 'task' ? state.tasks.find(t => t.id === tab.id) : undefined
+              const icon = TAB_ICON[tab.kind]
+              const title = tabTitle(tab)
+              return {
+                key,
+                label: (
+                  <>
+                    {task ? <NumberBadge task={task} /> : icon && <Icon name={icon} size="sm" />}
+                    <span className="tab-title">{title}</span>
+                  </>
+                ),
+                close: tab.kind === 'home' ? undefined : { label: t('tabbar.close', { title }), onClose: () => setTabs(current => closeTab(current, key)) },
+              }
+            })}
+          />
         </div>
 
         <main className="main">
           {connected === true && !live && (
-            <div className="paused-note" role="status">
-              <span className="small">{t('app.paused')}</span>
-              <button className="link small" onClick={toggleLive}>
-                {t('app.resumeLive')}
-              </button>
-            </div>
+            <Notice tone="warn" bar className="paused-note">
+              <span className="small">
+                {t('app.paused')}{' '}
+                <Button variant="link" size="sm" onClick={toggleLive}>
+                  {t('app.resumeLive')}
+                </Button>
+              </span>
+            </Notice>
           )}
           {connected === false && (
-            <div className="disconnected" role="alert">
-              <b>{t('app.disconnected')}</b>
-              <span className="small">
-                {loaded ? t('app.disconnectedStale') : t('app.disconnectedEmpty')}
-              </span>
+            <Notice tone="error" bar title={t('app.disconnected')} className="disconnected">
+              <span className="small">{loaded ? t('app.disconnectedStale') : t('app.disconnectedEmpty')}</span>
               {problem && (
-                <span className="small">
+                <span className="small block-line">
                   {t('app.bridgeLast', { line: problem.last || '-' })}{' '}
-                  <button className="link small" onClick={() => void window.ide.openBridgeLog()}>
+                  <Button variant="link" size="sm" onClick={() => void window.ide.openBridgeLog()}>
                     {t('app.openBridgeLog')}
-                  </button>
+                  </Button>
                 </span>
               )}
-            </div>
+            </Notice>
           )}
           {/* The browser stays mounted so its page and comments survive tab switches. */}
           <DebugPage

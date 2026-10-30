@@ -6,6 +6,8 @@ import { AgentBadge, NumberBadge, onPress } from './parts'
 import type { AgentTag } from '../../shared/agents'
 import { eventKindLabel, nodeKindLabel, nodeOwnerLabel, nodeStatusLabel, stageLabel, t, taskStatusLabel } from '../../shared/i18n'
 import { artifactFromNotes, nodeDetailKey, runningAgents, taskEvents, taskQuestions, testsFromNotes } from './taskInfo'
+import { Icon } from './Icons'
+import { Badge, Button, Card, VisuallyHidden, cx } from './ui'
 
 const COL_W = 220
 const COL_GAP = 36
@@ -80,14 +82,23 @@ export function TaskView({
       <div className="task-summary">
         <h1>
           {task.title}
-          {task.branch && <span className="branch-chip">{task.branch}</span>}
+          {task.branch && (
+            <Badge mono className="branch-chip">
+              {task.branch}
+            </Badge>
+          )}
         </h1>
         <ul>
           {summary
             .filter(([, value]) => value)
             .map(([label, value, auto]) => (
               <li key={label}>
-                <b>{label}:</b> {value} {auto && <span className="auto-chip" title={t('taskView.autoTitle')}>{t('taskView.auto')}</span>}
+                <b>{label}:</b> {value}{' '}
+                {auto && (
+                  <Badge fill="soft" className="auto-chip" title={t('taskView.autoTitle')}>
+                    {t('taskView.auto')}
+                  </Badge>
+                )}
               </li>
             ))}
         </ul>
@@ -96,10 +107,15 @@ export function TaskView({
       <div className="stations">
         <NumberBadge task={task} />
         <span className="quiet small">{t('taskView.currentStage')}</span> <b className="station-now">{stageLabel(station.now)}</b>
-        <span className="station-arrow">▶ {taskStatusLabel(task.status)}</span>
+        <span className="station-arrow">
+          <Icon name="expand" size="sm" /> {taskStatusLabel(task.status)}
+        </span>
         {station.next && (
           <>
-            <span className="station-arrow">▶▶</span> <span className="quiet small">{t('taskView.nextStage')}</span> <b className="station-next">{stageLabel(station.next)}</b>
+            <span className="station-arrow" aria-hidden="true">
+              <Icon name="panelClose" size="sm" />
+            </span>{' '}
+            <span className="quiet small">{t('taskView.nextStage')}</span> <b className="station-next">{stageLabel(station.next)}</b>
           </>
         )}
       </div>
@@ -109,7 +125,12 @@ export function TaskView({
           <li key={stage} className={stage === task.stage ? 'now' : done > 0 && done === total ? 'done' : ''}>
             <span className="stage-num">{String(i + 1).padStart(2, '0')}</span>
             <span className="pipeline-name">{stageLabel(stage)}</span>
-            {done > 0 && done === total && <span className="stage-done"> ✓</span>}
+            {done > 0 && done === total && (
+              <span className="stage-done">
+                <Icon name="check" size="sm" />
+                <VisuallyHidden>{t('taskState.done')}</VisuallyHidden>
+              </span>
+            )}
             {total > 0 && (
               <span className="quiet small">
                 {' '}
@@ -124,9 +145,9 @@ export function TaskView({
       {open.length > 0 && (
         <div className="task-questions">
           {open.map(q => (
-            <button key={q.id} className="link" onClick={() => onQuestion(q.id)}>
+            <Button key={q.id} variant="link" onClick={() => onQuestion(q.id)}>
               <span className="qid">Q{q.id}</span> {q.question} {q.status === 'held' ? t('taskView.qHeld') : t('taskView.qPending')}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -259,7 +280,7 @@ function NodeDetail({ node }: { node: GraphNode }) {
   }
 
   return (
-    <div className="node-detail">
+    <Card sunk className="node-detail">
       <h3>
         {node.title} <span className="quiet small">({nodeKindLabel(node.kind)}, {nodeOwnerLabel(node.owner)}, {nodeStatusLabel(node.status)}{node.round > 1 ? `, ${t('taskView.round', { n: node.round })}` : ''})</span>
       </h3>
@@ -269,9 +290,9 @@ function NodeDetail({ node }: { node: GraphNode }) {
           <div className="small mono">{node.worktree}</div>
           <div className="small quiet">{t('taskView.branch', { branch: node.branch ?? '' })}</div>
           {!check && (
-            <button className="link" disabled={busy} onClick={() => void inspect()}>
+            <Button variant="link" className="mt-sm" disabled={busy} onClick={() => void inspect()}>
               {t('taskView.checkFirst')}
-            </button>
+            </Button>
           )}
           {check && !check.exists && <p className="small quiet">{t('taskView.folderGone')}</p>}
           {check && check.exists && (
@@ -285,9 +306,9 @@ function NodeDetail({ node }: { node: GraphNode }) {
           )}
           {check && (
             <div className="actions">
-              <button className={armed ? 'danger' : ''} disabled={busy || message !== ''} onClick={() => void remove()}>
+              <Button variant={armed ? 'danger' : 'default'} disabled={busy || message !== ''} onClick={() => void remove()}>
                 {armed ? t('taskView.removeAnyway') : t('taskView.remove')}
-              </button>
+              </Button>
             </div>
           )}
           {message && <p className="small">{message}</p>}
@@ -295,7 +316,7 @@ function NodeDetail({ node }: { node: GraphNode }) {
       ) : (
         <p className="small quiet">{t('taskView.noWorktree')}</p>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -318,13 +339,13 @@ function NodeTable({ nodes, selectedKey, onSelect }: { nodes: GraphNode[]; selec
           {nodes.map(node => (
             <tr
               key={node.id}
-              className={`clickable ${node.key === selectedKey ? 'on' : ''}`}
+              className={cx('clickable', node.key === selectedKey && 'on')}
               tabIndex={0}
               onClick={() => onSelect(node.key)}
               onKeyDown={onPress(() => onSelect(node.key))}
             >
               <td>
-                <span className="tag-chip">{nodeKindLabel(node.kind)}</span>
+                <Badge>{nodeKindLabel(node.kind)}</Badge>
               </td>
               <td>{node.title}</td>
               <td className="nowrap">{nodeOwnerLabel(node.owner)}</td>
