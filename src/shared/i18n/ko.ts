@@ -373,6 +373,8 @@ export const ko = {
   'term.shell': '셸',
   'term.pickFolder': '프로젝트 폴더',
   'term.noFolder': '폴더가 없습니다: {path}',
+  'term.hostLost': '터미널 호스트가 멈춰서 이 터미널도 끝났습니다',
+  'term.hostFailed': '터미널 호스트를 시작하지 못했습니다. 기록: {log}',
   // Log page
   'log.filter': '걸러 볼 말 (작업, 종류, 내용)',
   'log.noMatch': '이 말이 들어간 로그가 없습니다.',
@@ -847,6 +849,9 @@ export const ko = {
   'agents.showOthersHint': '기본은 켜짐입니다. 끄면 독에는 Claude와 셸 버튼만 보입니다. 켜면 설치된 CLI와 직접 추가한 CLI 버튼이 나옵니다.',
   'agents.trustFolders': '폴더 신뢰 질문 미리 처리',
   'agents.trustFoldersHint': 'Codex, Copilot, Cursor를 앱에서 처음 여는 폴더에 대해, 그 CLI의 "이 폴더를 신뢰할까요?"에 미리 예라고 기록해 둡니다. 신뢰 질문이 화면에 떠 있으면 앱이 입력하는 답과 예약 프롬프트가 거기서 멈추기 때문입니다. CLI의 승인과 샌드박스 설정은 바꾸지 않습니다.',
+  'agents.closeOnQuit': '앱을 닫을 때 터미널도 닫기',
+  'agents.closeOnQuitHint': '기본은 꺼짐입니다. 꺼 두면 앱을 닫거나 다시 시작하거나 업데이트해도 터미널과 그 안의 Claude Code, 다른 CLI가 계속 실행되고, 앱을 다시 열면 그대로 보입니다. 켜면 앱을 닫을 때 모든 터미널이 함께 닫힙니다. 탭의 ×는 언제나 그 터미널을 닫습니다.',
+  'agents.closeOnQuitOff': '이 컴퓨터에서는 앱을 닫으면 터미널도 함께 닫힙니다.',
   'agents.looking': '찾는 중',
   'agents.installed': '설치됨',
   'agents.missing': '설치되지 않음',

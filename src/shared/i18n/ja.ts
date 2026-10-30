@@ -374,6 +374,8 @@ export const ja: Dict = {
   'term.shell': 'シェル',
   'term.pickFolder': 'プロジェクトのフォルダー',
   'term.noFolder': 'フォルダーがありません: {path}',
+  'term.hostLost': 'ターミナルホストが停止したため、このターミナルも終了しました',
+  'term.hostFailed': 'ターミナルホストを起動できませんでした。ログ: {log}',
   // Log page
   'log.filter': '絞り込み (タスク、種類、内容)',
   'log.noMatch': 'この言葉を含むログはありません。',
@@ -848,6 +850,9 @@ export const ja: Dict = {
   'agents.showOthersHint': '初期設定はオンです。オフの間、ドックには Claude とシェルのボタンだけが表示されます。オンにすると、インストール済みの CLI と追加した CLI のボタンが表示されます。',
   'agents.trustFolders': 'フォルダーの信頼確認を先に済ませる',
   'agents.trustFoldersHint': 'アプリで Codex、Copilot、Cursor を初めて開くフォルダーについて、その CLI の「このフォルダーを信頼しますか?」に先にはいと記録します。信頼の確認が画面に出ていると、アプリが入力する回答や予約プロンプトがそこで止まるためです。CLI の承認やサンドボックスの設定は変えません。',
+  'agents.closeOnQuit': 'アプリを閉じるときにターミナルも閉じる',
+  'agents.closeOnQuitHint': '初期設定はオフです。オフの間は、アプリを閉じても、再起動しても、アップデートしても、ターミナルとその中の Claude Code やほかの CLI は動き続け、アプリを開き直すとそのまま表示されます。オンにすると、アプリを閉じるときにすべてのターミナルが閉じます。タブの × はいつでもそのターミナルを閉じます。',
+  'agents.closeOnQuitOff': 'このコンピューターでは、アプリを閉じるとターミナルも閉じます。',
   'agents.looking': '検索中',
   'agents.installed': 'インストール済み',
   'agents.missing': '未インストール',

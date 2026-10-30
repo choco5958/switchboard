@@ -68,6 +68,9 @@ test('each version gets one copy of the Node side, and older copies go', () => {
   const second = copyRuntime(source, home, '0.2.0')
   expect(readFileSync(join(second, 'bridge', 'server.ts'), 'utf8')).toBe('v2')
   expect(existsSync(first)).toBe(true)
+  // A terminal host of 0.1.0 still runs terminals that use its copy.
+  pruneRuntimes(home, '0.2.0', ['0.1.0'])
+  expect(existsSync(first)).toBe(true)
   pruneRuntimes(home, '0.2.0')
   expect(existsSync(first)).toBe(false)
 })

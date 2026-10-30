@@ -24,6 +24,10 @@ extraResources:
       - mod/hooks/**
       - mod/types/**
       - src/shared/**/*.ts
+      # The terminal host (src/main/termHost.ts): node-pty and the emulator it loads from app.asar.
+      - src/main/termHost.ts
+      - src/main/termCore.ts
+      - src/main/termProtocol.ts
       - '!**/*.test.ts'
       - '!**/*.unit.ts'
 asarUnpack:

@@ -374,6 +374,8 @@ export const en: Dict = {
   'term.shell': 'shell',
   'term.pickFolder': 'Project folder',
   'term.noFolder': 'Folder not found: {path}',
+  'term.hostLost': 'The terminal host stopped, so this terminal ended',
+  'term.hostFailed': 'Could not start the terminal host. Log: {log}',
   // Log page
   'log.filter': 'Filter (task, kind, text)',
   'log.noMatch': 'No log lines contain that text.',
@@ -848,6 +850,9 @@ export const en: Dict = {
   'agents.showOthersHint': 'On by default. Off: the dock shows only Claude and shell buttons. On: buttons for installed CLIs and the ones you added appear.',
   'agents.trustFolders': 'Answer folder trust ahead',
   'agents.trustFoldersHint': 'For a folder where the app first opens Codex, Copilot or Cursor, records yes to that CLI\'s "trust this folder?" question ahead of time. A trust question on screen would stop the answers and scheduled prompts the app types in. The CLI\'s approval and sandbox settings stay as they are.',
+  'agents.closeOnQuit': 'Close terminals when the app quits',
+  'agents.closeOnQuitHint': "Off by default. Off: quitting, restarting or updating the app leaves the terminals running, with Claude Code or any other CLI in them, and they show again when the app opens. On: quitting the app closes every terminal. A tab's × always closes its terminal.",
+  'agents.closeOnQuitOff': 'On this computer the terminals close when the app quits.',
   'agents.looking': 'Looking',
   'agents.installed': 'Installed',
   'agents.missing': 'Not installed',

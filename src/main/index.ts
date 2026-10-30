@@ -13,7 +13,7 @@ import { registerDevServers } from './devservers'
 import { BROWSER_PARTITION, BROWSER_WORLD, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
 import { anyoneWorking } from './awake'
-import { onTerminalsChange, openClaudeIn, registerTerminals, terminalStates, typingTarget } from './terminals'
+import { onTerminalsChange, openClaudeIn, registerTerminals, setCloseTerminalsOnQuit, startTerminalHost, terminalStates, typingTarget } from './terminals'
 import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
@@ -27,6 +27,9 @@ import { STALL_MS, stalledSessions } from '../shared/stall'
 import { limitedUntil } from '../shared/limit'
 import { netEntry, type PageLogEntry } from '../shared/pageLog'
 import { resolveLang, setLang, t } from '../shared/i18n'
+import { CLOSE_TERMINALS_KEY } from '../shared/agents'
+import { hostBuilds } from './termClient'
+import { hostDir } from './termProtocol'
 
 // Captures keep their own profile so they never overwrite the real app's saved tabs and addresses.
 if (process.env.CLAUDE_IDE_CAPTURE) app.setPath('userData', `${process.env.CLAUDE_IDE_CAPTURE}.profile`)
@@ -167,7 +170,7 @@ async function prepareRuntime(): Promise<void> {
     build = id
     // An AppImage runs from a folder mounted for this run only; the file itself stays.
     writeRuntime({ execPath: process.env.APPIMAGE ?? process.execPath, root: nodeRoot(), home: homedir(), version: id })
-    pruneRuntimes(homedir(), id)
+    pruneRuntimes(homedir(), id, hostBuilds(hostDir(homedir())))
   } catch (error) {
     console.error('could not write the launchers:', error)
   }
@@ -243,6 +246,8 @@ async function scanQueue(): Promise<void> {
   const reply = await call('GET', '/state')
   if (!reply.ok) return
   keepAwake(reply.json as unknown as BridgeState)
+  // Read at the quit, which has no time to ask the bridge.
+  setCloseTerminalsOnQuit((reply.json as unknown as BridgeState).settings?.[CLOSE_TERMINALS_KEY] === true)
   notifyStalled(reply.json as unknown as BridgeState)
   notifyReleased(reply.json as unknown as BridgeState)
   notifyRuns(reply.json as unknown as BridgeState)
@@ -636,6 +641,8 @@ app.whenReady().then(async () => {
   if (loaded.refused && Notification.isSupported()) new Notification({ title: 'Switchboard', body: t('app.keyRefused') }).show()
   await prepareRuntime()
   await startBridge()
+  // The terminals a host kept running while the app was closed are dock tabs again before the window asks.
+  await startTerminalHost(appKey, ownBuild(), loaded.lasting)
   createWindow()
   started = true
   watch()

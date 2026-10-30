@@ -222,6 +222,8 @@ export type IdeApi = {
   termResize: (id: string, cols: number, rows: number) => void
   termClose: (id: string) => Promise<boolean>
   pickFolder: () => Promise<string | null>
+  // Whether the terminals keep running after the app quits (a terminal host runs them).
+  termKeeps: () => Promise<boolean>
   onTermData: (listener: (event: { id: string; data: string; seq: number }) => void) => () => void
   onTermExit: (listener: (event: { id: string; exitCode: number }) => void) => () => void
   accountInfo: () => Promise<AccountInfo | null>
