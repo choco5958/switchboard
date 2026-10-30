@@ -45,7 +45,7 @@ Switchboard에서는 세션이 결정 질문을 큐에 올려 두고 다른 일�
 <tr>
 <td width="50%" valign="top">
 <h3>🗳️ 결정은 키 하나로</h3>
-세션이 선택지와 추천, 추천 이유를 올립니다. <code>a</code>, <code>b</code>로 고르고 <code>Enter</code>로 보냅니다. 보류하거나 메모를 붙여 답할 수도 있습니다.
+세션이 선택지와 추천, 추천 이유를 올립니다. <code>a</code>, <code>b</code>로 고르고 <code>Enter</code>로 보냅니다. 보류하거나 메모를 붙여 답할 수도 있습니다. 보낸 답은 5초 안에 되돌릴 수 있습니다.
 </td>
 <td width="50%" valign="top">
 <h3>📊 작업 단계와 진행 그래프</h3>
@@ -143,6 +143,7 @@ Claude Code는 mod로, 다른 CLI는 앱이 그 실행에만 붙이는 연결 �
 | `H` 두 번 | 보류 |
 | `M` | 메모 입력 (`Cmd+Enter` 보내기, `Esc` 나가기) |
 | `Cmd+K` (Windows, Linux는 `Ctrl+K`) | 찾기 |
+| `?` 또는 `Cmd+/` | 단축키 목록 |
 
 ## 설치
 

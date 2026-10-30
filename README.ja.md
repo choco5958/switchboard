@@ -45,7 +45,7 @@ Switchboard では、セッションが判断の質問をキューに載せて�
 <tr>
 <td width="50%" valign="top">
 <h3>🗳️ 判断はキーひとつで</h3>
-セッションが選択肢、おすすめ、その理由を載せます。<code>a</code>、<code>b</code> で選び <code>Enter</code> で送ります。保留やメモ付きの回答もできます。
+セッションが選択肢、おすすめ、その理由を載せます。<code>a</code>、<code>b</code> で選び <code>Enter</code> で送ります。保留やメモ付きの回答もできます。送った回答は 5 秒以内なら取り消せます。
 </td>
 <td width="50%" valign="top">
 <h3>📊 作業段階と進行グラフ</h3>
@@ -143,6 +143,7 @@ Claude Code は mod で、ほかの CLI はアプリがその実行にだけ付�
 | `H` を 2 回 | 保留 |
 | `M` | メモを入力 (`Cmd+Enter` で送信、`Esc` で抜ける) |
 | `Cmd+K` (Windows と Linux は `Ctrl+K`) | 検索 |
+| `?` または `Cmd+/` | ショートカット一覧 |
 
 ## インストール
 

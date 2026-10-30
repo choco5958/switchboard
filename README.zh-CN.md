@@ -45,7 +45,7 @@
 <tr>
 <td width="50%" valign="top">
 <h3>🗳️ 一个键做决定</h3>
-会话提交选项、推荐以及推荐理由。用 <code>a</code>、<code>b</code> 选择，用 <code>Enter</code> 发送。也可以暂缓，或附上备注回答。
+会话提交选项、推荐以及推荐理由。用 <code>a</code>、<code>b</code> 选择，用 <code>Enter</code> 发送。也可以暂缓，或附上备注回答。发送后 5 秒内可以撤回回答。
 </td>
 <td width="50%" valign="top">
 <h3>📊 工作阶段与进度图</h3>
@@ -143,6 +143,7 @@ Claude Code 通过 mod 连接，其他 CLI 通过应用只为该次运行附加�
 | 按两次 `H` | 暂缓 |
 | `M` | 输入备注 (`Cmd+Enter` 发送，`Esc` 退出) |
 | `Cmd+K` (Windows 和 Linux 为 `Ctrl+K`) | 查找 |
+| `?` 或 `Cmd+/` | 快捷键列表 |
 
 ## 安装
 

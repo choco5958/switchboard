@@ -45,7 +45,7 @@ In Switchboard, a session posts its question to a decision queue and keeps worki
 <tr>
 <td width="50%" valign="top">
 <h3>🗳️ Decide with one key</h3>
-Sessions post options, a recommendation and the reason for it. Pick with <code>a</code>, <code>b</code> and send with <code>Enter</code>. You can also hold a question or answer with a note.
+Sessions post options, a recommendation and the reason for it. Pick with <code>a</code>, <code>b</code> and send with <code>Enter</code>. You can also hold a question or answer with a note. You can take an answer back within 5 seconds of sending it.
 </td>
 <td width="50%" valign="top">
 <h3>📊 Stages and a live progress graph</h3>
@@ -143,6 +143,7 @@ Add any other CLI in Settings > Agent CLIs with its command and how it connects.
 | `H` twice | Hold |
 | `M` | Add a note (`Cmd+Enter` sends, `Esc` leaves) |
 | `Cmd+K` (`Ctrl+K` on Windows and Linux) | Find |
+| `?` or `Cmd+/` | Shortcut list |
 
 ## Install
 
