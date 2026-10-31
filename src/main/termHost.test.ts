@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { request } from 'node:http'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -231,10 +231,18 @@ server.listen(path, () => chmodSync(path, 0o600))
       pids.add(child.pid!)
       return record
     }
+    // The fake's socket appears before its listen callback makes it 0600: until then legacyHost
+    // refuses it, so a fixed pause lost the race on a slow runner.
+    const listening = (path: string) => {
+      try {
+        return (lstatSync(path).mode & 0o777) === 0o600
+      } catch {
+        return false
+      }
+    }
     const legacy = '0.3.5-abcdef012345'
     const record = fake('legacy', 'termHost.ts', legacy)
-    await wait(() => existsSync(hostSocket(dir, legacy)))
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await wait(() => listening(hostSocket(dir, legacy)))
     expect(await legacyHost(dir, legacy)).toBe(true)
     const found: Snapshot[] = []
     const hosts = terminalHosts(options('build-after'))
@@ -246,8 +254,7 @@ server.listen(path, () => chmodSync(path, 0o600))
     // Named like one but run by another program: refused, and it never sees the key.
     const other = '0.3.5-0123456789ab'
     const squatted = fake('squat', 'server.ts', other)
-    await wait(() => existsSync(hostSocket(dir, other)))
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await wait(() => listening(hostSocket(dir, other)))
     expect(await legacyHost(dir, other)).toBe(false)
     // Open to others, or named after any other build: no old greeting either.
     chmodSync(hostSocket(dir, legacy), 0o666)
