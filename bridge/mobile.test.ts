@@ -197,6 +197,8 @@ test('allowing, writing to a session and a memo take the Tailscale HTTPS address
   assert.ok(needsStrong('POST', '/outbox', {}))
   assert.ok(needsStrong('POST', '/approvals/3/answer', { decision: 'allow' }))
   for (const decision of ['deny', 'terminal']) assert.ok(!needsStrong('POST', '/approvals/3/answer', { decision }))
+  assert.ok(!needsStrong('POST', '/approvals/3/answer', { decision: 'deny', note: '  ' }))
+  for (const note of ['dist만 지우세요', 3, ['x']]) assert.ok(needsStrong('POST', '/approvals/3/answer', { decision: 'deny', note }), String(note))
   assert.ok(!needsStrong('POST', '/questions/3/answer', { choice: 'a' }))
   assert.ok(!needsStrong('POST', '/questions/3/answer', { choice: 'a', memo: '  ' }))
   // A memo goes into the session's prompt: words of the phone's own, as a message would be.

@@ -102,6 +102,7 @@ export const ko = {
   'mod.pending': 'Switchboard에서 답을 기다리는 질문입니다. 응답 끝에 "답 기다리는 질문" 제목으로 이 목록을 그대로 붙이세요.',
   'mod.allowedRemote': '사람이 Switchboard에서 허용했습니다 (A{id}).',
   'mod.deniedRemote': '사람이 Switchboard에서 거부했습니다 (A{id}). 이 작업 없이 할 방법을 찾거나 ask_decision으로 물어보세요.',
+  'mod.deniedRemoteNote': '사람이 Switchboard에서 거부하고 이렇게 적었습니다 (A{id}): {note}\n이 말에 맞게 다음 방법을 정하고, 뜻이 분명하지 않으면 ask_decision으로 물어보세요.',
   'mod.restate': '[Switchboard] 대화가 압축되었습니다. 이 세션이 Switchboard에 올린 상태를 다시 알려 드립니다. 같은 작업 제목, 노드 key, Q번호, 대기 id를 계속 쓰세요.',
   'mod.restateTask': '작업: {title} ({stage}, {status}) 지금: {now}',
   'mod.restateQuestion': '답 기다리는 질문: Q{id} {question}',

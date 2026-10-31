@@ -151,6 +151,18 @@ test('a permission ask: allow takes a second press, deny one; an ask dies with i
   assert.equal((await call('POST', `/approvals/${second}/answer`, { decision: 'deny' })).status, 200)
   await until(() => sent('editMessageText').some(c => /거부함\n\(다른 곳에서 답함\)/.test(c.body.text)))
 
+  // A reply to the ask denies it, and its words go to the session with the deny.
+  const replied = await ask('rm -rf build', 'toolu_a4')
+  await until(() => sent('sendMessage').some(c => c.body.text?.includes(`권한 확인 A${replied}`)))
+  assert.match(sent('sendMessage').find(c => c.body.text?.includes(`권한 확인 A${replied}`))!.body.text, /답장으로 이유를 쓰면/)
+  const repliedMessage = messageId - 1
+  queued.push({ message: { message_id: 60, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: 'build는 두고 dist만 지우세요', reply_to_message: { message_id: repliedMessage } } })
+  await until(() => sent('editMessageText').some(c => c.body.message_id === repliedMessage && /거부함: build는 두고 dist만 지우세요/.test(c.body.text)))
+  assert.deepEqual((await call('GET', `/approvals/${replied}`)).json, { id: replied, status: 'deny', note: 'build는 두고 dist만 지우세요', waitMs: 0 })
+  // A second reply finds it answered.
+  queued.push({ message: { message_id: 61, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '역시 허용', reply_to_message: { message_id: repliedMessage } } })
+  await until(() => sent('sendMessage').some(c => c.body.reply_to_message_id === 61 && /이미 답했거나/.test(c.body.text)))
+
   // The session's delivery stream closes: its open ask expires.
   const stream = request({ socketPath, path: '/deliveries?session=tg-1' })
   stream.on('error', () => undefined)
@@ -244,7 +256,7 @@ test('a new token never leaves two polling loops, even when the old one slept af
     setSecret: (key, value) => (value === null ? secrets.delete(key) : secrets.set(key, value)),
     lang: () => 'ko', away: () => true, pending: () => [], question: () => undefined, answer: () => undefined, hold: () => undefined,
     sentMessage: () => null, saveMessage: () => undefined, questionOf: () => null, pendingApprovals: () => [], approval: () => undefined,
-    answerApproval: () => false, approvalMessage: () => null, saveApprovalMessage: () => undefined, changed: () => undefined, log: () => undefined,
+    answerApproval: () => false, approvalMessage: () => null, approvalOf: () => null, saveApprovalMessage: () => undefined, changed: () => undefined, log: () => undefined,
   })
   telegram.start()
   await new Promise(resolve => setTimeout(resolve, 10))

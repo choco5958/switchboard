@@ -822,6 +822,7 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
   margin: 6px 0; padding: 6px; max-height: 6.5em; overflow: hidden; white-space: pre-wrap; word-break: break-all;
   font-family: var(--mono); font-size: var(--fs-sm); background: var(--bg); border-radius: var(--r-sm);
 }
+.approval-note { width: 100%; margin-top: 6px; }
 .approval-actions { margin-top: 6px; }
 
 /* Linear */

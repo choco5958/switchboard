@@ -515,8 +515,11 @@ registerUpdates(ipcMain, send)
 ipcMain.handle('shots:save', (_e, dataUrl: string): string | null => saveShot(join(DIR, 'shots'), dataUrl))
 ipcMain.handle('bridge:hold', (_e, id: number) => call('POST', `/questions/${Number(id)}/hold`))
 ipcMain.handle('bridge:forward', (_e, id: number, to: string) => call('POST', `/questions/${Number(id)}/forward`, { to: String(to) }))
-ipcMain.handle('bridge:approve', (_e, id: number, decision: string) =>
-  call('POST', `/approvals/${Number(id)}/answer`, { decision: ['allow', 'deny', 'terminal'].includes(decision) ? decision : 'terminal' }),
+ipcMain.handle('bridge:approve', (_e, id: number, decision: string, note?: unknown) =>
+  call('POST', `/approvals/${Number(id)}/answer`, {
+    decision: ['allow', 'deny', 'terminal'].includes(decision) ? decision : 'terminal',
+    ...(decision === 'deny' && typeof note === 'string' && note.trim() ? { note } : {}),
+  }),
 )
 // Dynamic debugging: screen comments, open_in_ide requests and live sessions (bridge/debug.ts).
 ipcMain.handle('debug:call', (_e, method: string, path: string, body?: unknown) => {

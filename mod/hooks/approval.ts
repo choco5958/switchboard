@@ -27,8 +27,11 @@ export const APPROVAL_POLL_MS = 20_000
 const MIN_POLL_MS = 2_000
 const MAX_MISSES = 5
 
-// 'allow' or 'deny' from the person; 'ask' hands the call back to the terminal's dialog.
-export async function waitApproval(w: ApprovalWait): Promise<'allow' | 'deny' | 'ask'> {
+export type ApprovalAnswer = { answer: 'allow' | 'deny' | 'ask'; note: string }
+
+// 'allow' or 'deny' from the person, a deny with what they wrote for the session (`note`, or '');
+// 'ask' hands the call back to the terminal's dialog.
+export async function waitApproval(w: ApprovalWait): Promise<ApprovalAnswer> {
   let pollMs = APPROVAL_POLL_MS
   let misses = 0
   for (;;) {
@@ -47,11 +50,11 @@ export async function waitApproval(w: ApprovalWait): Promise<'allow' | 'deny' | 
     // 404: the ask is gone (a new database).
     if (!reply.ok) break
     const status = reply.json.status
-    if (status === 'allow' || status === 'deny') return status
+    if (status === 'allow' || status === 'deny') return { answer: status, note: status === 'deny' && typeof reply.json.note === 'string' ? reply.json.note.trim() : '' }
     // 'terminal', 'expired': settled elsewhere, nothing to tell the bridge.
-    if (status !== 'pending') return 'ask'
+    if (status !== 'pending') return { answer: 'ask', note: '' }
     if (typeof reply.json.waitMs !== 'number') await w.sleep(1000).catch(() => undefined)
   }
   await w.abandon().catch(() => undefined)
-  return 'ask'
+  return { answer: 'ask', note: '' }
 }

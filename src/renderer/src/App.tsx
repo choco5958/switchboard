@@ -557,8 +557,8 @@ export function App() {
           }}
           onOpenHistory={() => open({ kind: 'history' })}
           onPickFolder={() => void pickProject()}
-          onAnswerApproval={async (id, decision) => {
-            const reply = await window.ide.approve(id, decision)
+          onAnswerApproval={async (id, decision, note) => {
+            const reply = await window.ide.approve(id, decision, note)
             if (!reply.ok) toast(t('approval.answerFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
           }}
         />
@@ -733,8 +733,8 @@ export function App() {
                   <ApprovalItem
                     key={a.id}
                     a={a}
-                    onAnswer={async decision => {
-                      const reply = await window.ide.approve(a.id, decision)
+                    onAnswer={async (decision, note) => {
+                      const reply = await window.ide.approve(a.id, decision, note)
                       if (!reply.ok) toast(t('approval.answerFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
                     }}
                   />

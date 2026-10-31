@@ -282,15 +282,15 @@ export function strongTransport(address: string, headers: IncomingHttpHeaders, d
 }
 
 // What only a phone on such a connection may do: allow a permission ask, write to a session, and
-// add words of its own to a decision's answer (they go into the session's prompt as well).
+// add words of its own to a decision's answer or a deny (they reach the session as well).
 export function needsStrong(method: string, path: string, body: unknown): boolean {
   if (method !== 'POST') return false
   if (path === '/outbox') return true
-  if (/^\/questions\/\d+\/answer$/.test(path)) {
-    const memo = (body as { memo?: unknown } | null)?.memo
-    return memo !== undefined && memo !== null && !(typeof memo === 'string' && memo.trim() === '')
-  }
-  return /^\/approvals\/\d+\/answer$/.test(path) && (body as { decision?: unknown } | null)?.decision === 'allow'
+  const words = (value: unknown) => value !== undefined && value !== null && !(typeof value === 'string' && value.trim() === '')
+  if (/^\/questions\/\d+\/answer$/.test(path)) return words((body as { memo?: unknown } | null)?.memo)
+  if (!/^\/approvals\/\d+\/answer$/.test(path)) return false
+  const answer = body as { decision?: unknown; note?: unknown } | null
+  return answer?.decision === 'allow' || words(answer?.note)
 }
 
 // Who sent a request, for the failure count. Tailscale HTTPS and Funnel forward every phone from

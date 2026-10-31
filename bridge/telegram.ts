@@ -48,8 +48,10 @@ export type TelegramDeps = {
   questionOf: (messageId: number) => number | null
   pendingApprovals: () => TelegramApproval[]
   approval: (id: number) => TelegramApproval | undefined
-  answerApproval: (id: number, decision: 'allow' | 'deny' | 'terminal') => boolean
+  // `note`: what the person wrote with a deny (a reply to the ask's message), for the session.
+  answerApproval: (id: number, decision: 'allow' | 'deny' | 'terminal', note?: string) => boolean
   approvalMessage: (approvalId: number) => number | null
+  approvalOf: (messageId: number) => number | null
   saveApprovalMessage: (approvalId: number, messageId: number) => void
   changed: () => void
   log: (text: string) => void
@@ -87,6 +89,7 @@ export function approvalMessage(a: TelegramApproval, lang: Lang): { text: string
     showHidden(a.summary.length > SUMMARY_SHOWN ? `${a.summary.slice(0, SUMMARY_SHOWN - 1)}…` : a.summary),
     a.reason ? `\n${a.reason}` : '',
     here ? '' : `\n${tIn(lang, 'telegram.allowElsewhere')}`,
+    `\n${tIn(lang, 'telegram.approvalHowTo')}`,
   ].filter((line, i) => line !== '' || i === 3).join('\n')
   const first = here ? [{ text: tIn(lang, 'telegram.allow'), callback_data: `p:${a.id}:allow` }] : []
   return {
@@ -186,10 +189,12 @@ export function createTelegram(deps: TelegramDeps) {
     for (const q of deps.pending()) await send(q).catch(error => deps.log(`telegram send: ${String(error)}`))
   }
 
-  const approvalClosedText = (a: TelegramApproval, decision: string, where: 'telegram' | 'elsewhere') =>
+  const approvalClosedText = (a: TelegramApproval, decision: string, where: 'telegram' | 'elsewhere', note = '') =>
     maskSecrets(
       [tIn(deps.lang(), 'telegram.approvalHead', { project: a.project, id: a.id }), tIn(deps.lang(), 'telegram.approvalTool', { tool: a.tool }), '', showHidden(a.summary.slice(0, 1500)), '',
-        say(`telegram.approvalDone.${decision === 'allow' ? 'allow' : decision === 'deny' ? 'deny' : decision === 'terminal' ? 'terminal' : 'expired'}` as 'telegram.approvalDone.allow'),
+        decision === 'deny' && note
+          ? say('telegram.approvalDone.denyNote', { note })
+          : say(`telegram.approvalDone.${decision === 'allow' ? 'allow' : decision === 'deny' ? 'deny' : decision === 'terminal' ? 'terminal' : 'expired'}` as 'telegram.approvalDone.allow'),
         where === 'elsewhere' && decision !== 'expired' ? say('telegram.elsewhere') : '',
       ].filter((line, i, all) => !(i === all.length - 1 && line === '')).join('\n'),
     )
@@ -236,6 +241,17 @@ export function createTelegram(deps: TelegramDeps) {
       return
     }
     if (message?.reply_to_message && message.text && message.from?.id === user() && message.chat.id === chat()) {
+      // A reply to a permission ask denies it, and its words go to the session as the reason.
+      const approvalId = deps.approvalOf(message.reply_to_message.message_id)
+      if (approvalId !== null) {
+        const a = deps.approval(approvalId)
+        if (!a || a.status !== 'pending' || !deps.answerApproval(a.id, 'deny', message.text)) {
+          await call('sendMessage', { chat_id: chat(), text: say('telegram.approvalGone'), reply_to_message_id: message.message_id })
+          return
+        }
+        await call('editMessageText', { chat_id: chat(), message_id: message.reply_to_message.message_id, text: approvalClosedText(a, 'deny', 'telegram', message.text.trim()) })
+        return
+      }
       const questionId = deps.questionOf(message.reply_to_message.message_id)
       const q = questionId === null ? undefined : deps.question(questionId)
       if (!q) return

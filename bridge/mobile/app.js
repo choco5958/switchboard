@@ -27,6 +27,7 @@ let pushOn = false
 let waitingCount = null
 const picks = new Map()
 const memos = new Map()
+const denyNotes = new Map()
 const drafts = new Map()
 
 // Until the words arrive (the computer may be out of reach), the few the first screens need: the
@@ -537,7 +538,31 @@ function drawApprovals() {
       a.hidden ? el('p', { className: 'small warn' }, say('hiddenChars')) : null,
       a.reason ? el('p', { className: 'small' }, say('reason', { reason: a.reason })) : null,
       a.cwd ? el('p', { className: 'small' }, a.cwd) : null,
-      el('div', { className: 'actions' }, allow, el('button', { className: 'btn deny', 'data-key': `deny:${a.id}`, onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'deny' }) }, say('deny'))),
+      // A reason goes to the session with the deny, as a memo does: the same address only.
+      mayStrong()
+        ? [
+            el('label', { className: 'field', htmlFor: `deny-${a.id}` }, say('denyNote')),
+            el('textarea', { id: `deny-${a.id}`, 'data-key': `denyNote:${a.id}`, value: denyNotes.get(a.id) ?? '', maxLength: TEXT_MAX, oninput: e => denyNotes.set(a.id, e.target.value), onblur: () => renderLater && setTimeout(render) }),
+          ]
+        : null,
+      el(
+        'div',
+        { className: 'actions' },
+        allow,
+        el(
+          'button',
+          {
+            className: 'btn deny',
+            'data-key': `deny:${a.id}`,
+            onclick: () => {
+              const note = mayStrong() ? (denyNotes.get(a.id) ?? '').trim() : ''
+              denyNotes.delete(a.id)
+              void act('POST', `/approvals/${a.id}/answer`, note ? { decision: 'deny', note } : { decision: 'deny' })
+            },
+          },
+          say('deny'),
+        ),
+      ),
       el('div', { className: 'actions' }, el('button', { className: 'btn', 'data-key': `terminal:${a.id}`, onclick: () => void act('POST', `/approvals/${a.id}/answer`, { decision: 'terminal' }) }, say('terminal'))),
       mayStrong() ? el('p', { className: 'small' }, say('terminalHint')) : strong() ? strongWhyBlock('small', `approval:${a.id}`) : el('p', { className: 'small' }, say('allowNeedsStrong')),
     )

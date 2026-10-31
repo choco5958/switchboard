@@ -188,7 +188,7 @@ export type IdeApi = {
   answer: (id: number, choice: string, memo: string) => Promise<Reply>
   hold: (id: number) => Promise<Reply>
   forward: (id: number, to: string) => Promise<Reply> // hand a question to another session to answer
-  approve: (id: number, decision: 'allow' | 'deny' | 'terminal') => Promise<Reply>
+  approve: (id: number, decision: 'allow' | 'deny' | 'terminal', note?: string) => Promise<Reply> // note: words for the session with a deny
   connected: () => Promise<boolean>
   // Why the bridge is not up: the log's path and its last line (src/main/index.ts).
   bridgeProblem: () => Promise<{ log: string; last: string }>

@@ -85,6 +85,7 @@ type ApprovalRow = {
   status: 'pending' | 'allow' | 'deny' | 'terminal' | 'expired'
   created_at: number
   seal: string
+  note: string
 }
 
 type OutboxRow = PeerRow & {
@@ -444,6 +445,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   // A permission answer sealed with the app's key (sealOf): a status written into the database
   // by anything else is no answer.
   addColumns('approvals', [['seal', "text not null default ''"]])
+  // What the person wrote with a deny, for the session (sealed with it).
+  addColumns('approvals', [['note', "text not null default ''"]])
   // A scheduled prompt that switched itself off after ROUTINE_FAIL_LIMIT failed runs in a row.
   addColumns('routines', [['failed_off', 'integer not null default 0']])
   // Which agent CLI a scheduled prompt goes to (agents.ts ids; routines before this were Claude Code's).
@@ -619,16 +622,22 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   // decision). A program of the same user that writes 'allow' into the database has no key to
   // seal it with, and the mod is told to ask in the terminal instead (approvalStatus). Without
   // a key (a bridge a mod started) nothing is sealed, and nothing could answer allow but Telegram.
-  const sealOf = (id: number, decision: string): string =>
-    options.appKey === undefined ? '' : createHmac('sha256', options.appKey).update(`approval:${id}:${decision}`).digest('hex')
+  // A deny's note is sealed with it: words written into the database by anything else never
+  // reach the session as the person's.
+  const sealOf = (id: number, decision: string, note = ''): string =>
+    options.appKey === undefined ? '' : createHmac('sha256', options.appKey).update(`approval:${id}:${decision}${note ? `:${note}` : ''}`).digest('hex')
   const approvalStatus = (row: { id: number; status: string; seal: string }): string =>
     row.status !== 'allow' || options.appKey === undefined || sameSecret(row.seal, sealOf(row.id, 'allow')) ? row.status : 'terminal'
+  const approvalNote = (row: { id: number; status: string; seal: string; note: string }): string =>
+    row.status === 'deny' && row.note && (options.appKey === undefined || sameSecret(row.seal, sealOf(row.id, 'deny', row.note))) ? row.note : ''
 
-  // A permission ask answered once, from wherever it was first.
-  const answerApproval = (row: ApprovalRow, decision: 'allow' | 'deny' | 'terminal' | 'expired', via: string, event?: Key): boolean => {
+  // A permission ask answered once, from wherever it was first. `note`: words for the session
+  // with a deny, from the person (the app, a phone, Telegram: answers are theirs only, appOnly).
+  const answerApproval = (row: ApprovalRow, decision: 'allow' | 'deny' | 'terminal' | 'expired', via: string, event?: Key, note = ''): boolean => {
+    const kept = decision === 'deny' ? note.trim().slice(0, APPROVAL_NOTE_MAX) : ''
     const result = db
-      .prepare("update approvals set status = ?, via = ?, answered_at = ?, seal = ? where id = ? and status = 'pending'")
-      .run(decision, via, now(), sealOf(row.id, decision), row.id)
+      .prepare("update approvals set status = ?, via = ?, answered_at = ?, seal = ?, note = ? where id = ? and status = 'pending'")
+      .run(decision, via, now(), sealOf(row.id, decision, kept), kept, row.id)
     if (result.changes === 0) return false
     const key = event ?? ({ allow: 'bridge.event.approvalAllow', deny: 'bridge.event.approvalDeny', terminal: 'bridge.event.approvalTerminal', expired: 'bridge.event.approvalExpired' } as const)[decision]
     logEvent(row.session_id, '권한', say(key, { id: row.id, tool: row.tool }))
@@ -645,6 +654,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   // away), so an answer could reach nothing: it expires. Asks found at the start get that long
   // for their mods to come back.
   const APPROVAL_STALE_MS = 90_000
+  const APPROVAL_NOTE_MAX = 2000
   const APPROVAL_POLL_MAX_MS = 25_000
   const approvalWaiters = new Map<number, Set<() => void>>()
   const approvalSeen = new Map<number, number>()
@@ -695,12 +705,13 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     questionOf: messageId => (db.prepare('select question_id from telegram_messages where message_id = ?').get(messageId) as { question_id: number } | undefined)?.question_id ?? null,
     pendingApprovals: () => db.prepare("select * from approvals where status = 'pending' order by id").all() as ApprovalRow[],
     approval: id => db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow | undefined,
-    answerApproval: (id, decision) => {
+    answerApproval: (id, decision, note) => {
       const row = db.prepare('select * from approvals where id = ?').get(id) as ApprovalRow | undefined
-      return row ? answerApproval(row, decision, 'telegram') : false
+      return row ? answerApproval(row, decision, 'telegram', undefined, note) : false
     },
     approvalMessage: id => (db.prepare('select message_id from telegram_approvals where approval_id = ?').get(id) as { message_id: number } | undefined)?.message_id ?? null,
     saveApprovalMessage: (id, messageId) => db.prepare('insert or replace into telegram_approvals (approval_id, message_id) values (?, ?)').run(id, messageId),
+    approvalOf: messageId => (db.prepare('select approval_id from telegram_approvals where message_id = ?').get(messageId) as { approval_id: number } | undefined)?.approval_id ?? null,
     changed: () => changed('telegram'),
     log: text => console.log(text),
   })
@@ -1397,8 +1408,9 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         const waitMs = Math.min(Math.max(Number(url.searchParams.get('wait')) || 0, 0), APPROVAL_POLL_MAX_MS)
         const reply = () => {
           approvalSeen.set(row.id, now())
-          const latest = db.prepare('select id, status, seal from approvals where id = ?').get(row.id) as { id: number; status: string; seal: string } | undefined
-          send(res, 200, { id: row.id, status: approvalStatus(latest ?? row), waitMs })
+          const latest = db.prepare('select id, status, seal, note from approvals where id = ?').get(row.id) as { id: number; status: string; seal: string; note: string } | undefined
+          const note = approvalNote(latest ?? row)
+          send(res, 200, { id: row.id, status: approvalStatus(latest ?? row), ...(note ? { note } : {}), waitMs })
         }
         if (row.status !== 'pending' || waitMs === 0) return reply()
         approvalSeen.set(row.id, now())
@@ -1432,7 +1444,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         const body = await readJson(req)
         const decision = str(body.decision)
         if (!['allow', 'deny', 'terminal'].includes(decision)) return send(res, 400, { error: say('bridge.needAnswer') })
-        if (!answerApproval(row, decision as 'allow' | 'deny' | 'terminal', fromPhone ? 'mobile' : 'app')) return send(res, 409, { error: say('bridge.alreadyAnswered', { id: row.id }) })
+        if (!answerApproval(row, decision as 'allow' | 'deny' | 'terminal', fromPhone ? 'mobile' : 'app', undefined, str(body.note))) return send(res, 409, { error: say('bridge.alreadyAnswered', { id: row.id }) })
         return send(res, 200, { id: row.id, status: decision })
       }
     }

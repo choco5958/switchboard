@@ -727,7 +727,7 @@ export const register: Register = on => {
     if (!posted?.ok) return verdict
     const id = String(posted.json.id)
     // Long polls, never a sleep: the wait stays out of the hook's 10 s (approval.ts).
-    const answer = await waitApproval({
+    const { answer, note } = await waitApproval({
       until: (await $.clock.now()) + APPROVAL_WAIT_MS,
       now: () => $.clock.now(),
       poll: waitMs => call($, 'GET', `/approvals/${id}?wait=${waitMs}`),
@@ -737,7 +737,7 @@ export const register: Register = on => {
       abandon: () => call($, 'POST', `/approvals/${id}/abandon`, { sessionId }),
     })
     if (answer === 'allow') return { decision: 'allow', reason: t(currentLang(), 'mod.allowedRemote', { id }) }
-    if (answer === 'deny') return { decision: 'deny', reason: t(currentLang(), 'mod.deniedRemote', { id }) }
+    if (answer === 'deny') return { decision: 'deny', reason: note ? t(currentLang(), 'mod.deniedRemoteNote', { id, note }) : t(currentLang(), 'mod.deniedRemote', { id }) }
     return verdict
   }).catch(($, e, next) => next(e))
 

@@ -93,6 +93,7 @@ export const zhCN: Dict = {
     '让 IDE 与实际状态一致。如果没有变化，就保持原样并简短说明。',
   'mod.allowedRemote': '用户已在 Switchboard 中允许 (A{id})。',
   'mod.deniedRemote': '用户已在 Switchboard 中拒绝 (A{id})。请设法不用它完成，或用 ask_decision 询问。',
+  'mod.deniedRemoteNote': '用户已在 Switchboard 中拒绝，并写道 (A{id}): {note}\n请按这段话决定下一步；如果意思不明确，用 ask_decision 询问。',
   'mod.restate': '[Switchboard] 对话已压缩。下面再次列出本会话在 Switchboard 上登记的状态。请继续使用相同的任务标题、节点 key、Q 编号和等待 ID。',
   'mod.restateTask': '任务: {title} ({stage}, {status}) 当前: {now}',
   'mod.restateQuestion': '等待回答的问题: Q{id} {question}',

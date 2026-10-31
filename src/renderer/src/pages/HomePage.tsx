@@ -67,7 +67,7 @@ export function HomePage({
   onOpenQueue: () => void // the decision queue in the sidebar, with the oldest question open
   onOpenHistory: () => void
   onPickFolder: () => void
-  onAnswerApproval: (id: number, decision: 'allow' | 'deny' | 'terminal') => void
+  onAnswerApproval: (id: number, decision: 'allow' | 'deny' | 'terminal', note?: string) => void
 }) {
   const [filter, setFilter] = useState<Filter>(null)
   const grid = useRef<HTMLElement>(null)
@@ -96,7 +96,7 @@ export function HomePage({
           {t('approval.title')} <span className="count warn">{approvals.length}</span>
         </h3>
         {approvals.map(a => (
-          <ApprovalItem key={a.id} a={a} onAnswer={decision => onAnswerApproval(a.id, decision)} />
+          <ApprovalItem key={a.id} a={a} onAnswer={(decision, note) => onAnswerApproval(a.id, decision, note)} />
         ))}
       </section>
     ) : null

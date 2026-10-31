@@ -93,6 +93,7 @@ export const ja: Dict = {
     'IDE を実際の状態と同じにしてください。変わったことがなければそのままにして、短く伝えてください。',
   'mod.allowedRemote': 'ユーザーが Switchboard で許可しました (A{id})。',
   'mod.deniedRemote': 'ユーザーが Switchboard で拒否しました (A{id})。これなしで進める方法を探すか、ask_decision で尋ねてください。',
+  'mod.deniedRemoteNote': 'ユーザーが Switchboard で拒否し、こう書きました (A{id}): {note}\nこの内容に沿って次の進め方を決め、意味がはっきりしなければ ask_decision で尋ねてください。',
   'mod.restate': '[Switchboard] 会話が圧縮されました。このセッションが Switchboard に登録した状態をもう一度お知らせします。同じ作業タイトル、ノード key、Q 番号、待機 ID を使い続けてください。',
   'mod.restateTask': '作業: {title} ({stage}, {status}) 今: {now}',
   'mod.restateQuestion': '回答待ちの質問: Q{id} {question}',

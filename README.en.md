@@ -95,6 +95,7 @@ Jump to any task, decision question or project. Gather projects into groups and 
 
 #### While you are away
 - When the app is closed, the screen is locked or there has been no input for 5 minutes, decisions and permission asks go to Telegram and your phone. At your desk, the terminal asks as usual.
+- When you deny a permission ask you can add a reason, and the session gets it and looks for another way. In Telegram, reply to the permission ask with the reason.
 - Each scheduled prompt names the agent it goes to; if that agent has no session, the app opens its terminal. Runs with nothing to report send no notification.
 
 #### Fix what you see
@@ -227,7 +228,7 @@ Turn on `Get notifications on this phone` in the home screen app to be notified 
 <summary><b>Without Tailscale on the phone, or on the same Wi-Fi only</b></summary>
 
 - **Tailscale Funnel**: turn on `Accept connections from other Wi-Fi and mobile data` under `Turn on Tailscale HTTPS` to open the same HTTPS address to the internet, so the phone works from any network without Tailscale. Allow Funnel for this computer once in the Tailscale admin page (Settings shows the link). Anyone with the address can open the page, but the content is encrypted with a key per phone, so only paired phones can read and answer.
-- **Same Wi-Fi (HTTP address)**: choose `This computer's name` (`name.local`) or an IP to skip Tailscale. Over this connection you can only answer decisions with an option, deny, or answer in the terminal. Allowing permission asks, messaging sessions and notes on answers need a phone paired over Tailscale HTTPS, because whoever controls the network can swap a page sent over HTTP. A Tailscale IP (`100.x.y.z`) is HTTP too and has the same limits.
+- **Same Wi-Fi (HTTP address)**: choose `This computer's name` (`name.local`) or an IP to skip Tailscale. Over this connection you can only answer decisions with an option, deny, or answer in the terminal. Allowing permission asks, messaging sessions, notes on answers and reasons for a deny need a phone paired over Tailscale HTTPS, because whoever controls the network can swap a page sent over HTTP. A Tailscale IP (`100.x.y.z`) is HTTP too and has the same limits.
 - Each phone pairs on its own; `Disconnect` in Settings removes it. Phones paired with 0.3.5 or earlier must pair again with a QR code for the Tailscale HTTPS address to allow permission asks.
 
 </details>

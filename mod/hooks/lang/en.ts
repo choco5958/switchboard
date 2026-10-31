@@ -95,6 +95,7 @@ export const en: Dict = {
     'and the node statuses with update_node, so the IDE matches the actual state. If nothing changed, leave it and say so briefly.',
   'mod.allowedRemote': 'The person allowed it in Switchboard (A{id}).',
   'mod.deniedRemote': 'The person denied it in Switchboard (A{id}). Find a way without it, or ask with ask_decision.',
+  'mod.deniedRemoteNote': 'The person denied it in Switchboard and wrote (A{id}): {note}\nChoose your next step by what they wrote; if it is unclear, ask with ask_decision.',
   'mod.restate': '[Switchboard] The conversation was compacted. Here is what this session put on Switchboard, again. Keep using the same task titles, node keys, Q numbers and wait ids.',
   'mod.restateTask': 'Task: {title} ({stage}, {status}) now: {now}',
   'mod.restateQuestion': 'Waiting for an answer: Q{id} {question}',

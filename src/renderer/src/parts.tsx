@@ -5,7 +5,8 @@ import { eventKindLabel, eventKindSlug, stageLabel, t } from '../../shared/i18n'
 import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent, type Attention } from './model'
 import type { AgentTag } from '../../shared/agents'
 import { Icon } from './Icons'
-import { Badge, Button, Card, EmptyState, IconButton, VisuallyHidden, cx, surfaceClass, type Tone } from './ui'
+import { composing } from './ime'
+import { Badge, Button, Card, EmptyState, IconButton, Input, VisuallyHidden, cx, surfaceClass, type Tone } from './ui'
 
 // Enter or Space on a focused row or box that is not a button runs what a click runs.
 // Keys pressed on a control inside it (a close button) are left to that control.
@@ -263,7 +264,10 @@ export function Toast({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (
 
 // A permission ask that came while the person was away (mod tool.check). Allow and deny answer
 // it here; 'in the terminal' hands it back to Claude Code's own dialog.
-export function ApprovalItem({ a, onAnswer }: { a: Approval; onAnswer: (decision: 'allow' | 'deny' | 'terminal') => void }) {
+// `note`: what the person writes with a deny; the session reads it as the reason.
+export function ApprovalItem({ a, onAnswer }: { a: Approval; onAnswer: (decision: 'allow' | 'deny' | 'terminal', note?: string) => void }) {
+  const [note, setNote] = useState('')
+  const deny = () => onAnswer('deny', note.trim() || undefined)
   return (
     <Card pad="sm" tone="warn" className="approval-item">
       <div>
@@ -275,11 +279,26 @@ export function ApprovalItem({ a, onAnswer }: { a: Approval; onAnswer: (decision
       </pre>
       {a.reason && <div className="small">{t('approval.reason', { reason: a.reason })}</div>}
       {a.cwd && <div className="quiet small">{t('approval.cwd', { cwd: a.cwd })}</div>}
+      <Input
+        compact
+        className="approval-note"
+        value={note}
+        maxLength={2000}
+        placeholder={t('approval.notePlaceholder')}
+        aria-label={t('approval.notePlaceholder')}
+        onChange={e => setNote(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !composing(e) && note.trim()) {
+            e.preventDefault()
+            deny()
+          }
+        }}
+      />
       <div className="actions approval-actions">
         <Button variant="primary" size="sm" onClick={() => onAnswer('allow')}>
           {t('approval.allow')}
         </Button>
-        <Button size="sm" onClick={() => onAnswer('deny')}>
+        <Button size="sm" onClick={deny}>
           {t('approval.deny')}
         </Button>
         <Button variant="link" size="sm" title={t('approval.terminalTitle')} onClick={() => onAnswer('terminal')}>
