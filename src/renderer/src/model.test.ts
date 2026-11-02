@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { GraphNode, Question, Task } from '../../shared/types'
-import { ago, attentionOf, keyAction, keyWorks, layoutGraph, optionKeys, nextAfter, optionsOf, queueOf, reachOf, reviewLoops, stageCounts, stripTaskPrefix, taskFacts, taskOfEvent, tasksByProject, waitingFirst } from './model'
+import { ago, attentionOf, keyAction, keyWorks, layoutGraph, optionKeys, nextAfter, optionsOf, queueOf, reachOf, resumable, reviewLoops, stageCounts, stripTaskPrefix, taskFacts, taskOfEvent, tasksByProject, waitingFirst } from './model'
 
 const q = (id: number, status: Question['status'] = 'pending'): Question => ({
   id,
@@ -178,6 +178,19 @@ test('an answer reaches a live session; a gone one waits; an outside CLI is unkn
   expect(reachOf({ id: 's3', agent: 'codex', terminal: 't1' }, [])).toBe('gone')
   expect(reachOf({ id: 's4', agent: 'codex', terminal: '' }, [])).toBe('unknown')
   expect(reachOf(undefined, [])).toBe('gone')
+})
+
+test('only a gone Claude session with a folder and a plain id is opened again', () => {
+  const id = '3f2b8c1e-7a4d-4e5f-9b6a-0c1d2e3f4a5b'
+  const gone = { id, agent: 'claude', cwd: '/w/app', terminal: '' }
+  expect(resumable(gone, [])).toBe(true)
+  expect(resumable({ ...gone, agent: undefined }, [])).toBe(true)
+  expect(resumable(gone, [id])).toBe(false)
+  expect(resumable({ ...gone, agent: 'codex', terminal: 't1' }, [])).toBe(false)
+  expect(resumable({ ...gone, cwd: '' }, [])).toBe(false)
+  expect(resumable({ ...gone, id: 'x; rm -rf ~' }, [])).toBe(false)
+  expect(resumable({ ...gone, id: '-p' }, [])).toBe(false)
+  expect(resumable(undefined, [])).toBe(false)
 })
 
 test('a task needs the person for a decision first, then a stall, then a dropped session', () => {

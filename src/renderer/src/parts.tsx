@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react'
-import type { Approval, BridgeState, Question, Task } from '../../shared/types'
+import type { Approval, BridgeState, Question, Session, Task } from '../../shared/types'
 import { taskStateLabel, taskState } from '../../shared/projects'
 import { eventKindLabel, eventKindSlug, stageLabel, t } from '../../shared/i18n'
 import { STAGES, ago, clock, optionsOf, stripTaskPrefix, taskOfEvent, type Attention } from './model'
@@ -306,5 +306,24 @@ export function ApprovalItem({ a, onAnswer }: { a: Approval; onAnswer: (decision
         </Button>
       </div>
     </Card>
+  )
+}
+
+// Opens a Claude terminal in the dock that resumes a session whose terminal is gone (Dock.tsx);
+// detail: { cwd, session }.
+export const RESUME_SESSION = 'switchboard:resume-session'
+
+// For a gone Claude Code session (model.ts resumable): opens it again with `claude --resume`
+// in its folder, so the work goes on and the answers kept for it go in.
+export function ResumeButton({ session }: { session: Session }) {
+  return (
+    <Button
+      size="sm"
+      title={t('session.resumeTitle')}
+      onClick={() => window.dispatchEvent(new CustomEvent(RESUME_SESSION, { detail: { cwd: session.cwd, session: session.id } }))}
+    >
+      <Icon name="dock" size="sm" />
+      {t('session.resume')}
+    </Button>
   )
 }

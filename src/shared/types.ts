@@ -214,7 +214,7 @@ export type IdeApi = {
   onConnection: (listener: (connected: boolean) => void) => () => void
   onNotifyOpen: (listener: (questionId: number) => void) => () => void
   termList: () => Promise<TermInfo[]>
-  termOpen: (cwd: string, claude: boolean, cols: number, rows: number, slot?: number) => Promise<TermInfo | { error: string }>
+  termOpen: (cwd: string, claude: boolean, cols: number, rows: number, slot?: number, resume?: string) => Promise<TermInfo | { error: string }>
   // Agent CLIs other than Claude Code: a terminal running one, and which ones are installed.
   termOpenAgent: (cwd: string, agentId: string, cols: number, rows: number) => Promise<TermInfo | { error: string }>
   detectAgents: (force?: boolean) => Promise<AgentDetect>

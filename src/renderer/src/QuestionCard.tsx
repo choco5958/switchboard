@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import type { Question } from '../../shared/types'
+import type { Question, Session } from '../../shared/types'
 import { renderMarkdown } from './markdown'
 import { clock, keyAction, keyWorks, optionKeys, optionsOf, type Reach } from './model'
-import { AgentBadge, useToast } from './parts'
+import { AgentBadge, ResumeButton, useToast } from './parts'
 import { SEND_DELAY_MS, draftOf, isWaiting, queueAnswer, subscribe, takeBack } from './outbox'
 import type { AgentTag } from '../../shared/agents'
 import { t } from '../../shared/i18n'
@@ -22,6 +22,7 @@ export function QuestionCard({
   agent,
   sessionProject,
   reach = 'unknown',
+  resume,
   peers = [],
   onDone,
   onReopen,
@@ -32,6 +33,7 @@ export function QuestionCard({
   agent?: AgentTag // the agent CLI that asked, once other agents than Claude are around
   sessionProject: string
   reach?: Reach // whether the session can take the answer now
+  resume?: Session // the gone session, when the app can open it again (model.ts resumable)
   peers?: { id: string; name: string; label: string }[] // connected sessions other than the asker, to hand the question to
   onDone: () => void
   onReopen?: () => void // opens this question again (after Undo)
@@ -171,6 +173,7 @@ export function QuestionCard({
             {t('question.gone')}
           </Badge>
         )}
+        {resume && (isOpen || !q.delivered) && <ResumeButton session={resume} />}
         <Badge shape="pill" tone={q.status === 'pending' ? 'warn' : q.status === 'held' ? 'neutral' : 'good'}>
           {t(q.status === 'pending' ? 'palette.qPending' : q.status === 'held' ? 'palette.qHeld' : 'palette.qAnswered')}
         </Badge>

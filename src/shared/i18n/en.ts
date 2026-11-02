@@ -375,6 +375,7 @@ export const en: Dict = {
   'term.shell': 'shell',
   'term.pickFolder': 'Project folder',
   'term.noFolder': 'Folder not found: {path}',
+  'term.badResume': 'This session cannot be resumed.',
   'term.hostLost': 'The terminal host stopped, so this terminal ended',
   'term.hostFailed': 'Could not start the terminal host. Log: {log}',
   // Log page
@@ -1147,6 +1148,8 @@ export const en: Dict = {
   'question.sendFailedId': 'Could not send the answer to Q{id}: {error}',
   'taskView.toTerminal': 'Go to this session\'s terminal',
   'taskView.toTerminalTitle': 'Opens the terminal in the dock below where this task\'s session runs.',
+  'session.resume': 'Resume in a terminal',
+  'session.resumeTitle': 'This session is disconnected (its terminal closed, or the computer restarted). Opens a new Claude terminal in the dock below that continues this conversation with claude --resume. Answers kept for it go in once it connects.',
   'taskView.stagesLabel': 'Task stages',
   'agents.secDock': 'Dock and terminals',
   'agents.secSafety': 'Folder trust and browser access',

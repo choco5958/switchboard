@@ -84,6 +84,7 @@ Jump to any task, decision question or project. Gather projects into groups and 
 #### Decisions and tasks
 - **Decision queue**: a session posts a question with `ask_decision` and goes on working without waiting. The same question is never posted twice.
 - **Waiting for you**: tasks with a pending decision, a session stalled mid-reply for over 5 minutes, a usage limit or a dropped session gather at the top of the sidebar. Stalled sessions and lifted limits also come as notifications.
+- **Reopen a dropped session**: a Claude Code session that dropped because its terminal closed or the computer restarted opens again from `Resume in a terminal` on the task view or the decision card. A new dock terminal continues the conversation with `claude --resume`, and the answers kept for it go in once it connects.
 - **Per project**: pick a project on the left and the sidebar, home, log and dock show only that project.
 
 #### Sessions working together

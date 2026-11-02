@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Agent, CommandKind, GraphNode, LogEvent, Question, Session, Task, TermInfo } from '../../shared/types'
 import { WorkerLane } from './WorkerLane'
 import { ago, clock, layoutGraph, reviewLoops, stageCounts } from './model'
-import { AgentBadge, NumberBadge, onPress } from './parts'
+import { AgentBadge, NumberBadge, ResumeButton, onPress } from './parts'
 import type { AgentTag } from '../../shared/agents'
 import { taskState, taskStateLabel } from '../../shared/projects'
 import { eventKindLabel, nodeKindLabel, nodeOwnerLabel, nodeStatusLabel, nodeStatusSlug, stageLabel, t } from '../../shared/i18n'
@@ -25,6 +25,7 @@ export function TaskView({
   events,
   agents,
   session,
+  resume,
   onQuestion,
   onCommand,
   onSelectNode,
@@ -36,6 +37,7 @@ export function TaskView({
   events: LogEvent[]
   agents: Agent[]
   session?: Session // the task's session while it is connected
+  resume?: Session // the task's session once it is gone, when the app can open it again (model.ts resumable)
   onQuestion: (id: number) => void
   onCommand: (kind: CommandKind, payload: Record<string, unknown>) => void
   onSelectNode?: (node: GraphNode | null) => void
@@ -100,6 +102,7 @@ export function TaskView({
             {t('taskView.toTerminal')}
           </Button>
         )}
+        {!terminal && resume && state !== 'done' && <ResumeButton session={resume} />}
       </div>
       <div className="task-summary">
         <h1>

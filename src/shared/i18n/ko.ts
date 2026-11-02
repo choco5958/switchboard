@@ -374,6 +374,7 @@ export const ko = {
   'term.shell': '셸',
   'term.pickFolder': '프로젝트 폴더',
   'term.noFolder': '폴더가 없습니다: {path}',
+  'term.badResume': '이어서 열 수 없는 세션입니다.',
   'term.hostLost': '터미널 호스트가 멈춰서 이 터미널도 끝났습니다',
   'term.hostFailed': '터미널 호스트를 시작하지 못했습니다. 기록: {log}',
   // Log page
@@ -1146,6 +1147,8 @@ export const ko = {
   'question.sendFailedId': 'Q{id}의 답을 보내지 못했습니다: {error}',
   'taskView.toTerminal': '이 세션의 터미널로 가기',
   'taskView.toTerminalTitle': '아래 도크에서 이 작업의 세션이 실행 중인 터미널을 엽니다.',
+  'session.resume': '터미널에서 이어서 열기',
+  'session.resumeTitle': '세션이 끊겼습니다(터미널을 닫았거나 컴퓨터를 다시 켰을 때 등). 아래 도크에 Claude 터미널을 새로 열고 claude --resume으로 이 대화를 이어 갑니다. 저장해 둔 답은 세션이 연결되면 들어갑니다.',
   'taskView.stagesLabel': '작업 단계',
   'agents.secDock': '도크와 터미널',
   'agents.secSafety': '폴더 신뢰와 브라우저 접근',

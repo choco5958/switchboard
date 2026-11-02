@@ -14,7 +14,7 @@ import { t } from '../shared/i18n'
 import { writeOpenUrl } from './openUrl'
 import { nodeRoot } from './appRoot'
 import { loginShell } from './shell'
-import { shellWord } from '../shared/agents'
+import { resumableId, shellWord } from '../shared/agents'
 import { HOST_DOWN, hostSupported, localBackend, terminalHosts, type HostEvents, type Hosts, type TermBackend } from './termClient'
 import { hostDir, type Snapshot } from './termProtocol'
 import type { SpawnPty } from './termCore'
@@ -263,16 +263,18 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
 
   ipcMain.handle('term:list', () => [...terms.values()].map(info))
 
-  ipcMain.handle('term:open', (_e, cwd: string, claude: boolean, cols: number, rows: number, slot?: number): TermInfo | { error: string } =>
-    openTerminal({
+  // `resume`: a Claude Code session whose terminal is gone, opened again with `--resume`.
+  ipcMain.handle('term:open', (_e, cwd: string, claude: boolean, cols: number, rows: number, slot?: number, resume?: string): TermInfo | { error: string } => {
+    if (resume !== undefined && (!claude || !resumableId(resume))) return { error: t('term.badResume') }
+    return openTerminal({
       cwd,
       cols,
       rows,
       claude,
       title: claude ? 'claude' : t('term.shell'),
-      prepare: () => ({ line: claude ? claudeLine(claudeLauncher(), shellWord(modDir()), slot, ccrPaths().count) : undefined }),
-    }),
-  )
+      prepare: () => ({ line: claude ? `${claudeLine(claudeLauncher(), shellWord(modDir()), slot, ccrPaths().count)}${resume ? ` --resume ${resume}` : ''}` : undefined }),
+    })
+  })
   openClaudeIn = cwd =>
     openTerminal({
       cwd,

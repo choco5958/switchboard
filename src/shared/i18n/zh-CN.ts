@@ -375,6 +375,7 @@ export const zhCN: Dict = {
   'term.shell': '终端',
   'term.pickFolder': '项目文件夹',
   'term.noFolder': '文件夹不存在：{path}',
+  'term.badResume': '无法恢复此会话。',
   'term.hostLost': '终端主机已停止，此终端也随之结束',
   'term.hostFailed': '无法启动终端主机。日志：{log}',
   // Log page
@@ -1147,6 +1148,8 @@ export const zhCN: Dict = {
   'question.sendFailedId': '无法发送 Q{id} 的回答：{error}',
   'taskView.toTerminal': '前往此会话的终端',
   'taskView.toTerminalTitle': '在下方停靠栏打开此任务会话正在运行的终端。',
+  'session.resume': '在终端中继续',
+  'session.resumeTitle': '此会话已断开(终端已关闭或电脑已重启等)。将在下方停靠栏打开新的 Claude 终端，用 claude --resume 继续此对话。为它保存的回答会在会话连接后送入。',
   'taskView.stagesLabel': '任务阶段',
   'agents.secDock': '停靠栏与终端',
   'agents.secSafety': '文件夹信任与浏览器访问',

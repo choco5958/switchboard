@@ -4,7 +4,7 @@ import { terminalOf } from './taskInfo'
 import { projectOfCwd, type ProjectInfo } from '../../shared/projects'
 import { CLAUDE_MIN, olderThan, PRESETS, type AgentTag, type CustomAgent } from '../../shared/agents'
 import { TerminalView } from './TerminalView'
-import { LogLines } from './parts'
+import { LogLines, RESUME_SESSION } from './parts'
 import { Badge, Button, EmptyState, IconButton, Input, Menu, MenuItem, TabList, cx } from './ui'
 import { composing } from './ime'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
@@ -13,6 +13,8 @@ import { t } from '../../shared/i18n'
 const HEIGHT_KEY = 'claude-ide:dock-height'
 // Low enough that a task's graph stays in view on a 1440x900 window; a dragged height is kept.
 export const DOCK_HEIGHT = 200
+// How long a resumed session's terminal takes the next press of its button (resumeIn below).
+const RESUME_WAIT_MS = 30_000
 
 function savedHeight(): number {
   try {
@@ -205,24 +207,28 @@ export function Dock({
     }
   }, [logShown])
 
-  const openIn = async (cwd: string | null, kind = 'claude', slot?: number) => {
+  const openIn = async (cwd: string | null, kind = 'claude', slot?: number, resume?: string) => {
     setMenu(null)
     setPickSlot(undefined)
     setError('')
     const folder = cwd || (await window.ide.pickFolder())
-    if (!folder) return
+    if (!folder) return null
     const box = body.current
     const cols = box ? Math.floor(box.clientWidth / 8) : 100
     const rows = box ? Math.floor(box.clientHeight / 17) : 20
     const made =
       kind === 'claude' || kind === 'shell'
-        ? await window.ide.termOpen(folder, kind === 'claude', cols, rows, slot)
+        ? await window.ide.termOpen(folder, kind === 'claude', cols, rows, slot, resume)
         : await window.ide.termOpenAgent(folder, kind, cols, rows)
-    if ('error' in made) return setError(made.error)
+    if ('error' in made) {
+      setError(made.error)
+      return null
+    }
     setTerms(list => [...list, made])
     setActive(made.id)
     setFolded(false)
     onFolder(made.cwd)
+    return made
   }
 
   const scoped = scope === null ? null : projects.find(p => p.name === scope)
@@ -239,6 +245,29 @@ export function Dock({
     const on = (event: Event) => openSlot.current((event as CustomEvent<number>).detail)
     window.addEventListener(OPEN_CLAUDE_SLOT, on)
     return () => window.removeEventListener(OPEN_CLAUDE_SLOT, on)
+  }, [])
+  // A second press while the first terminal is still starting goes to that terminal: the
+  // session shows as connected only once claude is up, and two would run the same conversation.
+  const resumed = useRef(new Map<string, { term: string; at: number }>())
+  const resumeIn = useRef<(cwd: string, session: string) => void>(() => undefined)
+  resumeIn.current = (cwd, session) => {
+    const earlier = resumed.current.get(session)
+    if (earlier && Date.now() - earlier.at < RESUME_WAIT_MS && terms.some(term => term.id === earlier.term && term.alive)) {
+      setActive(earlier.term)
+      setFolded(false)
+      return
+    }
+    void openIn(cwd, 'claude', undefined, session).then(made => {
+      if (made) resumed.current.set(session, { term: made.id, at: Date.now() })
+    })
+  }
+  useEffect(() => {
+    const on = (event: Event) => {
+      const { cwd, session } = (event as CustomEvent<{ cwd: string; session: string }>).detail
+      resumeIn.current(cwd, session)
+    }
+    window.addEventListener(RESUME_SESSION, on)
+    return () => window.removeEventListener(RESUME_SESSION, on)
   }, [])
   const choices = agentChoices(found, customs, showOthers, defaultAgent)
   const main = choices[0]!

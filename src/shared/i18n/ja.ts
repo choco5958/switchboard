@@ -375,6 +375,7 @@ export const ja: Dict = {
   'term.shell': 'シェル',
   'term.pickFolder': 'プロジェクトのフォルダー',
   'term.noFolder': 'フォルダーがありません: {path}',
+  'term.badResume': '再開できないセッションです。',
   'term.hostLost': 'ターミナルホストが停止したため、このターミナルも終了しました',
   'term.hostFailed': 'ターミナルホストを起動できませんでした。ログ: {log}',
   // Log page
@@ -1147,6 +1148,8 @@ export const ja: Dict = {
   'question.sendFailedId': 'Q{id} の回答を送れませんでした: {error}',
   'taskView.toTerminal': 'このセッションのターミナルへ',
   'taskView.toTerminalTitle': '下のドックで、このタスクのセッションが動いているターミナルを開きます。',
+  'session.resume': 'ターミナルで再開',
+  'session.resumeTitle': 'セッションが切れています(ターミナルを閉じた、コンピューターを再起動したなど)。下のドックに新しい Claude ターミナルを開き、claude --resume でこの会話を続けます。保存しておいた回答はセッションがつながると送られます。',
   'taskView.stagesLabel': 'タスクの段階',
   'agents.secDock': 'ドックとターミナル',
   'agents.secSafety': 'フォルダーの信頼とブラウザーのアクセス',

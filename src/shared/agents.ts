@@ -316,6 +316,12 @@ export function isClaude(kind: string | undefined): boolean {
   return !kind || kind === 'claude'
 }
 
+// A Claude Code session id as `claude --resume` takes it (a UUID). The app types it into a
+// shell line as is, so an id with any other character is never resumed.
+export function resumableId(id: unknown): id is string {
+  return typeof id === 'string' && /^[0-9A-Za-z][0-9A-Za-z-]{0,63}$/.test(id)
+}
+
 // Session id to agent kind, for badges. Empty while every session is Claude Code:
 // a badge only says something once another agent is around.
 export function agentBadges(sessions: readonly { id: string; agent?: string }[]): Record<string, string> {

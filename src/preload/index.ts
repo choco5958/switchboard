@@ -46,7 +46,7 @@ const api: IdeApi = {
     return () => ipcRenderer.off('bridge:connection', handler)
   },
   termList: () => ipcRenderer.invoke('term:list'),
-  termOpen: (cwd, claude, cols, rows, slot) => ipcRenderer.invoke('term:open', cwd, claude, cols, rows, slot),
+  termOpen: (cwd, claude, cols, rows, slot, resume) => ipcRenderer.invoke('term:open', cwd, claude, cols, rows, slot, resume),
   termOpenAgent: (cwd, agentId, cols, rows) => ipcRenderer.invoke('term:openAgent', cwd, agentId, cols, rows),
   detectAgents: force => ipcRenderer.invoke('agents:detect', force === true),
   termBuffer: id => ipcRenderer.invoke('term:buffer', id),

@@ -6,7 +6,7 @@ import { PropsPanel } from './PropsPanel'
 import { DECISION_KEYS_KEY, QuestionCard } from './QuestionCard'
 import { TaskView } from './TaskView'
 import { TopBar } from './TopBar'
-import { nextAfter, queueOf, reachOf, taskFacts, tasksByProject, waitingFirst, type Attention } from './model'
+import { nextAfter, queueOf, reachOf, resumable, taskFacts, tasksByProject, waitingFirst, type Attention } from './model'
 import { ArchivePage } from './pages/ArchivePage'
 import { DebugPage } from './pages/DebugPage'
 import { BROWSER_LAN_KEY } from './agentBrowser'
@@ -386,6 +386,11 @@ export function App() {
   // Running tasks that need a look for a reason other than a question (those wait as questions).
   const checkTasks = waitingTasks.waiting.filter(task => attentionOfTask(task) !== 'question')
   const reachOfQuestion = (q: Question) => reachOf(state.sessions.find(s => s.id === q.session_id), state.live ?? [])
+  // A gone Claude session to open again; none while the bridge is away, as every session looks gone then.
+  const resumeOf = (sessionId: string) => {
+    const session = state.sessions.find(s => s.id === sessionId)
+    return connected && resumable(session, state.live ?? []) ? session : undefined
+  }
   const inScope = (tab: Tab): boolean => {
     if (scope === null) return true
     if (tab.kind === 'task') return state.tasks.find(t => t.id === tab.id)?.project === scope
@@ -577,6 +582,7 @@ export function App() {
           events={state.events}
           agents={state.agents.filter(a => a.session_id === task.session_id && a.task_title === task.title)}
           session={(state.live ?? []).includes(task.session_id) ? state.sessions.find(s => s.id === task.session_id) : undefined}
+          resume={resumeOf(task.session_id)}
           onQuestion={openQuestion}
           onCommand={(kind, payload) => void command(kind, payload, task.session_id)}
         />
@@ -593,6 +599,7 @@ export function App() {
           agent={tags[q.session_id]}
           sessionProject={state.sessions.find(s => s.id === q.session_id)?.project ?? q.project}
           reach={reachOfQuestion(q)}
+          resume={resumeOf(q.session_id)}
           peers={state.sessions
             .filter(s => s.id !== q.session_id && (state.live ?? []).includes(s.id))
             .map(s => {

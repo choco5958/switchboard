@@ -1,5 +1,6 @@
 import type { GraphNode, Option, Question, Session, Task } from '../../shared/types'
 import { agoText } from '../../shared/i18n'
+import { isClaude, resumableId } from '../../shared/agents'
 
 export const STAGES = ['요구', '설계', '작업', '완료'] as const
 
@@ -186,6 +187,13 @@ export function reachOf(session: Pick<Session, 'id' | 'agent' | 'terminal'> | un
   if (live.includes(session.id)) return 'live'
   if (!session.agent || session.agent === 'claude' || session.terminal) return 'gone'
   return 'unknown'
+}
+
+// A gone Claude Code session the app can open again in a dock terminal (`claude --resume`):
+// the conversation, its tasks and the answers kept for it carry on. Other CLIs resume their
+// own way, so they get no button.
+export function resumable(session: Pick<Session, 'id' | 'agent' | 'cwd' | 'terminal'> | undefined, live: readonly string[]): session is Session {
+  return session !== undefined && isClaude(session.agent) && !!session.cwd && resumableId(session.id) && reachOf(session, live) === 'gone'
 }
 
 // Why a task needs the person now, the strongest reason first: a decision waits, its
