@@ -16,7 +16,7 @@ Claude Code、Codex、Gemini CLI をいくつも立ち上げて仕事を任せ�
 
 **[ダウンロード](https://github.com/choco5958/switchboard/releases/latest)** &nbsp;|&nbsp; [インストール](#インストール) &nbsp;|&nbsp; [機能](#機能) &nbsp;|&nbsp; [セキュリティ](#データとセキュリティ)
 
-[한국어](README.md) | [English](README.en.md) | **日本語** | [简体中文](README.zh-CN.md)
+[한국어](README.ko.md) | [English](README.md) | **日本語** | [简体中文](README.zh-CN.md)
 
 <br>
 

@@ -16,7 +16,7 @@
 
 **[下载](https://github.com/choco5958/switchboard/releases/latest)** &nbsp;|&nbsp; [安装](#安装) &nbsp;|&nbsp; [功能](#功能) &nbsp;|&nbsp; [安全](#数据与安全)
 
-[한국어](README.md) | [English](README.en.md) | [日本語](README.ja.md) | **简体中文**
+[한국어](README.ko.md) | [English](README.md) | [日本語](README.ja.md) | **简体中文**
 
 <br>
 
