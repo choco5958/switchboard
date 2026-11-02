@@ -45,7 +45,7 @@ In Switchboard, a session posts its question to a decision queue and keeps worki
 <tr>
 <td width="50%" valign="top">
 <h3>🗳️ Decide with one key</h3>
-Sessions post options, a recommendation and the reason for it. Pick with <code>a</code>, <code>b</code> and send with <code>Enter</code>. You can also hold a question or answer with a note. You can take an answer back within 5 seconds of sending it.
+Sessions post options, a recommendation and the reason for it. Pick with <code>a</code>, <code>b</code> and send with <code>Enter</code>. You can also hold a question or answer with a note. You can take an answer back within 5 seconds of sending it. If the app is force-quit in that time, the answer goes through on the next launch.
 </td>
 <td width="50%" valign="top">
 <h3>📊 Stages and a live progress graph</h3>
@@ -75,7 +75,7 @@ Jump to any task, decision question or project. Gather projects into groups and 
 <tr><td width="26%">🔍 <b>Fix what you see</b></td><td>Click an element in the in-app browser to leave a comment with its location, a screenshot and console errors. Sessions click through local pages to check their work.</td></tr>
 <tr><td width="26%">🖥️ <b>Terminals that keep going</b></td><td>On macOS and Linux, agents in the terminals keep working when you quit or update the app, and come back as they were when you reopen it.</td></tr>
 <tr><td width="26%">🔒 <b>Safe by default</b></td><td>Only signed updates install. Only the app and phones paired over HTTPS can allow permission asks, and sessions cannot pose as you.</td></tr>
-<tr><td width="26%">🎨 <b>Your look</b></td><td>13 themes and 4 languages. Claude usage and context use sit at the top.</td></tr>
+<tr><td width="26%">🎨 <b>Your look</b></td><td>14 themes and 4 languages. Claude usage and context use sit at the top.</td></tr>
 </table>
 
 <details>
@@ -83,7 +83,7 @@ Jump to any task, decision question or project. Gather projects into groups and 
 
 #### Decisions and tasks
 - **Decision queue**: a session posts a question with `ask_decision` and goes on working without waiting. The same question is never posted twice.
-- **Waiting for you**: tasks with a pending decision, a session stalled mid-reply for over 5 minutes, a usage limit or a dropped session gather at the top of the sidebar. Stalled sessions and lifted limits also come as notifications.
+- **Waiting for you**: tasks with a pending decision, a session stalled mid-reply for over 5 minutes, a usage limit or a dropped session gather at the top of the sidebar. Stalled sessions and lifted limits also come as notifications, and the dock terminal tab of a stalled session shows `Stalled`.
 - **Reopen a dropped session**: a Claude Code session that dropped because its terminal closed or the computer restarted opens again from `Resume in a terminal` on the task view or the decision card. A new dock terminal continues the conversation with `claude --resume`, and the answers kept for it go in once it connects.
 - **Per project**: pick a project on the left and the sidebar, home, log and dock show only that project.
 
@@ -113,7 +113,7 @@ Jump to any task, decision question or project. Gather projects into groups and 
 #### Display
 - Gather projects in the sidebar with `+ Group` and fold them. Delete a group with `Delete group` in its ⋯ menu or the Delete key; its projects stay in the list. Removing a project from the list keeps its files and history.
 - 한국어, English, 日本語, 简体中文; it follows the OS language at first.
-- 13 themes: Classic navy, Adventure journal, Phosphor terminal, Pixel dots, Subway map, Circuit board, Modern terminal, Blue DOS window, Dracula, Nord, Solarized Dark and Light, GitHub Light.
+- 14 themes: Classic navy dark and light, Adventure journal, Phosphor terminal, Pixel dots, Subway map, Circuit board, Modern terminal, Blue DOS window, Dracula, Nord, Solarized Dark and Light, GitHub Light.
 - With Orca installed, each node can get a worktree, and a Linear issue can start a task.
 
 </details>
