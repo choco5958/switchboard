@@ -1,4 +1,4 @@
-import { app, type IpcMain } from 'electron'
+import { platform, type Ipc } from './platform'
 import { execFile } from 'node:child_process'
 import { chmodSync, closeSync, mkdirSync, openSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -95,7 +95,7 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   const found = await detect()
   if (preset && !found.found[preset.bin]) return { error: t('agents.notInstalled', { label: preset.label, install: preset.install }) }
   const needsServer = preset ? preset.mcp !== null : custom!.mcp !== 'none'
-  const node = mcpNode(app.isPackaged, process.platform, found.node, nodeLauncher(homedir()))
+  const node = mcpNode(platform().isPackaged, process.platform, found.node, nodeLauncher(homedir()))
   if (needsServer && !node) return { error: t('agents.noNode') }
   const id = preset?.id ?? custom!.id
   // A trust menu on screen would hold back what the app types in (agentTrust.ts).
@@ -118,7 +118,7 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   })
 }
 
-export function registerAgentTerms(ipcMain: IpcMain, call: Call): void {
+export function registerAgentTerms(ipcMain: Ipc, call: Call): void {
   pruneFiles()
 
   ipcMain.handle('agents:detect', (_e, force: boolean) => detect(force === true))

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, type IpcMain } from 'electron'
+import { platform, type Ipc } from './platform'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { request as httpGet } from 'node:http'
@@ -127,7 +127,7 @@ function waitExit(one: Running): Promise<void> {
   })
 }
 
-export function registerDevServers(ipcMain: IpcMain, onChange: (event: { id: string }) => void): void {
+export function registerDevServers(ipcMain: Ipc, onChange: (event: { id: string }) => void): void {
   // Groups an app that crashed or was killed left running would hold the ports; end them before any start.
   const cleared = killStale(PID_DIR, QUIT_WAIT_MS).catch(() => [])
 
@@ -137,7 +137,6 @@ export function registerDevServers(ipcMain: IpcMain, onChange: (event: { id: str
   const confirmed = async (cwd: string, command: string): Promise<boolean> => {
     const key = commandKey(cwd, command)
     if (approved.has(key)) return true
-    const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     const options = {
       type: 'warning' as const,
       buttons: [t('devMain.confirmRun'), t('common.cancel')],
@@ -147,8 +146,7 @@ export function registerDevServers(ipcMain: IpcMain, onChange: (event: { id: str
       // The warning comes first: blanks in a long command cannot push it out of sight.
       detail: [longCommand(command) ? t('devMain.confirmLong', { length: command.length }) : '', t('devMain.confirmDetail', { command, path: cwd })].filter(Boolean).join('\n\n'),
     }
-    const answer = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
-    if (answer.response !== 0) return false
+    if ((await platform().messageBox(options)) !== 0) return false
     approved.add(key)
     saveApproved(approvedFile, approved)
     return true
@@ -248,12 +246,11 @@ export function registerDevServers(ipcMain: IpcMain, onChange: (event: { id: str
   // Every child goes with the app: TERM on quit, KILL after QUIT_WAIT_MS or if
   // the process exits first. The quit waits for that, then carries on.
   let quitting = false
-  app.on('will-quit', event => {
+  platform().onQuit('will', hold => {
     const alive = [...servers.values()].filter(one => one.alive && one.child.pid)
     if (quitting || alive.length === 0) return
     quitting = true
-    event.preventDefault()
-    void Promise.all(alive.map(one => stopGroup(one.child.pid!, QUIT_WAIT_MS))).finally(() => app.quit())
+    hold(Promise.all(alive.map(one => stopGroup(one.child.pid!, QUIT_WAIT_MS))))
   })
   process.on('exit', () => {
     for (const one of servers.values()) if (one.alive) killGroup(one.child, 'SIGKILL')

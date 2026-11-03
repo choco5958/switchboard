@@ -1,4 +1,4 @@
-import { app, dialog, type IpcMain } from 'electron'
+import { platform, type Ipc } from './platform'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -245,7 +245,7 @@ export async function startTerminalHost(key: string, build: string, lastingKey: 
     key,
     log: HOST_LOG,
     // From the repo (pnpm dev) its node_modules; installed, the app.asar the host finds itself.
-    modules: app.isPackaged ? undefined : app.getAppPath(),
+    modules: platform().isPackaged ? undefined : platform().appPath(),
     events,
   })
   hosts = made
@@ -257,7 +257,7 @@ export async function startTerminalHost(key: string, build: string, lastingKey: 
   void made.ready()
 }
 
-export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, payload: unknown) => void): void {
+export function registerTerminals(ipcMain: Ipc, sendTo: (channel: string, payload: unknown) => void): void {
   send = sendTo
   try {
     browserScript = writeOpenUrl(join(homedir(), '.claude-ide'))
@@ -321,20 +321,18 @@ export function registerTerminals(ipcMain: IpcMain, sendTo: (channel: string, pa
   // Whether the terminals keep running after a quit, for the setting's screen.
   ipcMain.handle('term:keeps', () => hosts !== null)
   ipcMain.handle('term:pickFolder', async (): Promise<string | null> => {
-    const picked = await dialog.showOpenDialog({ properties: ['openDirectory'], title: t('term.pickFolder') })
-    return picked.canceled ? null : (picked.filePaths[0] ?? null)
+    return platform().pickFolder(t('term.pickFolder'))
   })
 
-  app.on('before-quit', killLocal)
-  app.on('will-quit', killLocal)
+  platform().onQuit('before', killLocal)
+  platform().onQuit('will', killLocal)
   // A quit that skips the events above (a signal, a crash in main) still takes the shells.
   process.on('exit', killLocal)
   // With the setting on, the quit waits for the host to end its terminals; off, they keep running.
   let closed = false
-  app.on('before-quit', event => {
+  platform().onQuit('before', hold => {
     if (closed || !closeOnQuit || !hosts || ![...terms.values()].some(one => one.alive && one.backend === hosts)) return
-    event.preventDefault()
     closed = true
-    void hosts.killAll().finally(() => app.quit())
+    hold(hosts.killAll())
   })
 }

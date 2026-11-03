@@ -1,4 +1,4 @@
-import type { IpcMain } from 'electron'
+import type { Ipc } from './platform'
 import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -180,7 +180,7 @@ export async function readAccountInfoWithTokens(fresh = false): Promise<AccountI
   return info
 }
 
-export function registerAccount(ipc: IpcMain, ccr: () => string | null): void {
+export function registerAccount(ipc: Ipc, ccr: () => string | null): void {
   ipc.handle('account:info', () => readAccountInfoWithTokens())
   let measuring: Promise<void> | null = null
   ipc.handle('account:measure', async () => {

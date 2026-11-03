@@ -1,4 +1,4 @@
-import type { IpcMain } from 'electron'
+import type { Ipc } from './platform'
 import { open, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -236,6 +236,6 @@ export async function sessionHistory(query: string, configDir = claudeConfigDir(
 
 // configDir: the folder the app's Claude terminals use (terminals.ts), read at each call so
 // `claude --resume` finds the same transcripts the list showed.
-export function registerSessionHistory(ipc: IpcMain, configDir: () => string | undefined): void {
+export function registerSessionHistory(ipc: Ipc, configDir: () => string | undefined): void {
   ipc.handle('sessions:history', (_e, query: string) => sessionHistory(query, configDir() || claudeConfigDir()))
 }

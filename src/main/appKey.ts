@@ -3,12 +3,15 @@
 // restart and the bridge it left running keeps answering it; where no keychain is
 // available it lives for one run of the app. The bridge gets it on standard input only.
 
-import { safeStorage } from 'electron'
 import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
-// What loadAppKey uses of safeStorage, so tests can stand in for it.
-export type KeyStorage = Pick<typeof safeStorage, 'isEncryptionAvailable' | 'encryptString' | 'decryptString'> & {
+// What loadAppKey uses of the system's keychain: Electron's safeStorage, or the Tauri host's
+// (platform.ts keyStorage); tests stand in for it.
+export type KeyStorage = {
+  isEncryptionAvailable(): boolean
+  encryptString(text: string): Buffer
+  decryptString(sealed: Buffer): string
   getSelectedStorageBackend?: () => string
 }
 
@@ -26,7 +29,7 @@ export function realEncryption(storage: KeyStorage, platform: string = process.p
 // means the app starts its bridge again (every session's stream drops once).
 // `lasting`: the next start finds the same key, which the terminal host needs to let it back in
 // (termClient.ts hostSupported).
-export function loadAppKey(file: string, storage: KeyStorage = safeStorage, platform: string = process.platform): { key: string; refused: boolean; lasting: boolean } {
+export function loadAppKey(file: string, storage: KeyStorage, platform: string = process.platform): { key: string; refused: boolean; lasting: boolean } {
   if (!realEncryption(storage, platform)) return { key: randomBytes(32).toString('hex'), refused: false, lasting: false }
   if (existsSync(file)) {
     try {
