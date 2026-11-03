@@ -12,7 +12,8 @@ import { registerDevServers } from './devservers'
 import { BROWSER_PARTITION, BROWSER_WORLD, PAGE_PERMISSIONS, bridgePathAllowed, debugPathAllowed, fromMainFrame, guardIpc, hardenWebview, isAppUrl, isExternalUrl } from './guard'
 import { saveShot } from './shots'
 import { anyoneWorking } from './awake'
-import { dockIdOf, onTerminalsChange, openClaudeIn, registerTerminals, setCloseTerminalsOnQuit, startTerminalHost, terminalStates, typingTarget } from './terminals'
+import { dockIdOf, onTerminalsChange, openClaudeIn, registerTerminals, setCloseTerminalsOnQuit, startTerminalHost, terminalConfigDir, terminalStates, typingTarget } from './terminals'
+import { registerSessionHistory } from './sessionHistory'
 import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
@@ -536,6 +537,7 @@ ipcMain.handle('browser:run', (_e, webContentsId: number, code: string) => {
 registerDevServers(ipcMain, event => send('dev:change', event))
 registerTerminals(ipcMain, send)
 registerAccount(ipcMain, () => ccrPath())
+registerSessionHistory(ipcMain, terminalConfigDir)
 // Feature area: agent CLIs other than Claude Code. Their terminals, and answers typed into them.
 registerAgentTerms(ipcMain, call)
 const agentDelivery = startAgentDelivery({

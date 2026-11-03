@@ -12,6 +12,7 @@ export type Tab =
   | { kind: 'settings' }
   | { kind: 'gallery' }
   | { kind: 'linear' }
+  | { kind: 'sessions' }
 
 export type Tabs = { open: Tab[]; active: string }
 

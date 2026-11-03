@@ -147,6 +147,9 @@ function info(t: Live): TermInfo {
 let send: (channel: string, payload: unknown) => void = () => undefined
 let configDir: string | undefined
 
+// The Claude Code config folder the app's terminals use, when one was given (CLAUDE_CONFIG_DIR).
+export const terminalConfigDir = (): string | undefined => configDir
+
 export type TermStart = {
   cwd: string
   cols: number

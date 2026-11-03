@@ -57,6 +57,12 @@ test('lights one rail button at a time', () => {
   expect(railActive(rail, { ...view, picked: 'question', section: 'questions', sidebarOpen: false })).toBe('home')
 })
 
+test('the past sessions page opens as one tab and comes back after a restart', () => {
+  const tabs = openTab(openTab(start, { kind: 'sessions' }), { kind: 'sessions' })
+  expect(tabs.open.map(tabKey)).toEqual(['home', 'sessions'])
+  expect(restoreTabs(JSON.parse(JSON.stringify(tabs)))).toEqual(tabs)
+})
+
 test('a tab opened from anywhere picks its own rail button', () => {
   const rail = [
     { icon: 'home', section: 'home', tab: HOME },

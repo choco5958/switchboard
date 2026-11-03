@@ -234,7 +234,28 @@ export type IdeApi = {
   updateCheck: () => Promise<UpdateStatus>
   updateInstall: () => Promise<void>
   onUpdateStatus: (listener: (status: UpdateStatus) => void) => () => void
+  // Feature area: past Claude Code conversations on this computer (src/main/sessionHistory.ts).
+  sessionHistory: (query: string) => Promise<PastSessions>
 }
+
+// One past Claude Code conversation, from its transcript. folder: the project folder name
+// Claude Code made from the working directory; project: the working directory's own name.
+// messages counts prompts and replies; approximate when only the ends of a long file were read.
+export type PastSession = {
+  id: string
+  cwd: string
+  project: string
+  folder: string
+  branch: string
+  title: string
+  snippet: string
+  messages: number
+  approximate: boolean
+  updatedAt: number // epoch ms, the transcript's last change
+}
+
+// total: how many transcripts there are, matched or not (0: Claude Code has kept none here).
+export type PastSessions = { total: number; sessions: PastSession[] }
 
 // Where the app's own update stands. `off`: this copy does not update itself (a run from the
 // repo, a capture). `manual`: a newer version is out that the person downloads themselves (a

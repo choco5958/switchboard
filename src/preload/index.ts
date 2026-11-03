@@ -75,6 +75,7 @@ const api: IdeApi = {
     ipcRenderer.on('update:status', handler)
     return () => ipcRenderer.off('update:status', handler)
   },
+  sessionHistory: query => ipcRenderer.invoke('sessions:history', query),
 }
 
 contextBridge.exposeInMainWorld('ide', api)

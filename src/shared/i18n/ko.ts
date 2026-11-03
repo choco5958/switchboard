@@ -74,6 +74,7 @@ export const ko = {
   'rail.log': '전체 로그',
   'rail.gallery': '부품 갤러리',
   'rail.settings': '설정',
+  'rail.sessions': '지난 세션',
   'app.noSession': '이 프로젝트에 연결된 세션이 없습니다. 아래 도크에서 에이전트를 열어 세션을 시작하세요.',
   'app.requestFailed': '요청하지 못했습니다: {error}',
   'app.askedReport': '{id} 세션에 진행 보고를 요청했습니다.',
@@ -1162,6 +1163,21 @@ export const ko = {
   'mobile.revokedDone': '{name}의 연결을 해제했습니다.',
   'mobile.page.more': '자세히',
   'mobile.page.less': '접기',
+  // Past sessions page (pages/SessionsPage.tsx)
+  'sessions.intro': '이 컴퓨터에 남은 Claude Code 대화를 찾아 앱 터미널에서 이어서 엽니다. 대화 기록 파일을 읽기만 하고 어디에도 보내지 않습니다.',
+  'sessions.search': '제목, 내용, 폴더, 브랜치로 찾기',
+  'sessions.loading': '대화 기록을 읽는 중입니다.',
+  'sessions.none': '이 컴퓨터에서 Claude Code 대화 기록을 찾지 못했습니다. Claude Code로 대화를 하면 여기에 나타납니다.',
+  'sessions.noMatch': '"{query}"에 맞는 대화가 없습니다.',
+  'sessions.shown': '대화 {total}개 중 {shown}개',
+  'sessions.untitled': '제목 없는 대화',
+  'sessions.messages': '메시지 {n}개',
+  'sessions.messagesApprox': '메시지 약 {n}개',
+  'sessions.resumeTitle': '아래 도크에 Claude 터미널을 열고 {cwd} 폴더에서 claude --resume으로 이 대화를 이어 갑니다.',
+  'sessions.noCwd': '기록에 작업 폴더가 없어 이어서 열 수 없습니다.',
+  'sessions.running': '실행 중',
+  'sessions.runningTitle': '이 대화는 지금 터미널에서 실행 중입니다. 같은 대화를 둘로 열지 않도록 이어서 열기를 막았습니다.',
+  'sessions.error': '대화 기록을 읽지 못했습니다: {error}',
 } satisfies Record<string, string>
 
 export type Dict = Record<keyof typeof ko, string>
