@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { isLocalUrl, refRevision, snapshotText } from './agentBrowser'
+import { isLocalUrl, navigatedTo, refRevision, snapshotText } from './agentBrowser'
 
 test('only pages on this computer can be driven, the private network too when the person allows it', () => {
   const here = ['http://localhost:5173/', 'http://127.0.0.1:8951/x', 'https://app.localhost/', 'http://[::1]:4000', 'http://127.1.2.3']
@@ -27,4 +27,10 @@ test('a reading becomes lines the session can act on', () => {
     truncated: true,
   })
   expect(text).toBe('URL: http://localhost:5173/\nTitle: 주문\n\nElements (ref role "name"):\n[2:1] button "저장"\n[2:2] textbox\n\nText:\n주문 목록\n3건\n\n(truncated)')
+})
+
+test('a frame inside the page moving is not the page moving', () => {
+  expect(navigatedTo({ url: 'http://localhost:5173/next' })).toBe('http://localhost:5173/next')
+  expect(navigatedTo({ url: 'http://localhost:5173/#b', isMainFrame: true })).toBe('http://localhost:5173/#b')
+  expect(navigatedTo({ url: 'http://localhost:6006/iframe.html#x', isMainFrame: false })).toBe(null)
 })

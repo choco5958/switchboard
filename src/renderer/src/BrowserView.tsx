@@ -19,7 +19,7 @@ import { commentStatusLabel, commentStatusSlug, t, type Key } from '../../shared
 import { composing } from './ime'
 import { Badge, Button, Card, Chip, EmptyState, IconButton, Input, Select, cx } from './ui'
 import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
-import { focusScript, isLocalUrl, pointScript, refRevision, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
+import { focusScript, isLocalUrl, navigatedTo, pointScript, refRevision, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
 
 const URL_KEY = 'claude-ide:browser-url'
 const SHOT_PAD = 24
@@ -215,7 +215,8 @@ export function BrowserView({
       if (ready.current && webContentsId === wv.getWebContentsId()) pageLog.current = pushEntry(pageLog.current, entry)
     })
     const onNavigate = (event: Event) => {
-      const url = (event as unknown as { url: string }).url
+      const url = navigatedTo(event as unknown as { url: string; isMainFrame?: boolean })
+      if (url === null) return
       setAddress(url)
       setPage(url)
       setStatus('')
@@ -349,7 +350,9 @@ export function BrowserView({
         await settle(300)
         return { text: await snapshot() }
       }
-      if (!local(pageRef.current)) throw new Error(`the browser shows a page that is not local; open a page on ${allowed()} with browser_navigate first`)
+      if (!ready.current) throw new Error('the browser is not ready')
+      // The webview's own address too: screenshot and console read no page address of their own.
+      if (!local(pageRef.current) || !local(wv.getURL())) throw new Error(`the browser shows a page that is not local; open a page on ${allowed()} with browser_navigate first`)
       if (action === 'snapshot') return { text: await snapshot() }
       if (action === 'console') return { text: logText(pageLog.current) || 'no console warnings, errors or failed requests on this page' }
       if (action === 'screenshot') {

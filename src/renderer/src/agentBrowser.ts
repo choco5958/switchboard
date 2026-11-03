@@ -13,6 +13,13 @@ export const TEXT_MAX = 12_000
 // its sign-ins.
 export const BROWSER_LAN_KEY = 'agentBrowserLan'
 
+// The address a navigation event moved the shown page to, or null when only a frame inside
+// the page moved: an embedded frame's route change (did-navigate-in-page fires for every
+// frame) is not the page's address. did-navigate carries no isMainFrame; it is the main frame.
+export function navigatedTo(event: { url: string; isMainFrame?: boolean }): string | null {
+  return event.isMainFrame === false ? null : event.url
+}
+
 export function isLocalUrl(raw: string, lan = false): boolean {
   let url: URL
   try {
