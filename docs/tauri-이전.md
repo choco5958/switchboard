@@ -29,10 +29,19 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
 2. [x] **화면 API 표:** preload와 Tauri용 층이 같은 채널 표를 쓰게 한다.
 3. [x] **Node 호스트와 Rust 셸:** 저장소에서 Tauri판을 띄워 모든 화면(내장 브라우저 제외)이 동작하게 한다.
 4. [x] **OS 기능:** 알림(누르면 창을 앞으로), 확인 대화상자, 폴더 고르기, Dock 배지, 자리 비움, 잠자기 막기, 한 번만 실행, 키체인, macOS에서 창을 닫아도 앱 유지. 잠금, 해제, 깨어남 이벤트는 아직 없다(30초마다 자리 비움을 다시 보고해서 늦게나마 맞춰진다).
-5. [ ] **Node 동봉과 패키지:** 플랫폼별 Node 실행 파일을 싣고, 실행 스크립트(start-bridge, switchboard)가 그것을 쓰게 한다.
+5. [x] **Node 동봉과 패키지:** nodejs.org의 공식 Node(SHA-256 확인)를 `switchboard-node`로 싣고, Resources/node에 Electron판과 같은 Node 쪽 파일과 Node 호스트, node-pty와 xterm을 둔다. 실행 스크립트(start-bridge, switchboard)는 앱 안의 Node를 쓴다. macOS arm64 앱은 128MB, zip은 43.5MB(Electron판 273MB, dmg 120MB).
 6. [ ] **내장 브라우저:** `<webview>` 대신 Tauri 하위 웹뷰. 화면 찍기, 콘솔 읽기, 클릭과 입력. macOS와 Linux에서는 실패한 요청 기록이 빠진다.
 7. [ ] **업데이트와 릴리스:** Tauri 업데이터, 릴리스 워크플로, Electron판에서 Tauri판으로 넘어가는 중간 버전.
 8. [ ] **Windows와 Linux 확인, 전환.**
+
+## 패키지 만들기 (macOS)
+
+```sh
+pnpm build && pnpm tauri:stage            # Node 받기와 out/tauri/node 준비
+PATH="$HOME/.cargo/bin:$PATH" pnpm tauri build --bundles app
+```
+
+설치된 모양으로 돌 때(앱 안에 switchboard-node와 Resources/node가 있을 때)는 Electron판처럼 `~/.claude-ide/runtime`에 복사본을 만들고 실행 스크립트를 쓴다. `SWITCHBOARD_REPO`를 주면 저장소 모양으로 돈다.
 
 ## 저장소에서 띄우기
 

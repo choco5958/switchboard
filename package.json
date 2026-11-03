@@ -19,7 +19,8 @@
     "test": "node --import ./scripts/test-env.ts --test bridge/*.test.ts mcp/*.test.ts mod/tests/*.unit.ts scripts/*.test.ts && vitest run src",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:stage": "node scripts/fetch-node.ts && node scripts/stage-tauri.ts"
   },
   "devDependencies": {
     "@tauri-apps/api": "2.12.4",

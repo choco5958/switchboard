@@ -150,31 +150,48 @@ fn on_os(app: &AppHandle, host: &Arc<Host>, message: &Value) {
     reply(host, value);
 }
 
-// The repo when run from it (`cargo run`, `tauri dev`): the host bundle and Node are its own.
-fn repo_root() -> std::path::PathBuf {
-    match std::env::var("SWITCHBOARD_REPO") {
-        Ok(path) => path.into(),
-        Err(_) => std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf(),
+// Where the Node side comes from. Installed: Node beside the app's executable (externalBin)
+// and Resources/node (scripts/stage-tauri.ts). From the repo (SWITCHBOARD_REPO, or a build with
+// nothing staged): the system's node and the repo's own files.
+struct Layout {
+    node: std::path::PathBuf,
+    host: std::path::PathBuf,
+    root: std::path::PathBuf,
+    packaged: bool,
+}
+
+fn layout(app: &AppHandle) -> Layout {
+    let repo = |path: std::path::PathBuf| Layout { node: "node".into(), host: path.join("out/host/main.mjs"), root: path, packaged: false };
+    if let Ok(path) = std::env::var("SWITCHBOARD_REPO") {
+        return repo(path.into());
+    }
+    let resources = app.path().resource_dir().ok();
+    let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join(if cfg!(windows) { "switchboard-node.exe" } else { "switchboard-node" })));
+    match (resources, beside) {
+        (Some(resources), Some(node)) if node.exists() && resources.join("node/host/main.mjs").exists() => {
+            Layout { node, host: resources.join("node/host/main.mjs"), root: resources, packaged: true }
+        }
+        _ => repo(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()),
     }
 }
 
 fn start_host(app: &AppHandle) -> Arc<Host> {
-    let repo = repo_root();
-    let data = app.path().app_data_dir().unwrap_or_else(|_| repo.join(".tauri-data"));
+    let place = layout(app);
+    let data = app.path().app_data_dir().unwrap_or_else(|_| place.root.join(".tauri-data"));
     let _ = std::fs::create_dir_all(&data);
     let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".into());
     let info = json!({
         "version": app.package_info().version.to_string(),
         "locale": locale,
-        "packaged": false,
-        "appPath": repo,
-        "resourcesPath": repo,
+        "packaged": place.packaged,
+        "appPath": place.root,
+        "resourcesPath": place.root,
         "userDataPath": data,
         "appKey": os::app_key(),
     });
-    let mut child = Command::new("node")
-        .arg(repo.join("out/host/main.mjs"))
-        .current_dir(&repo)
+    let mut child = Command::new(&place.node)
+        .arg(&place.host)
+        .current_dir(&place.root)
         .env("SWITCHBOARD_HOST", info.to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

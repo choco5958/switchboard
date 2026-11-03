@@ -66,6 +66,7 @@ const electronPlatform: Platform = {
   appPath: () => app.getAppPath(),
   resourcesPath: () => process.resourcesPath,
   userDataPath: () => app.getPath('userData'),
+  modulesPath: () => (app.isPackaged ? undefined : app.getAppPath()),
   appKey: () => loadAppKey(join(app.getPath('userData'), 'app-key.bin'), safeStorage),
   notificationsSupported: () => Notification.isSupported(),
   notify: (title, body, onClick) => {

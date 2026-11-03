@@ -244,8 +244,8 @@ export async function startTerminalHost(key: string, build: string, lastingKey: 
     dir: hostDir(homedir()),
     key,
     log: HOST_LOG,
-    // From the repo (pnpm dev) its node_modules; installed, the app.asar the host finds itself.
-    modules: platform().isPackaged ? undefined : platform().appPath(),
+    // From the repo (pnpm dev) its node_modules; installed, what the shell says (platform.ts).
+    modules: platform().modulesPath(),
     events,
   })
   hosts = made

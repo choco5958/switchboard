@@ -38,6 +38,9 @@ export type Platform = {
   // Resources of the installed app (Resources/node lives there).
   resourcesPath(): string
   userDataPath(): string
+  // The folder whose node_modules the terminal host loads node-pty and the emulator from;
+  // undefined: the host finds them itself (the Electron app's app.asar).
+  modulesPath(): string | undefined
   // The key the app proves itself to the bridge with, kept by the system's keychain (appKey.ts).
   appKey(): AppKey
   notificationsSupported(): boolean

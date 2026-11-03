@@ -12,6 +12,7 @@ import { createInterface } from 'node:readline'
 import type { AppKey } from '../main/appKey'
 import type { IdleState, Platform, PowerEvent, QuitHook } from '../main/platform'
 import { usePlatform } from '../main/platform'
+import { nodeRoot } from '../main/appRoot'
 import { registerCore, startCore, watchCore } from '../main/core'
 import { resolveLang, setLang } from '../shared/i18n'
 import { decodeArgs } from '../shared/ideCalls'
@@ -64,6 +65,8 @@ const hostPlatform: Platform = {
   appPath: () => info.appPath,
   resourcesPath: () => info.resourcesPath,
   userDataPath: () => info.userDataPath,
+  // Installed, the runtime copy of Resources/node carries node_modules (scripts/stage-tauri.ts).
+  modulesPath: () => (info.packaged ? nodeRoot() : info.appPath),
   appKey: () => info.appKey,
   notificationsSupported: () => true,
   notify: (title, body, onClick) => {
