@@ -30,7 +30,9 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
 3. [x] **Node 호스트와 Rust 셸:** 저장소에서 Tauri판을 띄워 모든 화면(내장 브라우저 제외)이 동작하게 한다.
 4. [x] **OS 기능:** 알림(누르면 창을 앞으로), 확인 대화상자, 폴더 고르기, Dock 배지, 자리 비움, 잠자기 막기, 한 번만 실행, 키체인, macOS에서 창을 닫아도 앱 유지. 잠금, 해제, 깨어남 이벤트는 아직 없다(30초마다 자리 비움을 다시 보고해서 늦게나마 맞춰진다).
 5. [x] **Node 동봉과 패키지:** nodejs.org의 공식 Node(SHA-256 확인)를 `switchboard-node`로 싣고, Resources/node에 Electron판과 같은 Node 쪽 파일과 Node 호스트, node-pty와 xterm을 둔다. 실행 스크립트(start-bridge, switchboard)는 앱 안의 Node를 쓴다. macOS arm64 앱은 128MB, zip은 43.5MB(Electron판 273MB, dmg 120MB).
-6. [ ] **내장 브라우저:** `<webview>` 대신 Tauri 하위 웹뷰. 화면 찍기, 콘솔 읽기, 클릭과 입력. macOS와 Linux에서는 실패한 요청 기록이 빠진다.
+6. [x] **내장 브라우저 (macOS):** 브라우저 화면은 PageSurface(src/renderer/src/pageSurface.ts)만 다루고, Tauri판은 주 창의 하위 웹뷰로 이것을 구현한다(src-tauri/src/browser.rs, src/renderer/src/tauriSurface.ts). 스크립트는 WebKit의 앱 전용 세계(switchboard)에서 돌고 값을 돌려주며, 화면 찍기는 WebKit 스냅숏을 쓴다. 페이지 안에 넣은 스크립트(browser_page.js)가 콘솔, 오류, fetch와 XHR의 실패, 제목, 페이지 안 이동을 모으고, 셸이 0.4초마다 가져간다. Windows와 Linux는 8단계에서 채운다.
+   - Electron판과 다른 점: 누르기와 입력은 진짜 입력이 아니라 DOM 이벤트다(isTrusted가 false). 연결 거부와 주소 못 찾음만 오류 화면으로 알린다(불러오기 전에 Rust가 연결해 본다). 이미지나 스크립트 같은 하위 자원의 실패는 오류 이벤트로만 남는다. 하위 웹뷰는 앱 화면 위에 그려지므로, 브라우저 자리 위로 뜨는 메뉴나 알림은 그 아래에 가린다.
+   - 세션처럼 로컬 시험 페이지를 다뤄(POST /browser/act) 주소 열기, 읽기, 누르기, 입력, 화면 찍기, 콘솔과 실패한 요청을 두 앱에서 같게 확인했다. 화면 코멘트(⌥M로 요소 고르기)는 사람이 눌러 봐야 확인된다.
 7. [ ] **업데이트와 릴리스:** Tauri 업데이터, 릴리스 워크플로, Electron판에서 Tauri판으로 넘어가는 중간 버전.
 8. [ ] **Windows와 Linux 확인, 전환.**
 

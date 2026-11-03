@@ -18,6 +18,7 @@ use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tokio::sync::oneshot;
 
+mod browser;
 mod os;
 
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
@@ -40,7 +41,8 @@ impl Host {
 
 // A page call with an answer: the host's result, or its error as a rejected promise.
 #[tauri::command]
-async fn ide_invoke(host: State<'_, Arc<Host>>, channel: String, args: Vec<Value>) -> Result<Value, String> {
+async fn ide_invoke(webview: tauri::Webview, host: State<'_, Arc<Host>>, channel: String, args: Vec<Value>) -> Result<Value, String> {
+    browser::from_app(&webview)?;
     let id = host.next.fetch_add(1, Ordering::SeqCst);
     let (tx, rx) = oneshot::channel();
     host.pending.lock().unwrap().insert(id, tx);
@@ -54,13 +56,19 @@ async fn ide_invoke(host: State<'_, Arc<Host>>, channel: String, args: Vec<Value
 
 // A page call without an answer (terminal input, resizes).
 #[tauri::command]
-fn ide_send(host: State<'_, Arc<Host>>, channel: String, args: Vec<Value>) {
+fn ide_send(webview: tauri::Webview, host: State<'_, Arc<Host>>, channel: String, args: Vec<Value>) {
+    if browser::from_app(&webview).is_err() {
+        return;
+    }
     host.write(&json!({ "t": "send", "channel": channel, "args": args }));
 }
 
 // Checks without a person at the screen (CLAUDE_IDE_CAPTURE_JS): what the script reports.
 #[tauri::command]
-fn capture_log(text: String) {
+fn capture_log(webview: tauri::Webview, text: String) {
+    if browser::from_app(&webview).is_err() {
+        return;
+    }
     eprintln!("capture: {text}");
 }
 
@@ -268,7 +276,17 @@ fn main() {
         // A second start brings the running window forward and ends (first, before the rest).
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![ide_invoke, ide_send, capture_log])
+        .invoke_handler(tauri::generate_handler![
+            ide_invoke,
+            ide_send,
+            capture_log,
+            browser::browser_place,
+            browser::browser_load,
+            browser::browser_reload,
+            browser::browser_probe,
+            browser::browser_run,
+            browser::browser_capture
+        ])
         .setup(|app| {
             let host = start_host(app.handle());
             app.manage(host);

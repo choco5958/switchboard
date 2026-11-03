@@ -8,10 +8,10 @@ description = "Switchboard on Tauri (docs/tauri-이전.md)"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["unstable"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["sync", "time"] }
 sys-locale = "0.3"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
@@ -20,6 +20,18 @@ keepawake = "0.6.1"
 notify-rust = "4.18.2"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 getrandom = "0.3"
+
+base64 = "0.22"
+
+# The in-app browser's page on macOS (src/browser.rs): scripts in a world of the app's own, and
+# snapshots, through WebKit itself. The same versions Tauri's webview (wry) uses.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSValue"] }
+objc2-app-kit = { version = "0.3", features = ["NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics", "NSView", "NSResponder"] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKContentWorld", "WKFrameInfo", "WKSnapshotConfiguration", "WKNavigation", "block2", "objc2-app-kit", "objc2-core-foundation"] }
+objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
 
 [profile.release]
 opt-level = "s"
