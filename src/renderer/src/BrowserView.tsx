@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { WebviewTag } from 'electron'
 import type { Session } from '../../shared/types'
 import { portOf, targetsOf, type DevTarget } from '../../shared/devtargets'
 import {
@@ -20,6 +19,8 @@ import { composing } from './ime'
 import { Badge, Button, Card, Chip, EmptyState, IconButton, Input, Select, cx } from './ui'
 import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
 import { focusScript, isLocalUrl, navigatedTo, pointScript, refRevision, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
+import type { PageSurface, SurfaceEvents } from './pageSurface'
+import { PageView } from './PageView'
 
 const URL_KEY = 'claude-ide:browser-url'
 const SHOT_PAD = 24
@@ -75,7 +76,10 @@ export function BrowserView({
   lan?: boolean // sessions may drive private network pages too (BROWSER_LAN_KEY)
   onShow?: () => void
 }) {
-  const view = useRef<WebviewTag | null>(null)
+  // The page itself, once its shell has drawn it (PageView.tsx).
+  const [surface, setSurface] = useState<PageSurface | null>(null)
+  const view = useRef<PageSurface | null>(null)
+  view.current = surface
   const debug = useDebugStore()
   // The page starts the first time the browser is shown (by the person, or by a session that
   // opens a page, which shows it first), not with the app: until then no page of the last
@@ -118,7 +122,7 @@ export function BrowserView({
   // or read the picker and its nonce.
   const run = (code: string) => {
     if (!ready.current || !view.current) return Promise.resolve(undefined)
-    return window.ideDebug.run(view.current.getWebContentsId(), code).catch(() => undefined)
+    return view.current.run(code).catch(() => undefined)
   }
   const marksCode = () =>
     `window.__claudeIde && window.__claudeIde.marks(${JSON.stringify(openRef.current.map((c, i) => ({ n: i + 1, selector: c.css, url: c.url })))})`
@@ -150,12 +154,12 @@ export function BrowserView({
     const wv = view.current
     setStatus('')
     setAddress(url)
-    if (wv && ready.current) void wv.loadURL(url).catch(() => undefined)
+    if (wv && ready.current) void wv.load(url)
     else setSrc(url)
   }
 
   useEffect(() => {
-    const wv = view.current
+    const wv = surface
     if (!wv) return
     const inject = () => {
       ready.current = true
@@ -172,8 +176,7 @@ export function BrowserView({
         .then(() => run(`window.__claudeIde && window.__claudeIde.set(${commentingRef.current})`))
         .then(() => run(marksCode()))
     }
-    const onConsole = (event: Event) => {
-      const raw = event as unknown as { message: string; level: unknown; sourceId?: string; line?: number }
+    const onConsole: SurfaceEvents['console'] = raw => {
       const message = parseMessage(raw.message, nonce.current)
       if (!message) {
         pageLog.current = pushEntry(pageLog.current, consoleEntry(Date.now(), raw.level, raw.message, raw.sourceId, raw.line))
@@ -208,8 +211,8 @@ export function BrowserView({
       const x = Math.max(0, Math.floor(r.x - SHOT_PAD))
       const y = Math.max(0, Math.floor(r.y - SHOT_PAD))
       const shot = wv
-        .capturePage({ x, y, width: Math.ceil(r.width + SHOT_PAD * 2), height: Math.ceil(r.height + SHOT_PAD * 2) })
-        .then(image => window.ide.saveShot(image.toDataURL()))
+        .capture({ x, y, width: Math.ceil(r.width + SHOT_PAD * 2), height: Math.ceil(r.height + SHOT_PAD * 2) })
+        .then(image => (image ? window.ide.saveShot(image) : null))
         .catch(() => null)
         .then(file => ({ pick, shot: file ?? null }))
       // The page keeps one memo open at a time, so older picks are done.
@@ -218,11 +221,8 @@ export function BrowserView({
       // The popover opens after the shot, so it is not in the picture.
       void shot.then(() => run(`window.__claudeIde.ask(${pick.id})`))
     }
-    const offNet = window.ideDebug.onNet(({ webContentsId, entry }) => {
-      if (ready.current && webContentsId === wv.getWebContentsId()) pageLog.current = pushEntry(pageLog.current, entry)
-    })
-    const onNavigate = (event: Event) => {
-      const url = navigatedTo(event as unknown as { url: string; isMainFrame?: boolean })
+    const onNavigate: SurfaceEvents['navigate'] = event => {
+      const url = navigatedTo(event)
       if (url === null) return
       setAddress(url)
       setPage(url)
@@ -235,46 +235,32 @@ export function BrowserView({
     }
     const onStart = () => setFailure(null)
     // The newest main-frame navigation: a failure of one it replaced is old news.
-    const onStartNavigation = (event: Event) => {
-      const { url, isMainFrame, isInPlace } = event as unknown as { url: string; isMainFrame: boolean; isInPlace: boolean }
+    const onStartNavigation: SurfaceEvents['startNavigation'] = ({ url, isMainFrame, isInPlace }) => {
       if (!isMainFrame || isInPlace) return
       latest.current = url
       // A new document starts a new log; a route change inside the page keeps it.
       pageLog.current = []
     }
-    const onTitle = (event: Event) => setTitle((event as unknown as { title: string }).title)
-    const onFail = (event: Event) => {
-      const { errorCode, errorDescription, validatedURL, isMainFrame } = event as unknown as {
-        errorCode: number
-        errorDescription: string
-        validatedURL: string
-        isMainFrame: boolean
-      }
+    const onTitle = (title: string) => setTitle(title)
+    const onFail: SurfaceEvents['fail'] = ({ errorCode, errorDescription, validatedURL, isMainFrame }) => {
       if (!isMainFrame || errorCode === ABORTED || (latest.current && validatedURL !== latest.current)) return
       setFailure({ url: validatedURL, code: errorDescription || t('browser.errorCode', { code: errorCode }) })
       setPage(validatedURL)
       setTitle('')
     }
-    wv.addEventListener('did-fail-load', onFail)
-    wv.addEventListener('did-start-loading', onStart)
-    wv.addEventListener('did-start-navigation', onStartNavigation)
-    wv.addEventListener('page-title-updated', onTitle)
-    wv.addEventListener('dom-ready', inject)
-    wv.addEventListener('console-message', onConsole)
-    wv.addEventListener('did-navigate', onNavigate)
-    wv.addEventListener('did-navigate-in-page', onNavigate)
-    return () => {
-      offNet()
-      wv.removeEventListener('did-fail-load', onFail)
-      wv.removeEventListener('did-start-loading', onStart)
-      wv.removeEventListener('did-start-navigation', onStartNavigation)
-      wv.removeEventListener('page-title-updated', onTitle)
-      wv.removeEventListener('dom-ready', inject)
-      wv.removeEventListener('console-message', onConsole)
-      wv.removeEventListener('did-navigate', onNavigate)
-      wv.removeEventListener('did-navigate-in-page', onNavigate)
-    }
-  }, [on])
+    return wv.on({
+      fail: onFail,
+      startLoading: onStart,
+      startNavigation: onStartNavigation,
+      title: onTitle,
+      ready: inject,
+      console: onConsole,
+      navigate: onNavigate,
+      net: entry => {
+        if (ready.current) pageLog.current = pushEntry(pageLog.current, entry)
+      },
+    })
+  }, [surface])
 
   useEffect(() => {
     void run(`window.__claudeIde && window.__claudeIde.set(${commenting})`)
@@ -302,7 +288,7 @@ export function BrowserView({
     const open = debug.open
     if (!open) return
     const wv = view.current
-    if (open.fresh && wv && ready.current && !failure && sameOrigin(wv.getURL(), open.url)) {
+    if (open.fresh && wv && ready.current && !failure && sameOrigin(wv.url(), open.url)) {
       setStatus('')
       wv.reloadIgnoringCache()
     } else load(open.url)
@@ -348,11 +334,12 @@ export function BrowserView({
         const url = String(args.url ?? '')
         if (!local(url)) throw new Error(`only pages on ${allowed()} can be opened`)
         const stopped = new Promise<void>(resolve => {
-          const done = () => {
-            wv.removeEventListener('did-stop-loading', done)
-            resolve()
-          }
-          wv.addEventListener('did-stop-loading', done)
+          const off = wv.on({
+            stopLoading: () => {
+              off()
+              resolve()
+            },
+          })
         })
         loadRef.current(url)
         await Promise.race([stopped, settle(10_000)])
@@ -361,12 +348,12 @@ export function BrowserView({
       }
       if (!ready.current) throw new Error('the browser is not ready')
       // The webview's own address too: screenshot and console read no page address of their own.
-      if (!local(pageRef.current) || !local(wv.getURL())) throw new Error(`the browser shows a page that is not local; open a page on ${allowed()} with browser_navigate first`)
+      if (!local(pageRef.current) || !local(wv.url())) throw new Error(`the browser shows a page that is not local; open a page on ${allowed()} with browser_navigate first`)
       if (action === 'snapshot') return { text: await snapshot() }
       if (action === 'console') return { text: logText(pageLog.current) || 'no console warnings, errors or failed requests on this page' }
       if (action === 'screenshot') {
-        const image = await wv.capturePage()
-        const path = await window.ide.saveShot(image.toDataURL())
+        const image = await wv.capture()
+        const path = image ? await window.ide.saveShot(image) : null
         if (!path) throw new Error('the screenshot could not be saved')
         return { path, text: path }
       }
@@ -375,9 +362,7 @@ export function BrowserView({
         if (!point || point.error === 'stale') throw new Error('that element is gone; call browser_snapshot again')
         if (point.error === 'covered') throw new Error(`the element is covered by ${point.by}`)
         const at = { x: point.x!, y: point.y! }
-        wv.sendInputEvent({ type: 'mouseMove', ...at })
-        wv.sendInputEvent({ type: 'mouseDown', ...at, button: 'left', clickCount: 1 })
-        wv.sendInputEvent({ type: 'mouseUp', ...at, button: 'left', clickCount: 1 })
+        wv.click(at.x, at.y)
         await settle(600)
         return { text: await snapshot() }
       }
@@ -385,11 +370,7 @@ export function BrowserView({
         const focused = (await run(focusScript(element(args.ref)))) as { error?: string } | undefined
         if (!focused || focused.error) throw new Error('that element is gone; call browser_snapshot again')
         await wv.insertText(String(args.text ?? ''))
-        if (args.submit === true) {
-          wv.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
-          wv.sendInputEvent({ type: 'char', keyCode: '\r' })
-          wv.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
-        }
+        if (args.submit === true) wv.pressEnter()
         await settle(500)
         return { text: await snapshot() }
       }
@@ -465,8 +446,8 @@ export function BrowserView({
   return (
     <div className={`browser ${visible ? '' : 'browser-hidden'}`}>
       <div className="browser-bar">
-        <IconButton icon="collapse" label={t('browser.back')} onClick={() => ready.current && view.current?.goBack()} />
-        <IconButton icon="expand" label={t('browser.forward')} onClick={() => ready.current && view.current?.goForward()} />
+        <IconButton icon="collapse" label={t('browser.back')} onClick={() => ready.current && view.current?.back()} />
+        <IconButton icon="expand" label={t('browser.forward')} onClick={() => ready.current && view.current?.forward()} />
         <Button size="sm" onClick={() => ready.current && view.current?.reload()}>
           {t('browser.reload')}
         </Button>
@@ -499,7 +480,7 @@ export function BrowserView({
       </div>
       <div className="browser-body">
         <div className="webview-wrap">
-          {on && <webview ref={view} src={src} partition="persist:claude-ide" className="webview" />}
+          {on && <PageView src={src} visible={visible} onSurface={setSurface} />}
           {failure && (
             <div className="load-failure" role="alert">
               <Card pad="none" className="load-failure-box">
