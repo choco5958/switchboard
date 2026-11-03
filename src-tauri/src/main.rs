@@ -8,7 +8,7 @@
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -17,6 +17,8 @@ use std::time::{Duration, Instant};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tokio::sync::oneshot;
+
+mod os;
 
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
 
@@ -62,12 +64,6 @@ fn capture_log(text: String) {
     eprintln!("capture: {text}");
 }
 
-fn random_key() -> String {
-    let mut bytes = [0u8; 32];
-    std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes)).expect("urandom");
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 fn open_with_system(target: &str) -> String {
     #[cfg(target_os = "macos")]
     let opened = Command::new("open").arg(target).status();
@@ -90,9 +86,25 @@ fn show_main(app: &AppHandle) {
     }
 }
 
-// What the host asks of the shell. Requests with an id get a reply.
-fn on_os(app: &AppHandle, host: &Host, message: &Value) {
+// What the host asks of the shell. Requests with an id get a reply. What may wait on the person
+// (a dialog) answers from a thread of its own, so the host's other messages keep flowing.
+fn on_os(app: &AppHandle, host: &Arc<Host>, message: &Value) {
     let op = message["op"].as_str().unwrap_or("");
+    let reply = |host: &Host, value: Value| {
+        if let Some(id) = message.get("id").and_then(Value::as_u64) {
+            host.write(&json!({ "t": "reply", "id": id, "value": value }));
+        }
+    };
+    if op == "messageBox" || op == "pickFolder" {
+        let (app, host, message) = (app.clone(), host.clone(), message.clone());
+        thread::spawn(move || {
+            let value = if message["op"] == "messageBox" { os::message_box(&app, &message["box"]) } else { os::pick_folder(&app, message["title"].as_str().unwrap_or("")) };
+            if let Some(id) = message.get("id").and_then(Value::as_u64) {
+                host.write(&json!({ "t": "reply", "id": id, "value": value }));
+            }
+        });
+        return;
+    }
     let value = match op {
         "focusWindow" => {
             show_main(app);
@@ -117,19 +129,25 @@ fn on_os(app: &AppHandle, host: &Host, message: &Value) {
             }
             Value::Null
         }
-        // Step 4 of docs/tauri-이전.md: until then the safe answer, never a yes nobody gave.
-        "messageBox" => json!(message["box"]["cancelId"].as_i64().unwrap_or(1)),
-        "pickFolder" => Value::Null,
-        "idleState" => json!("unknown"),
-        "notify" | "keepAwake" => Value::Null,
+        "idleState" => os::idle_state(message["seconds"].as_u64().unwrap_or(300)),
+        "keepAwake" => {
+            os::keep_awake(message["on"].as_bool() == Some(true));
+            Value::Null
+        }
+        "notify" => {
+            let (handle, host, id) = (app.clone(), host.clone(), message["notification"].clone());
+            os::notify(message["title"].as_str().unwrap_or("Switchboard"), message["body"].as_str().unwrap_or(""), move || {
+                show_main(&handle);
+                host.write(&json!({ "t": "event", "name": "notificationClick", "notification": id }));
+            });
+            Value::Null
+        }
         other => {
             eprintln!("host asked for an unknown os op: {other}");
             Value::Null
         }
     };
-    if let Some(id) = message.get("id").and_then(Value::as_u64) {
-        host.write(&json!({ "t": "reply", "id": id, "value": value }));
-    }
+    reply(host, value);
 }
 
 // The repo when run from it (`cargo run`, `tauri dev`): the host bundle and Node are its own.
@@ -145,7 +163,6 @@ fn start_host(app: &AppHandle) -> Arc<Host> {
     let data = app.path().app_data_dir().unwrap_or_else(|_| repo.join(".tauri-data"));
     let _ = std::fs::create_dir_all(&data);
     let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".into());
-    // The keychain comes in step 4: until then a key for this run only.
     let info = json!({
         "version": app.package_info().version.to_string(),
         "locale": locale,
@@ -153,7 +170,7 @@ fn start_host(app: &AppHandle) -> Arc<Host> {
         "appPath": repo,
         "resourcesPath": repo,
         "userDataPath": data,
-        "appKey": { "key": random_key(), "refused": false, "lasting": false },
+        "appKey": os::app_key(),
     });
     let mut child = Command::new("node")
         .arg(repo.join("out/host/main.mjs"))
@@ -229,7 +246,11 @@ fn stop_host(host: &Host) {
 }
 
 fn main() {
+    os::prepare_notifications();
     let app = tauri::Builder::default()
+        // A second start brings the running window forward and ends (first, before the rest).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![ide_invoke, ide_send, capture_log])
         .setup(|app| {
             let host = start_host(app.handle());
@@ -261,6 +282,13 @@ fn main() {
             }
         })
         .on_window_event(|window, event| {
+            // On macOS closing the window keeps the app (and its notifications) running, as the
+            // Electron app does; the Dock icon brings it back (RunEvent::Reopen below).
+            #[cfg(target_os = "macos")]
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
             if let WindowEvent::Focused(focused) = event {
                 if let Some(host) = window.app_handle().try_state::<Arc<Host>>() {
                     host.write(&json!({ "t": "event", "name": "focus", "focused": focused }));
@@ -269,11 +297,14 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building the app");
-    app.run(|handle, event| {
-        if let RunEvent::Exit = event {
+    app.run(|handle, event| match event {
+        RunEvent::Exit => {
             if let Some(host) = handle.try_state::<Arc<Host>>() {
                 stop_host(&host);
             }
         }
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => show_main(handle),
+        _ => {}
     });
 }
