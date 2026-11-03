@@ -29,7 +29,7 @@ import type { SpawnPty } from './termCore'
 // termClient.ts hostSupported) they run in this process and end with it.
 
 // seq numbers every output chunk, so a view that replays the buffer can skip live chunks it already holds.
-// key names the terminal to an agent's MCP server (SWITCHBOARD_TERMINAL): 128 random bits
+// key names the terminal to the session in it (SWITCHBOARD_TERMINAL, read by the mod and the MCP server): 128 random bits
 // (newKey), so a session left from an earlier run never maps onto a new terminal and no other
 // process can guess one to have answers typed into it. A terminal the host kept keeps its key.
 // lastOutput and paste tell the answer typing whether the CLI waits for input and takes bracketed paste.
@@ -185,7 +185,10 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
     // Local links a CLI opens land in the in-app browser (openUrl.ts), unless the person set their own.
     // Not on Windows: a .js file there may open in Windows Script Host instead of Node.
     ...(browserScript && !process.env.BROWSER && process.platform !== 'win32' ? { BROWSER: browserScript } : {}),
-    ...(start.agent ? { SWITCHBOARD_AGENT: start.agent, SWITCHBOARD_TERMINAL: key } : {}),
+    // Claude Code's mod and a shell's later CLI name this terminal with it too, so the sidebar
+    // can tell which session runs in which terminal (agentDelivery.ts types only for other CLIs).
+    SWITCHBOARD_TERMINAL: key,
+    ...(start.agent ? { SWITCHBOARD_AGENT: start.agent } : {}),
     ...prepared.env,
   }
   const project = projectName(folder)

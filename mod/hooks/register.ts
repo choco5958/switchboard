@@ -206,7 +206,9 @@ async function subscribe($: Engine): Promise<void> {
 async function listenOnce($: Engine): Promise<boolean> {
   if (!(await ensureBridge($))) return false
   // `token`: the bridge makes one with the session's row and hands it over this once.
-  const registered = await call($, 'POST', '/sessions', { id: sessionId, cwd, token: true }).catch(() => undefined)
+  // The app terminal it runs in, when the app opened it (src/main/terminals.ts SWITCHBOARD_TERMINAL).
+  const terminal = (await $.env.get('SWITCHBOARD_TERMINAL').catch(() => undefined)) || ''
+  const registered = await call($, 'POST', '/sessions', { id: sessionId, cwd, token: true, ...(terminal ? { terminal } : {}) }).catch(() => undefined)
   if (!registered?.ok) {
     // 403: the session took a token this mod no longer has (its store lost it); only the app could act for it now.
     if (registered?.status === 403) $.ui.log(t(currentLang(), 'log.subscriptionLost', { error: String(registered.json.error) }), { to: 'debug' })
