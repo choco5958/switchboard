@@ -1138,6 +1138,10 @@ describe('scheduled prompts and waits', () => {
     bridge.tickRoutines(one.next_at)
     const row = (await call('GET', '/state')).json.routines.find((r: { id: number }) => r.id === one.id)
     assert.deepEqual([row.enabled, row.next_at], [0, null])
+    // Switching it back on without a new time would show it on and never run it.
+    await call('POST', '/routines', { ...row, schedule: { kind: 'once', at: '2020-01-01T09:00' }, enabled: true })
+    const again = (await call('GET', '/state')).json.routines.find((r: { id: number }) => r.id === one.id)
+    assert.deepEqual([again.enabled, again.next_at], [0, null])
     for (const r of [skip, once, one]) await call('POST', `/routines/${r.id}/delete`)
   })
 

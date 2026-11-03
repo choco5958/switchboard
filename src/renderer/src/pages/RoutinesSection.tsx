@@ -57,6 +57,11 @@ export function whyNotSave(draft: Pick<Draft, 'name' | 'project' | 'prompt' | 'k
   return null
 }
 
+// A once whose time is not ahead any more: the bridge keeps it off (POST /routines).
+export function onceOver(schedule: RoutineSchedule | null, now = Date.now()): boolean {
+  return schedule?.kind === 'once' && !(new Date(schedule.at).getTime() > now)
+}
+
 // Why no routine can be added now: no background server to keep it, or no project folder to run in.
 export function whyNotAdd(connected: boolean, folders: number): string | null {
   if (!connected) return t('routines.offline')
@@ -149,6 +154,8 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
       {routines.length === 0 && !draft && <EmptyState>{t('routines.empty')}</EmptyState>}
       {routines.map(r => {
         const last = [...runs].reverse().find(run => run.routine_id === r.id)
+        // A once whose time has passed has no run left to switch on: it needs a new time first.
+        const over = !r.enabled && onceOver(parse(r))
         return (
           <Card key={r.id} pad="sm" className={cx('routine-row', !r.enabled && 'off')}>
             <div className="routine-head">
@@ -159,8 +166,8 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
                 {r.enabled && r.next_at ? `, ${t('routines.next', { at: clock(r.next_at) })}` : ''}
               </span>
               <span className="spacer" />
-              <label className="check-row small">
-                <input type="checkbox" checked={r.enabled === 1} onChange={() => toggle(r)} />
+              <label className="check-row small" title={over ? t('routines.pastAt') : undefined}>
+                <input type="checkbox" checked={r.enabled === 1} disabled={over} onChange={() => toggle(r)} />
                 {t('routines.enabled')}
               </label>
               <Button variant="link" size="sm" disabled={!connected} title={connected ? undefined : t('routines.offline')} onClick={() => void call(`/routines/${r.id}/run`)}>

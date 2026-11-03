@@ -452,6 +452,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   // Which agent CLI a scheduled prompt goes to (agents.ts ids; routines before this were Claude Code's).
   addColumns('routines', [['agent', "text not null default 'claude'"]])
   db.exec('update tasks set number = id where number is null')
+  // A once switched back on after its run, saved before POST /routines refused that: off again.
+  db.exec('update routines set enabled = 0 where enabled = 1 and next_at is null')
   // Indexes for what runs on every delivery, timer tick and /state, made after the columns
   // above exist: without them each of these reads the whole table.
   db.exec(`
@@ -2268,10 +2270,13 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const agent = str(body.agent, 'claude').trim() || 'claude'
       if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(agent)) return send(res, 400, { error: say('bridge.badAgent') })
       const next = nextRun(schedule, now())
+      // A schedule with no run left (a once whose time has passed) cannot be on: it would show
+      // as on and never run. The app asks for a new time instead (RoutinesSection.tsx).
+      const on = next === null ? 0 : enabled
       const id = Number(body.id) || 0
       if (id) {
         const updated = db.prepare('update routines set project = ?, cwd = ?, name = ?, prompt = ?, schedule = ?, missed = ?, enabled = ?, next_at = ?, updated_at = ?, failed_off = 0, agent = ? where id = ?').run(
-          project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), agent, id,
+          project, cwd, name, prompt, JSON.stringify(schedule), missed, on, next, now(), agent, id,
         )
         // Deleted meanwhile (another window): nothing was saved.
         if (updated.changes === 0) return send(res, 404, { error: say('bridge.notFound') })
@@ -2281,7 +2286,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         : Number(
             db
               .prepare('insert into routines (project, cwd, name, prompt, schedule, missed, enabled, next_at, created_at, updated_at, agent) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-              .run(project, cwd, name, prompt, JSON.stringify(schedule), missed, enabled, next, now(), now(), agent).lastInsertRowid,
+              .run(project, cwd, name, prompt, JSON.stringify(schedule), missed, on, next, now(), now(), agent).lastInsertRowid,
           )
       changed('routines')
       return send(res, 200, db.prepare('select * from routines where id = ?').get(saved))

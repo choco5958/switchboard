@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { setLang } from '../../../shared/i18n'
-import { whyNotAdd, whyNotSave } from './RoutinesSection'
+import { onceOver, whyNotAdd, whyNotSave } from './RoutinesSection'
 
 const ready = { name: '아침 점검', project: 'web', prompt: '의존성을 점검하세요', kind: 'daily' as const, time: '09:00', every: '60', at: '' }
 const NOW = new Date(2026, 9, 30, 12, 0).getTime()
@@ -27,4 +27,11 @@ test('adding needs the background server and a project folder', () => {
   expect(whyNotAdd(true, 2)).toBeNull()
   expect(whyNotAdd(false, 2)).toContain('백그라운드 서버')
   expect(whyNotAdd(true, 0)).toContain('프로젝트')
+})
+
+test('only a once whose time has passed cannot be switched back on', () => {
+  expect(onceOver({ kind: 'once', at: '2026-10-29T09:00' }, NOW)).toBe(true)
+  expect(onceOver({ kind: 'once', at: '2026-10-31T09:00' }, NOW)).toBe(false)
+  expect(onceOver({ kind: 'daily', time: '09:00' }, NOW)).toBe(false)
+  expect(onceOver(null, NOW)).toBe(false)
 })
