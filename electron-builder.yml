@@ -10,6 +10,8 @@ files:
   - out/**
   # Beside the .ts files in Resources/node instead (extraResources).
   - '!out/node/**'
+  # The Tauri shell's Node host (docs/tauri-이전.md); the Electron app runs out/main.
+  - '!out/host/**'
   - resources/**
   - package.json
   # Font licences for the bundled fonts (src/renderer/src/fonts.css).

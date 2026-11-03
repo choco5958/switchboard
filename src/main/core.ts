@@ -23,7 +23,6 @@ import { buildId, copyRuntime, nodeEntry, oldBridgePid, pruneRuntimes, staleBrid
 import { requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
 import { bridgeClient } from './bridgeClient'
 import { ROUTINE_FAIL_LIMIT } from '../../bridge/schedule.ts'
-import { loadAppKey } from './appKey'
 import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled, switchedOff } from './notify'
 import { STALL_MS, stalledSessions } from '../shared/stall'
 import { limitedUntil } from '../shared/limit'
@@ -253,8 +252,9 @@ function scheduleScan(): void {
 // bridge writes to Telegram only then (bridge/telegram.ts); an old report counts as away.
 const AWAY_IDLE_SECONDS = 300
 function reportPresence(): void {
-  const state = platform().idleState(AWAY_IDLE_SECONDS)
-  void call('POST', '/presence', { away: state === 'idle' || state === 'locked' }).catch(() => undefined)
+  void platform().idleState(AWAY_IDLE_SECONDS).then(state =>
+    call('POST', '/presence', { away: state === 'idle' || state === 'locked' }).catch(() => undefined),
+  )
 }
 
 export function watchCore(): void {
@@ -461,7 +461,7 @@ let agentDelivery: ReturnType<typeof startAgentDelivery> | null = null
 // Once the shell is ready, before its window opens: the app key, this build's runtime copy and
 // launchers, the bridge, and the terminals a host kept running while the app was closed.
 export async function startCore(): Promise<void> {
-  const loaded = loadAppKey(join(platform().userDataPath(), 'app-key.bin'), platform().keyStorage())
+  const loaded = platform().appKey()
   appKey = loaded.key
   if (loaded.refused) notify('Switchboard', t('app.keyRefused'), () => undefined)
   await prepareRuntime()

@@ -2,7 +2,7 @@
 // Electron today (index.ts), the Tauri host next (docs/tauri-이전.md). Nothing here imports
 // Electron, so the same logic runs on a plain Node beside a Rust shell.
 
-import type { KeyStorage } from './appKey'
+import type { AppKey } from './appKey'
 
 // An IPC event as the logic sees it: handlers only ever skip it.
 export type IpcEvent = unknown
@@ -38,7 +38,8 @@ export type Platform = {
   // Resources of the installed app (Resources/node lives there).
   resourcesPath(): string
   userDataPath(): string
-  keyStorage(): KeyStorage
+  // The key the app proves itself to the bridge with, kept by the system's keychain (appKey.ts).
+  appKey(): AppKey
   notificationsSupported(): boolean
   notify(title: string, body: string, onClick?: () => void): void
   // The index of the button pressed.
@@ -48,7 +49,7 @@ export type Platform = {
   openExternal(url: string): Promise<void>
   setBadge(text: string): void
   onPower(event: PowerEvent, listener: () => void): void
-  idleState(seconds: number): IdleState
+  idleState(seconds: number): Promise<IdleState>
   // Keeps the computer from sleeping while on (an agent works, awake.ts).
   keepAwake(on: boolean): void
   windowFocused(): boolean

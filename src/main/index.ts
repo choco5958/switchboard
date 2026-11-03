@@ -12,6 +12,7 @@ import { registerUpdates, startUpdates } from './updater'
 import { netEntry, type PageLogEntry } from '../shared/pageLog'
 import { resolveLang, setLang, t } from '../shared/i18n'
 import { usePlatform, type Platform } from './platform'
+import { loadAppKey } from './appKey'
 import { provenBridgePid, registerCore, startCore, watchCore } from './core'
 
 // Captures keep their own profile so they never overwrite the real app's saved tabs and addresses.
@@ -65,7 +66,7 @@ const electronPlatform: Platform = {
   appPath: () => app.getAppPath(),
   resourcesPath: () => process.resourcesPath,
   userDataPath: () => app.getPath('userData'),
-  keyStorage: () => safeStorage,
+  appKey: () => loadAppKey(join(app.getPath('userData'), 'app-key.bin'), safeStorage),
   notificationsSupported: () => Notification.isSupported(),
   notify: (title, body, onClick) => {
     const notification = new Notification({ title, body })
@@ -90,7 +91,7 @@ const electronPlatform: Platform = {
   openExternal: url => shell.openExternal(url),
   setBadge: text => app.dock?.setBadge(text),
   onPower: (event, listener) => void powerMonitor.on(event as 'resume', listener),
-  idleState: seconds => powerMonitor.getSystemIdleState(seconds),
+  idleState: async seconds => powerMonitor.getSystemIdleState(seconds),
   keepAwake: on => {
     if (on && awakeBlocker === null) awakeBlocker = powerSaveBlocker.start('prevent-app-suspension')
     else if (!on && awakeBlocker !== null) {

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import type { IdeApi } from './types'
-import { IDE_CALLS, buildApi } from './ideCalls'
+import { IDE_CALLS, buildApi, decodeArgs, encodeArgs } from './ideCalls'
 
 // Every window.ide method has its row, and no row names a method the page does not have.
 type Missing = Exclude<keyof IdeApi, keyof typeof IDE_CALLS>
@@ -37,4 +37,9 @@ test('an API from the table reaches the shell on each row channel, with the argu
   ])
   expect(got).toEqual([{ id: 't1', data: 'x', seq: 1 }])
   expect(listeners.has('term:data')).toBe(false)
+})
+
+test('undefined arguments survive JSON, and nothing else turns into undefined', () => {
+  const args = [undefined, null, 0, '', { $undefined: true, other: 1 }, ['x']]
+  expect(decodeArgs(JSON.parse(JSON.stringify(encodeArgs(args))))).toEqual(args)
 })

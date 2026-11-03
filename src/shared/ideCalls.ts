@@ -66,6 +66,13 @@ export const IDE_DEBUG_CALLS = {
   run: { kind: 'invoke', channel: 'browser:run' },
 } satisfies Record<string, IdeCall>
 
+// JSON has no undefined, which Electron's IPC keeps and the handlers tell from null (an argument
+// not given). The Tauri page layer sends this in its place; the Node host puts undefined back.
+export const UNDEFINED_ARG = { $undefined: true } as const
+export const encodeArgs = (args: unknown[]): unknown[] => args.map(arg => (arg === undefined ? UNDEFINED_ARG : arg))
+export const decodeArgs = (args: unknown[]): unknown[] =>
+  args.map(arg => (arg && typeof arg === 'object' && (arg as { $undefined?: unknown }).$undefined === true && Object.keys(arg).length === 1 ? undefined : arg))
+
 // Builds an API object from a table with the shell's own three ways to reach it.
 export function buildApi(
   calls: Record<string, IdeCall>,

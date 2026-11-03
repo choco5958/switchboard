@@ -29,7 +29,9 @@ export function realEncryption(storage: KeyStorage, platform: string = process.p
 // means the app starts its bridge again (every session's stream drops once).
 // `lasting`: the next start finds the same key, which the terminal host needs to let it back in
 // (termClient.ts hostSupported).
-export function loadAppKey(file: string, storage: KeyStorage, platform: string = process.platform): { key: string; refused: boolean; lasting: boolean } {
+export type AppKey = { key: string; refused: boolean; lasting: boolean }
+
+export function loadAppKey(file: string, storage: KeyStorage, platform: string = process.platform): AppKey {
   if (!realEncryption(storage, platform)) return { key: randomBytes(32).toString('hex'), refused: false, lasting: false }
   if (existsSync(file)) {
     try {
