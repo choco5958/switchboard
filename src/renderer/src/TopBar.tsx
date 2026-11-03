@@ -1,18 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AccountInfo, BridgeState, CcrSlot, SessionUsage } from '../../shared/types'
 import { OPEN_CLAUDE_SLOT, refreshDaysLeft } from '../../shared/ccr'
-import { Icon } from './Icons'
-import { countLabel, flipTheme, isLight, resetText } from './taskInfo'
+import { flipTheme, isLight, resetText } from './taskInfo'
 import { DEFAULT_THEME, themeOf } from './theme'
 import { isClaude } from '../../shared/agents'
 import { LOCALE_TAG, getLang, t } from '../../shared/i18n'
 import { saveSetting } from './settings'
 import { Badge, Chip, IconButton } from './ui'
-import { waitParts, type WaitCount } from './waiting'
 import { UpdateChip } from './flows'
-
-// The search key as this system writes it (App.tsx takes both).
-const SEARCH_KEY = /Mac/.test(navigator.userAgent) ? '⌘K' : 'Ctrl+K'
 
 // Usage meters are Claude Code's own; other agent CLIs report none.
 export function usageOf(state: BridgeState): SessionUsage {
@@ -165,39 +160,30 @@ function Meter({ label, percent, reset = '' }: { label: string; percent: number 
   )
 }
 
-export function TopBar({
+// The bottom of the sidebar: how much of the Claude limits is used (the account panel opens
+// above it with the account, ccr slots, context, cost and the report button), the link to the
+// bridge with the live toggle, a ready update, and the light and dark switch.
+export function StatusFooter({
   state,
-  scoped = null,
   connected,
   live = true,
-  onSearch,
-  onReport,
-  onQuestions,
-  onToggleSidebar,
-  onToggleDock,
   onToggleLive,
-  wait,
-  waitScoped = null,
+  onReport,
   onOpenUpdate,
+  onSettings,
 }: {
   state: BridgeState
-  // The state seen through the chosen project, when one is chosen.
-  scoped?: BridgeState | null
   connected: boolean
   live?: boolean
-  onSearch: () => void
+  onToggleLive: () => void
   onReport: () => void
-  onQuestions: () => void
-  onToggleSidebar?: () => void
-  onToggleDock?: () => void
-  onToggleLive?: () => void
-  // The one "waiting for me" count (waiting.ts), for everything and for the project in view.
-  wait: WaitCount
-  waitScoped?: WaitCount | null
-  onOpenUpdate?: () => void
+  onOpenUpdate: () => void
+  onSettings: () => void
 }) {
   const [account, setAccount] = useState<AccountInfo | null>(null)
   const [measuring, setMeasuring] = useState(false)
+  const [panel, setPanel] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
   const measure = () => {
     if (!window.ide.measureAccounts) return
     setMeasuring(true)
@@ -214,40 +200,44 @@ export function TopBar({
     const timers = [setInterval(read, ACCOUNT_POLL_MS), setInterval(measure, MEASURE_MS)]
     return () => timers.forEach(clearInterval)
   }, [])
+  // The panel closes on a press outside it or on Esc.
+  useEffect(() => {
+    if (!panel) return
+    const outside = (event: MouseEvent) => {
+      if (!box.current?.contains(event.target as Node)) setPanel(false)
+    }
+    const esc = (event: KeyboardEvent) => event.key === 'Escape' && setPanel(false)
+    document.addEventListener('mousedown', outside)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('mousedown', outside)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [panel])
   const ccr = account?.ccr
-  // A project whose sessions are all other agents shows no Claude meters rather than another project's.
-  const claudeHere = !scoped || scoped.sessions.length === 0 || scoped.sessions.some(s => isClaude(s.agent))
-  const usage = claudeHere ? usageOf(state) : {}
+  const usage = usageOf(state)
   const five = usage.rateLimits?.find(r => r.kind === 'five_hour')
   const week = usage.rateLimits?.find(r => r.kind === 'seven_day')
   const cost = usage.cost?.totalUsd
-  const runningOf = (s: BridgeState) => s.agents.filter(a => a.status === 'running').length
-  const running = runningOf(state)
-  const scopedRunning = scoped ? runningOf(scoped) : null
-  // A count of nothing says nothing: the agents and waiting chips show once there is one.
-  const showAgents = running > 0 || (scopedRunning ?? 0) > 0
-  const showWait = wait.total > 0 || (waitScoped?.total ?? 0) > 0
-  const waitHere = waitScoped ?? wait
   const theme = themeOf(state.settings.theme)
   const light = isLight(theme)
-
   const flip = async () => {
     const next = flipTheme(theme, typeof state.settings.darkTheme === 'string' ? state.settings.darkTheme : undefined, DEFAULT_THEME)
     if (!light) await saveSetting('darkTheme', next.lastDark)
     await saveSetting('theme', next.theme)
   }
+  const pct = (n: number | undefined) => (n === undefined ? '-' : `${Math.round(n)}%`)
+  const summary =
+    five || week
+      ? t('foot.usage', { five: pct(five?.percentUsed), week: pct(week?.percentUsed) })
+      : ccr
+        ? t('foot.ccr', { n: ccr.slots.length })
+        : (account?.plan ?? t('foot.account'))
 
-  // Three groups: who and how much (left, drops items as the window narrows), find (center),
-  // what needs you and the view controls (right, always shown).
   return (
-    <header className="topbar">
-      <div className="topbar-group topbar-left" role="group" aria-label={t('top.groupAccount')}>
-        <span className="brand">
-          <BrandMark />
-          Switchboard
-        </span>
-        {/* Low priority first to go: a narrow window drops these (styles.css, top bar) before anything on the right. */}
-        <div className="topbar-info">
+    <div className="status-footer" ref={box}>
+      {panel && (
+        <div className="account-panel" role="dialog" aria-label={t('top.groupAccount')}>
           {ccr ? (
             <CcrSlots ccr={ccr} sessions={state.sessions} onMeasure={measure} measuring={measuring} />
           ) : (
@@ -258,66 +248,39 @@ export function TopBar({
               </span>
             )
           )}
-          {usage.model && (
-            <Badge shape="pill" className="topbar-model">
-              {usage.model}
-            </Badge>
-          )}
-          {/* With ccr the slots above already carry each account's limits. */}
+          {usage.model && <span className="quiet small">{usage.model}</span>}
           {!ccr && <Meter label={t('top.fiveHour')} percent={five?.percentUsed} reset={resetText(five?.resetsAt)} />}
           {!ccr && <Meter label={t('top.week')} percent={week?.percentUsed} reset={resetText(week?.resetsAt)} />}
           <Meter label={t('top.context')} percent={usage.contextPercent} />
-          {cost !== undefined && <span className="quiet small topbar-cost">{t('top.cost', { cost: `$${cost.toFixed(2)}` })}</span>}
-          <Chip className="topbar-report" onClick={onReport} title={t('top.reportTitle')}>
+          {cost !== undefined && <span className="quiet small">{t('top.cost', { cost: `$${cost.toFixed(2)}` })}</span>}
+          <Chip onClick={onReport} title={t('top.reportTitle')}>
             {t('top.report')}
           </Chip>
         </div>
-      </div>
-      <span className="spacer" />
-      <button type="button" className="searchbox" onClick={onSearch}>
-        <Icon name="search" size="sm" /> {t('top.search')} <kbd>{SEARCH_KEY}</kbd>
+      )}
+      <button type="button" className="foot-usage" aria-expanded={panel} title={[five && resetText(five.resetsAt), week && resetText(week.resetsAt)].filter(Boolean).join('\n') || undefined} onClick={() => setPanel(open => !open)}>
+        {summary}
       </button>
-      <span className="spacer" />
-      <div className="topbar-group topbar-right" role="group" aria-label={t('top.groupStatus')}>
-        {showWait && (
-          <Chip tone={waitHere.total > 0 ? 'warn' : 'neutral'} className="wait-chip" title={[t('wait.chipTitle'), waitParts(waitHere)].filter(Boolean).join('\n')} onClick={onQuestions}>
-            {countLabel(t('wait.label'), wait.total, waitScoped ? waitScoped.total : null)}
-          </Chip>
-        )}
-        {showAgents && (
-          <Badge shape="pill" tone={(scopedRunning ?? running) > 0 ? 'accent' : 'neutral'}>
-            {countLabel(t('top.agents'), running, scopedRunning)}
-          </Badge>
-        )}
-        {onOpenUpdate && <UpdateChip onOpen={onOpenUpdate} />}
-        {/* One badge for both facts: a dropped bridge outranks the live toggle, since paused or live means nothing without a link. */}
-        {onToggleLive ? (
-          <Chip
-            tone={!connected ? 'bad' : live ? 'good' : 'warn'}
-            className="live"
-            title={!connected ? t('top.disconnectedTitle') : live ? t('top.liveOnTitle') : t('top.liveOffTitle')}
-            onClick={connected ? onToggleLive : undefined}
-          >
-            {!connected ? t('top.disconnected') : live ? t('top.live') : t('top.paused')}
-          </Chip>
-        ) : (
-          <Badge shape="pill" tone={connected ? 'good' : 'bad'}>
-            {connected ? t('top.connected') : t('top.disconnected')}
-          </Badge>
-        )}
-        <span className="topbar-sep" aria-hidden="true" />
-        <span className="topbar-actions">
-          {onToggleSidebar && <IconButton icon="sidebar" label={t('top.toggleSidebar')} onClick={onToggleSidebar} />}
-          {onToggleDock && <IconButton icon="dock" label={t('top.toggleDock')} onClick={onToggleDock} />}
-          <IconButton icon={light ? 'moon' : 'sun'} label={light ? t('top.toDark') : t('top.toLight')} onClick={() => void flip()} />
-        </span>
+      <div className="foot-line">
+        <button
+          type="button"
+          className={`foot-live ${!connected ? 'bad' : live ? 'good' : 'warn'}`}
+          title={!connected ? t('top.disconnectedTitle') : live ? t('top.liveOnTitle') : t('top.liveOffTitle')}
+          onClick={connected ? onToggleLive : undefined}
+        >
+          {!connected ? t('top.disconnected') : live ? t('top.live') : t('top.paused')}
+        </button>
+        <UpdateChip onOpen={onOpenUpdate} />
+        <span className="spacer" />
+        <IconButton icon={light ? 'moon' : 'sun'} size="sm" label={light ? t('top.toDark') : t('top.toLight')} onClick={() => void flip()} />
+        <IconButton icon="settings" size="sm" label={t('rail.settings')} onClick={onSettings} />
       </div>
-    </header>
+    </div>
   )
 }
 
 // The plug board of the app icon (scripts/icon.mjs): four jacks, one lit in the theme's accent.
-function BrandMark() {
+export function BrandMark() {
   const jacks: [number, number, boolean][] = [
     [4.5, 4.5, false],
     [11.5, 4.5, true],

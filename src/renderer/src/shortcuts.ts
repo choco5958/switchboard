@@ -56,8 +56,6 @@ export function shortcutGroups(mac: boolean, decisionKeysAnywhere: boolean): Sho
     {
       title: 'keys.groupLists',
       items: [
-        { keys: ['←', '→', 'Home', 'End'], label: 'keys.tabMove', source: 'ui.tsx', needle: "['ArrowRight', 'ArrowLeft', 'Home', 'End']" },
-        { keys: ['Delete'], label: 'keys.tabClose', source: 'ui.tsx', needle: "event.key === 'Delete' && item.close" },
         { keys: ['↑', '↓', 'Enter'], label: 'keys.listMove', source: 'Palette.tsx', needle: "event.key === 'ArrowDown'" },
       ],
     },

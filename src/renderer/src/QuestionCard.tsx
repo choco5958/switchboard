@@ -3,7 +3,8 @@ import type { Question, Session } from '../../shared/types'
 import { renderMarkdown } from './markdown'
 import { clock, keyAction, keyWorks, optionKeys, optionsOf, type Reach } from './model'
 import { AgentBadge, ResumeButton, useToast } from './parts'
-import { SEND_DELAY_MS, draftOf, isWaiting, queueAnswer, subscribe, takeBack } from './outbox'
+import { draftOf, isWaiting, subscribe, takeBack } from './outbox'
+import { sendAnswer } from './answer'
 import type { AgentTag } from '../../shared/agents'
 import { t } from '../../shared/i18n'
 import { tx } from './tx'
@@ -28,6 +29,7 @@ export function QuestionCard({
   onReopen,
   onOpenTask,
   keysAnywhere = false,
+  docked = false,
 }: {
   q: Question
   agent?: AgentTag // the agent CLI that asked, once other agents than Claude are around
@@ -39,6 +41,7 @@ export function QuestionCard({
   onReopen?: () => void // opens this question again (after Undo)
   onOpenTask: (() => void) | null
   keysAnywhere?: boolean // settings: DECISION_KEYS_KEY
+  docked?: boolean // under a session's terminal (SessionView): its header already says where it came from
 }) {
   const options = optionsOf(q)
   const keys = optionKeys(options)
@@ -65,18 +68,7 @@ export function QuestionCard({
   const submit = (picked: string, note: string) => {
     if (!picked && !note.trim()) return setError(t('question.needChoice'))
     setError('')
-    const id = q.id
-    queueAnswer(id, { choice: picked, memo: note }, async () => {
-      const reply = await window.ide.answer(id, picked, note)
-      if (reply.ok) toast(t('question.sent', { id }))
-      else toast(t('question.sendFailedId', { id, error: String(reply.json.error ?? t('question.sendFailed')) }), 'bad')
-    })
-    const undo = () => {
-      if (!takeBack(id)) return
-      toast(t('question.undone', { id }), 'info')
-      onReopen?.()
-    }
-    toast(t('question.sending', { id, s: SEND_DELAY_MS / 1000 }), 'info', { label: t('common.undo'), run: undo }, SEND_DELAY_MS)
+    sendAnswer(q.id, picked, note, toast, onReopen)
     onDone()
   }
 
@@ -163,7 +155,7 @@ export function QuestionCard({
   const recommended = options.find(o => o.key === q.recommend)
 
   return (
-    <div className="card decision-card" ref={card} tabIndex={-1} aria-label={`Q${q.id} ${q.question}`}>
+    <div className={docked ? 'card decision-card docked' : 'card decision-card'} ref={card} tabIndex={-1} aria-label={`Q${q.id} ${q.question}`}>
       <div className="card-head">
         <span className="qid">Q{q.id}</span>
         <span className="tag">[{q.task_title || q.project}]</span>
@@ -173,13 +165,13 @@ export function QuestionCard({
             {t('question.gone')}
           </Badge>
         )}
-        {resume && (isOpen || !q.delivered) && <ResumeButton session={resume} />}
+        {resume && !docked && (isOpen || !q.delivered) && <ResumeButton session={resume} />}
         <Badge shape="pill" tone={q.status === 'pending' ? 'warn' : q.status === 'held' ? 'neutral' : 'good'}>
           {t(q.status === 'pending' ? 'palette.qPending' : q.status === 'held' ? 'palette.qHeld' : 'palette.qAnswered')}
         </Badge>
       </div>
       <h1>{q.question}</h1>
-      {q.task_title && <p className="quiet small">{t('question.task', { task: q.task_title })}</p>}
+      {q.task_title && !docked && <p className="quiet small">{t('question.task', { task: q.task_title })}</p>}
       {/* renderMarkdown escapes every character of the body before adding its own few tags. */}
       {q.body && <div className="body md" dangerouslySetInnerHTML={{ __html: renderMarkdown(q.body) }} />}
 
@@ -321,23 +313,25 @@ export function QuestionCard({
           )}
         </>
       ) : null}
-      {onOpenTask && (
+      {onOpenTask && !docked && (
         <Button variant="link" className="mt-sm" onClick={onOpenTask}>
           {t('question.toTask', { task: q.task_title })}
         </Button>
       )}
 
       {/* Where it came from: for looking up, not for answering, so last and quiet. */}
-      <footer className="q-source quiet small" title={t('question.sourceTitle')}>
-        <span className="q-source-label">{t('question.source')}</span>
-        <span>
-          {agent
-            ? tx('question.fromAgent', { project: sessionProject, agent: <AgentBadge tag={agent} />, session: <span className="mono-inline">{q.session_id}</span> })
-            : tx('question.from', { project: sessionProject, session: <span className="mono-inline">{q.session_id}</span> })}
-        </span>
-        {q.turn_id && <span>{t('question.round', { round: q.turn_id })}</span>}
-        <span>{t('question.askedAt', { time: clock(q.created_at) })}</span>
-      </footer>
+      {!docked && (
+        <footer className="q-source quiet small" title={t('question.sourceTitle')}>
+          <span className="q-source-label">{t('question.source')}</span>
+          <span>
+            {agent
+              ? tx('question.fromAgent', { project: sessionProject, agent: <AgentBadge tag={agent} />, session: <span className="mono-inline">{q.session_id}</span> })
+              : tx('question.from', { project: sessionProject, session: <span className="mono-inline">{q.session_id}</span> })}
+          </span>
+          {q.turn_id && <span>{t('question.round', { round: q.turn_id })}</span>}
+          <span>{t('question.askedAt', { time: clock(q.created_at) })}</span>
+        </footer>
+      )}
     </div>
   )
 }

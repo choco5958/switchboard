@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { BridgeState, CommandKind, GraphNode, Question, Task } from '../../shared/types'
-import { Icon, type IconName } from './Icons'
+import type { Approval, BridgeState, CommandKind, GraphNode, Question, TermInfo } from '../../shared/types'
 import { Palette, type PaletteItem } from './Palette'
 import { PropsPanel } from './PropsPanel'
 import { DECISION_KEYS_KEY, QuestionCard } from './QuestionCard'
 import { TaskView } from './TaskView'
-import { TopBar } from './TopBar'
-import { nextAfter, queueOf, reachOf, resumable, taskFacts, tasksByProject, waitingFirst, type Attention } from './model'
+import { StatusFooter } from './TopBar'
+import { queueOf, reachOf, resumable, taskFacts, type Attention } from './model'
 import { ArchivePage } from './pages/ArchivePage'
 import { DebugPage } from './pages/DebugPage'
 import { BROWSER_LAN_KEY } from './agentBrowser'
@@ -15,25 +14,27 @@ import { GalleryPage } from './pages/GalleryPage'
 import { HomePage } from './pages/HomePage'
 import { LinearPage } from './pages/LinearPage'
 import { LogPage } from './pages/LogPage'
+import { SessionsPage } from './pages/SessionsPage'
 import { SettingsPage } from './pages/SettingsPage'
-import { HIDDEN_KEY, hiddenProjects, isRunning, nameForFolder, pickSession, projectFolders, projectsOf, savedProjects, scopeFor, scopeState } from '../../shared/projects'
-import { ProjectList } from './ProjectList'
-import { Dock, SHOW_TERMINAL } from './Dock'
-import { AgentBadge, ApprovalItem, History, NumberBadge, QueueItem, TaskItem, Toast, ToastProvider, useToastList } from './parts'
-import { Badge, Button, Chip, EmptyState, IconButton, Notice, TabList } from './ui'
-import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
+import { HIDDEN_KEY, hiddenProjects, isRunning, nameForFolder, pickSession, projectFolders, projectOfCwd, projectsOf, savedProjects } from '../../shared/projects'
+import { SHOW_TERMINAL, TerminalStage, agentChoices, useTerminals } from './Dock'
+import { History, Toast, ToastProvider, useToastList } from './parts'
+import { Button, Notice } from './ui'
 import { resendLeft, waitingIds } from './outbox'
 import { stalledSessions } from '../../shared/stall'
 import { limitedUntil } from '../../shared/limit'
-import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentTags, customAgents, projectAgents, showOtherAgents } from '../../shared/agents'
-import { HOME, activeTab, closeTab, openTab, pruneTabs, railActive, railPickFor, restoreTabs, tabKey, type Tab, type Tabs } from './tabs'
+import { CUSTOM_AGENTS_KEY, SHOW_OTHER_AGENTS_KEY, agentLabel, agentTags, customAgents, showOtherAgents } from '../../shared/agents'
+import { HOME, tabKey, type Tab } from './tabs'
 import { applyTheme } from './theme'
-import { countLabel } from './taskInfo'
 import { installSettingSaver, postSetting, saveSetting, settle, withPending, type Pending } from './settings'
-import { LOCALE_TAG, resolveLang, setLang, stageLabel, t, type Key } from '../../shared/i18n'
+import { LOCALE_TAG, resolveLang, setLang, stageLabel, t } from '../../shared/i18n'
 import { waitCount, waitParts } from './waiting'
 import { isHelpKey, isPaletteKey } from './shortcuts'
 import { OPEN_SETTINGS, ShortcutHelp, scrollToSection } from './flows'
+import { sessionRows, termKey, type SessionRow } from './sessions'
+import { Sidebar, rowStateText, type NavItem } from './Sidebar'
+import { SessionView, type NextUp } from './SessionView'
+import { Incoming } from './Incoming'
 
 const EMPTY: BridgeState = {
   sessions: [],
@@ -49,58 +50,25 @@ const EMPTY: BridgeState = {
   settings: {},
 }
 
-const TABS_KEY = 'claude-ide:tabs'
-const SCOPE_KEY = 'claude-ide:scope'
-
-type Section = 'home' | 'questions' | 'debug' | 'archive'
-
-const RAIL: { icon: IconName; label: Key | 'Linear'; section?: Section; tab?: Tab; dev?: boolean }[] = [
-  { icon: 'home', label: 'rail.home', section: 'home', tab: HOME },
-  { icon: 'question', label: 'rail.questions', section: 'questions' },
-  { icon: 'debug', label: 'rail.debug', section: 'debug', tab: { kind: 'debug' } },
-  { icon: 'archive', label: 'rail.archive', section: 'archive', tab: { kind: 'archive' } },
-  { icon: 'history', label: 'rail.history', tab: { kind: 'history' } },
-  { icon: 'log', label: 'rail.log', tab: { kind: 'log' } },
-  { icon: 'linear', label: 'Linear', tab: { kind: 'linear' } },
-  { icon: 'gallery', label: 'rail.gallery', tab: { kind: 'gallery' }, dev: true },
-  { icon: 'settings', label: 'rail.settings', tab: { kind: 'settings' } },
-]
-
-const TAB_ICON: Partial<Record<Tab['kind'], IconName>> = {
-  home: 'home',
-  question: 'question',
-  debug: 'debug',
-  archive: 'archive',
-  history: 'history',
-  log: 'log',
-  linear: 'linear',
-  settings: 'settings',
-  gallery: 'gallery',
-}
+// What the main area shows: home, one session (its sidebar row's key), or another screen.
+type Route = Tab | { kind: 'session'; key: string }
+const ROUTE_KEY = 'claude-ide:route'
 
 // The component gallery is for building the IDE: shown in development or when the settings ask for it.
 export function devMenuShown(settings: Record<string, unknown>): boolean {
   return import.meta.env.DEV || settings.devMenu === true
 }
 
-// Product names stay as they are in every language.
-const railLabel = (label: Key | 'Linear'): string => (label === 'Linear' ? label : t(label))
-
-function loadScope(): string | null {
+function loadRoute(): Route {
   try {
-    return localStorage.getItem(SCOPE_KEY) || null
+    const saved: unknown = JSON.parse(localStorage.getItem(ROUTE_KEY) ?? 'null')
+    return saved && typeof saved === 'object' && typeof (saved as Route).kind === 'string' ? (saved as Route) : HOME
   } catch {
-    return null
+    return HOME
   }
 }
 
-function loadTabs(): Tabs {
-  try {
-    return restoreTabs(JSON.parse(localStorage.getItem(TABS_KEY) ?? 'null'))
-  } catch {
-    return restoreTabs(null)
-  }
-}
+const routeKey = (route: Route): string => (route.kind === 'session' ? route.key : tabKey(route))
 
 export function App() {
   const [bridgeState, setState] = useState<BridgeState>(EMPTY)
@@ -135,15 +103,9 @@ export function App() {
       return reply.ok || reply.status === 409 || reply.status === 404
     })
   }, [connected])
-  const [tabs, setTabs] = useState<Tabs>(loadTabs)
-  const [section, setSection] = useState<Section>('home')
-  const [railPick, setRailPick] = useState<IconName | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [route, setRoute] = useState<Route>(loadRoute)
   const [palette, setPalette] = useState(false)
-  const [scope, setScope] = useState<string | null>(loadScope)
   const { toasts, show: toast, dismiss } = useToastList()
-  // Feature area: top bar toggles (dock, live refresh) and the node shown in the properties panel.
-  const [dockOpen, setDockOpen] = useState(true)
   const [live, setLive] = useState(true)
   const liveRef = useRef(true)
   // The notification click arrives through an effect that runs once; the ref keeps it calling the latest openQuestion.
@@ -220,18 +182,6 @@ export function App() {
     [writeSetting],
   )
 
-  // The top bar's play button opens a terminal in the dock, and the task view goes to one there;
-  // a closed dock would hold it out of sight.
-  useEffect(() => {
-    const open = () => setDockOpen(true)
-    window.addEventListener(OPEN_CLAUDE_SLOT, open)
-    window.addEventListener(SHOW_TERMINAL, open)
-    return () => {
-      window.removeEventListener(OPEN_CLAUDE_SLOT, open)
-      window.removeEventListener(SHOW_TERMINAL, open)
-    }
-  }, [])
-
   useEffect(() => {
     void refresh()
     void window.ide.connected().then(setConnected)
@@ -249,36 +199,15 @@ export function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(TABS_KEY, JSON.stringify(tabs))
+      localStorage.setItem(ROUTE_KEY, JSON.stringify(route))
     } catch {
       // per-viewer convenience only
     }
-  }, [tabs])
-
-  useEffect(() => {
-    try {
-      if (scope) localStorage.setItem(SCOPE_KEY, scope)
-      else localStorage.removeItem(SCOPE_KEY)
-    } catch {
-      // per-viewer convenience only
-    }
-  }, [scope])
+  }, [route])
 
   useEffect(() => {
     applyTheme(state.settings.theme)
   }, [state.settings.theme])
-
-  // Tabs of tasks or questions that are gone (archived, cleared) close by themselves.
-  useEffect(() => {
-    if (!loaded) return
-    setTabs(current =>
-      pruneTabs(current, tab => {
-        if (tab.kind === 'task') return state.tasks.some(t => t.id === tab.id)
-        if (tab.kind === 'question') return state.questions.some(q => q.id === tab.id)
-        return true
-      }),
-    )
-  }, [loaded, state.tasks, state.questions])
 
   // The shortcut list (? or ⌘/); shortcuts.ts names every key the app listens for.
   const [help, setHelp] = useState(false)
@@ -296,22 +225,8 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Opening a tab from anywhere moves the rail's light with it (tabs.ts railPickFor).
-  const open = useCallback((tab: Tab) => {
-    setTabs(current => openTab(current, tab))
-    setRailPick(railPickFor(RAIL, tab))
-  }, [])
-  // A task or question of another project would open as a hidden tab; the view follows it instead.
-  const openTask = (id: number) => {
-    setScope(current => scopeFor(current, state.tasks.find(t => t.id === id)?.project))
-    open({ kind: 'task', id })
-  }
-  const openQuestion = (id: number) => {
-    setScope(current => scopeFor(current, state.questions.find(q => q.id === id)?.project))
-    open({ kind: 'question', id })
-  }
-  openQuestionRef.current = openQuestion
-  // The settings tab, scrolled to one of its sections (the update chip, the first run's steps).
+  const open = useCallback((tab: Route) => setRoute(tab), [])
+  // The settings screen, scrolled to one of its sections (the update chip, the first run's steps).
   const openSettingsAt = useCallback(
     (id: string) => {
       open({ kind: 'settings' })
@@ -324,24 +239,60 @@ export function App() {
     window.addEventListener(OPEN_SETTINGS, go)
     return () => window.removeEventListener(OPEN_SETTINGS, go)
   }, [openSettingsAt])
-  // Everything waiting for the person, in one sidebar: permission asks, decisions, tasks to check.
-  const showWaiting = () => {
-    setRailPick('question')
-    setSection('questions')
-    setSidebarOpen(true)
-  }
-  // Everything in the sidebar, home, log and dock is seen through the chosen project.
-  const view = useMemo(() => scopeState(state, scope), [state, scope])
+
   const saved = useMemo(() => savedProjects(state.settings.projects), [state.settings.projects])
-  // Every project, for names and folders; the switcher leaves out the ones taken off the list.
+  // Every project, for names and folders; the sidebar leaves out the ones taken off the list.
   const allProjects = useMemo(() => projectsOf(state, saved), [state, saved])
   const hidden = useMemo(() => hiddenProjects(state.settings[HIDDEN_KEY]), [state.settings])
-  const projects = useMemo(() => allProjects.filter(p => !hidden.includes(p.name)), [allProjects, hidden])
+  // By name, so a project keeps its place in the sidebar however its sessions come and go.
+  const projects = useMemo(() => allProjects.filter(p => !hidden.includes(p.name)).sort((a, b) => a.name.localeCompare(b.name)), [allProjects, hidden])
   const hiddenPending = useMemo(() => Object.fromEntries(allProjects.filter(p => hidden.includes(p.name)).map(p => [p.name, p.pending])), [allProjects, hidden])
   const folders = useMemo(() => projectFolders(state.settings.projectFolders), [state.settings])
   // Feature area: agent CLIs other than Claude Code. Badges by session, and the person's own CLIs.
   const customs = useMemo(() => customAgents(state.settings[CUSTOM_AGENTS_KEY]), [state.settings])
   const tags = useMemo(() => agentTags(state.sessions, customs), [state.sessions, customs])
+
+  // A folder a terminal opened in becomes a project of its own in the sidebar.
+  const addProject = useCallback(
+    async (cwd: string) => {
+      // A folder taken off the list comes back when it is added again.
+      const name = nameForFolder(allProjects, cwd)
+      if (hidden.includes(name)) await updateSetting(HIDDEN_KEY, current => hiddenProjects(current).filter(h => h !== name))
+      if (saved.some(p => p.cwd === cwd)) return
+      await updateSetting('projects', current => {
+        const list = savedProjects(current)
+        return list.some(p => p.cwd === cwd) ? list : [...list, { name, cwd }]
+      })
+    },
+    [saved, allProjects, hidden, updateSetting],
+  )
+  const pickProject = async () => {
+    const cwd = await window.ide.pickFolder()
+    if (cwd) await addProject(cwd)
+  }
+
+  // The app's terminals. One just opened (+, resume, a ccr slot) shows at once.
+  const routeRef = useRef(route)
+  routeRef.current = route
+  const rowsRef = useRef<SessionRow[]>([])
+  const terminals = useTerminals({
+    onFolder: cwd => void addProject(cwd),
+    onOpened: (term: TermInfo) => setRoute({ kind: 'session', key: termKey(term.id) }),
+    slotFolder: () => {
+      const current = routeRef.current
+      return current.kind === 'session' ? (rowsRef.current.find(r => r.key === current.key)?.cwd ?? null) : null
+    },
+  })
+  useEffect(() => {
+    if (terminals.error) toast(terminals.error, 'bad')
+  }, [terminals.error, toast])
+  // The task view's "go to terminal" shows that terminal's session.
+  useEffect(() => {
+    const show = (event: Event) => setRoute({ kind: 'session', key: termKey(String((event as CustomEvent<string>).detail)) })
+    window.addEventListener(SHOW_TERMINAL, show)
+    return () => window.removeEventListener(SHOW_TERMINAL, show)
+  }, [])
+
   // A stall is time passing without events, so the check runs on a clock as well.
   const [clockNow, setClockNow] = useState(() => Date.now())
   useEffect(() => {
@@ -361,83 +312,51 @@ export function App() {
     () => taskFacts({ tasks: state.tasks, questions: state.questions, nodes: state.nodes, sessions: state.sessions, live: state.live }, stalled, limited, isRunning),
     [state.tasks, state.questions, state.nodes, state.sessions, state.live, stalled, limited],
   )
-  const attentionOfTask = (task: Task): Attention | null => facts.get(task.id)?.attention ?? null
-  const waitingTasks = useMemo(() => waitingFirst(view.tasks, task => facts.get(task.id)?.attention ?? null), [view.tasks, facts])
-  const taskItem = (task: Task, showProject: boolean) => (
-    <TaskItem
-      key={task.id}
-      task={task}
-      active={tabs.active === `task:${task.id}`}
-      openQuestions={facts.get(task.id)?.openQuestions ?? 0}
-      nodeCount={facts.get(task.id)?.nodeCount ?? 0}
-      agent={tags[task.session_id]}
-      attention={attentionOfTask(task)}
-      project={showProject ? task.project : undefined}
-      onClick={() => openTask(task.id)}
-    />
+  const attentionOfTask = (task: BridgeState['tasks'][number]): Attention | null => facts.get(task.id)?.attention ?? null
+  // The sidebar's rows (sessions.ts): every app terminal and every session that still matters.
+  const rows = useMemo(
+    () =>
+      sessionRows({
+        sessions: state.sessions,
+        live: state.live ?? [],
+        tasks: state.tasks,
+        questions: state.questions,
+        approvals: state.approvals ?? [],
+        terms: terminals.terms,
+        stalled,
+        limited,
+        projectOf: (cwd, fallback) => projectOfCwd(allProjects, cwd) ?? fallback,
+      }),
+    [state.sessions, state.live, state.tasks, state.questions, state.approvals, terminals.terms, stalled, limited, allProjects],
   )
-  const stalledRuns = useMemo(() => state.sessions.filter(s => stalled.has(s.id)), [state.sessions, stalled])
-  const { pending, held } = useMemo(() => queueOf(view.questions), [view.questions])
-  const pendingApprovals = (view.approvals ?? []).filter(a => a.status === 'pending')
-  // The one "waiting for me" count (waiting.ts): the rail badge, the top bar, the sidebar and the palette.
+  rowsRef.current = rows
+  // The one "waiting for me" count (waiting.ts): home in the sidebar and the palette.
   const wait = waitCount(state, attentionOfTask)
-  const waitHere = scope === null ? null : waitCount(view, attentionOfTask)
-  const waitShown = waitHere ?? wait
-  // Running tasks that need a look for a reason other than a question (those wait as questions).
-  const checkTasks = waitingTasks.waiting.filter(task => attentionOfTask(task) !== 'question')
   const reachOfQuestion = (q: Question) => reachOf(state.sessions.find(s => s.id === q.session_id), state.live ?? [])
   // A gone Claude session to open again; none while the bridge is away, as every session looks gone then.
   const resumeOf = (sessionId: string) => {
     const session = state.sessions.find(s => s.id === sessionId)
     return connected && resumable(session, state.live ?? []) ? session : undefined
   }
-  const inScope = (tab: Tab): boolean => {
-    if (scope === null) return true
-    if (tab.kind === 'task') return state.tasks.find(t => t.id === tab.id)?.project === scope
-    if (tab.kind === 'question') return state.questions.find(q => q.id === tab.id)?.project === scope
-    return true
+  const rowOfSession = (sessionId: string) => rows.find(r => r.session?.id === sessionId)
+  const openRow = (row: SessionRow) => setRoute({ kind: 'session', key: row.key })
+  // A question opens in its session when the sidebar has one, else on its own.
+  const openQuestion = (id: number) => {
+    const q = state.questions.find(one => one.id === id)
+    const row = q ? rowOfSession(q.session_id) : undefined
+    setRoute(row ? { kind: 'session', key: row.key } : { kind: 'question', id })
   }
-  const shownTabs = tabs.open.filter(inScope)
-  const active = inScope(activeTab(tabs)) ? activeTab(tabs) : HOME
-  const activeKey = tabKey(active)
-  // A tab opened at the far end of a full tab bar scrolls into sight.
-  const tabbarRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    tabbarRef.current?.querySelector('.tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [activeKey])
-  // Reports, syncs and Linear sends go to the newest session of the project in view, or nowhere.
-  const latestSession = useMemo(() => pickSession(state.sessions, scope), [state.sessions, scope])
+  openQuestionRef.current = openQuestion
+  const openTask = (id: number) => open({ kind: 'task', id })
+  // Reports, syncs and Linear sends go to the session in view, else the newest one.
+  const viewRow = route.kind === 'session' ? rows.find(r => r.key === route.key) : undefined
+  const latestSession = useMemo(() => viewRow?.session ?? pickSession(state.sessions, null), [viewRow, state.sessions])
   const showDev = devMenuShown(state.settings)
   // Linear comes through Orca's CLI; without Orca the screen could only show an error.
   const [linearOk, setLinearOk] = useState(false)
   useEffect(() => {
     void window.ide.linearAvailable?.().then(setLinearOk, () => setLinearOk(false))
   }, [])
-  const rail = RAIL.filter(r => (!r.dev || showDev) && (r.tab?.kind !== 'linear' || linearOk))
-  // The tab on screen, not the stored one: a tab of another project is hidden and home shows instead.
-  const railOn = railActive(rail, { picked: railPick, active: tabKey(active), section, sidebarOpen })
-
-  // A folder a terminal opened in becomes a project of its own in the switcher.
-  const addProject = useCallback(
-    async (cwd: string) => {
-      // A folder taken off the list comes back when it is added again.
-      const name = nameForFolder(allProjects, cwd)
-      if (hidden.includes(name)) await updateSetting(HIDDEN_KEY, current => hiddenProjects(current).filter(h => h !== name))
-      if (saved.some(p => p.cwd === cwd)) return
-      await updateSetting('projects', current => {
-        const list = savedProjects(current)
-        return list.some(p => p.cwd === cwd) ? list : [...list, { name, cwd }]
-      })
-    },
-    [saved, allProjects, hidden, updateSetting],
-  )
-  const pickProject = async () => {
-    const cwd = await window.ide.pickFolder()
-    if (!cwd) return
-    const name = nameForFolder(allProjects, cwd)
-    await addProject(cwd)
-    setScope(name)
-  }
 
   const command = useCallback(
     async (kind: CommandKind, payload: Record<string, unknown> = {}, sessionId = latestSession?.id) => {
@@ -452,56 +371,52 @@ export function App() {
     const id = latestSession?.id
     if ((await command(kind)) && id) toast(t(kind === 'report' ? 'app.askedReport' : 'app.askedSync', { id: id.slice(0, 8) }))
   }
+  const answerApproval = async (a: Approval, decision: 'allow' | 'deny' | 'terminal', note?: string) => {
+    const reply = await window.ide.approve(a.id, decision, note)
+    if (!reply.ok) toast(t('approval.answerFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
+  }
+  const launch = (cwd: string, choice: { kind: string; warn?: string; blocked?: boolean; title?: string; installed?: boolean }) => {
+    if (choice.installed === false || choice.blocked) return toast(choice.title ?? choice.warn ?? '', 'bad')
+    if (choice.warn) toast(choice.warn, 'info')
+    if (choice.kind !== 'shell' && choice.kind !== state.settings.defaultAgent) void saveSetting('defaultAgent', choice.kind)
+    void terminals.openIn(cwd, choice.kind)
+  }
 
-  // After an answer: close that question's tab and open the next one waiting, in this
-  // project first; when only another project has one, the view moves there.
-  const advance = useCallback(
-    async (fromId: number) => {
-      const fresh = await window.ide.state()
-      if (fresh) setState(fresh)
-      // An answer still waiting in the app (outbox.ts) is as good as given: not the next one.
-      const sending = waitingIds()
-      const all = (fresh?.questions ?? []).filter(q => !sending.has(q.id))
-      const next = nextAfter(scope === null ? all : all.filter(q => q.project === scope), fromId) ?? nextAfter(all, fromId)
-      if (next !== null) setScope(current => scopeFor(current, all.find(q => q.id === next)?.project))
-      setTabs(current => {
-        const closed = closeTab(current, `question:${fromId}`)
-        return next === null ? closed : openTab(closed, { kind: 'question', id: next })
-      })
-    },
-    [scope],
-  )
-
-  // Only the project in view; the label counts the same tasks.
+  // Only the done tasks; the label counts the same tasks.
   const archiveDone = useCallback(async () => {
-    const reply = await window.ide.bridge('POST', '/tasks/archive-done', scope === null ? {} : { project: scope })
+    const reply = await window.ide.bridge('POST', '/tasks/archive-done', {})
     if (!reply.ok) return toast(t('app.archiveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
     toast(t('app.archivedDone', { n: Number(reply.json.count ?? 0) }))
-  }, [scope, toast])
-
+  }, [toast])
   const restore = async (id: number) => {
     const reply = await window.ide.bridge('POST', `/tasks/${id}/restore`)
     toast(reply.ok ? t('app.restored') : t('app.restoreFailed', { error: String(reply.json.error ?? reply.status) }), reply.ok ? 'good' : 'bad')
   }
 
-  const doneCount = view.tasks.filter(t => t.stage === '완료').length
+  const doneCount = state.tasks.filter(task => task.stage === '완료').length
   // Never connected yet: the empty lists say nothing about the data, so they say so.
   const offline = connected === false && !loaded
   const sessionHint = latestSession ? t('app.sessionHint', { id: latestSession.id.slice(0, 8), project: latestSession.project }) : undefined
+  const choices = agentChoices(terminals.found, customs, showOtherAgents(state.settings[SHOW_OTHER_AGENTS_KEY]), typeof state.settings.defaultAgent === 'string' ? state.settings.defaultAgent : undefined)
+
+  // The other screens, at the bottom of the sidebar and in the palette.
+  const nav: NavItem[] = [
+    { icon: 'debug' as const, label: t('rail.debug'), key: 'debug', onOpen: () => open({ kind: 'debug' }) },
+    { icon: 'sessions' as const, label: t('rail.sessions'), key: 'sessions', onOpen: () => open({ kind: 'sessions' }) },
+    { icon: 'history' as const, label: t('rail.history'), key: 'history', onOpen: () => open({ kind: 'history' }) },
+    { icon: 'log' as const, label: t('rail.log'), key: 'log', onOpen: () => open({ kind: 'log' }) },
+    { icon: 'archive' as const, label: t('rail.archive'), key: 'archive', onOpen: () => open({ kind: 'archive' }) },
+    ...(linearOk ? [{ icon: 'linear' as const, label: 'Linear', key: 'linear', onOpen: () => open({ kind: 'linear' }) }] : []),
+    ...(showDev ? [{ icon: 'gallery' as const, label: t('rail.gallery'), key: 'gallery', onOpen: () => open({ kind: 'gallery' }) }] : []),
+  ]
 
   // Built only while the palette is open; a busy bridge redraws the app many times a second.
   const paletteItems = (): PaletteItem[] => [
+    ...rows.map(row => ({ id: `s${row.key}`, group: t('palette.groupSession'), label: row.title, hint: [row.project, agentLabel(row.agent, customs), rowStateText(row)].filter(Boolean).join(', '), run: () => openRow(row) })),
     ...state.tasks.map(task => ({ id: `t${task.id}`, group: t('palette.groupTask'), label: task.title, hint: `${task.project}, ${stageLabel(task.stage)}`, run: () => openTask(task.id) })),
-    ...(scope !== null ? [{ id: 'r*', group: t('palette.groupProject'), label: t('palette.allProjects'), run: () => setScope(null) }] : []),
     ...projects
-      .filter(p => p.name !== scope)
-      .map(p => ({
-        id: `r${p.name}`,
-        group: t('palette.groupProject'),
-        label: t('palette.goProject', { name: p.name }),
-        hint: p.cwd ? p.cwd.replace(/^\/Users\/[^/]+/, '~') : undefined,
-        run: () => setScope(p.name),
-      })),
+      .filter(p => p.cwd)
+      .map(p => ({ id: `n${p.name}`, group: t('palette.groupProject'), label: t('palette.newClaude', { name: p.name }), hint: p.cwd.replace(/^\/Users\/[^/]+/, '~'), run: () => launch(p.cwd, choices[0] ?? { kind: 'claude' }) })),
     ...state.questions.map(q => ({
       id: `q${q.id}`,
       group: t('palette.groupQuestion'),
@@ -509,14 +424,9 @@ export function App() {
       hint: t(q.status === 'pending' ? 'palette.qPending' : q.status === 'held' ? 'palette.qHeld' : 'palette.qAnswered'),
       run: () => openQuestion(q.id),
     })),
-    {
-      id: 'p-waiting',
-      group: t('palette.groupScreen'),
-      label: t('wait.paletteLabel'),
-      hint: [countLabel(t('wait.label'), wait.total, waitHere ? waitHere.total : null), waitParts(waitShown)].filter(Boolean).join(', '),
-      run: showWaiting,
-    },
-    ...rail.filter(r => r.tab).map(r => ({ id: `p${r.label}`, group: t('palette.groupScreen'), label: railLabel(r.label), run: () => open(r.tab!) })),
+    { id: 'p-home', group: t('palette.groupScreen'), label: t('rail.home'), hint: waitParts(wait), run: () => open(HOME) },
+    ...nav.map(item => ({ id: `p${item.key}`, group: t('palette.groupScreen'), label: item.label, run: item.onOpen })),
+    { id: 'p-settings', group: t('palette.groupScreen'), label: t('rail.settings'), run: () => open({ kind: 'settings' }) },
     { id: 'p-keys', group: t('palette.groupScreen'), label: t('keys.title'), hint: '?', run: () => setHelp(true) },
     {
       id: 'a-archive',
@@ -526,6 +436,7 @@ export function App() {
       disabled: doneCount === 0 ? t('palette.noDone') : undefined,
       run: () => void archiveDone(),
     },
+    { id: 'a-live', group: t('palette.groupAction'), label: live ? t('palette.pauseLive') : t('palette.resumeLive'), run: toggleLive },
     { id: 'a-report', group: t('palette.groupAction'), label: t('palette.report'), hint: sessionHint, disabled: latestSession ? undefined : NO_SESSION, run: () => void ask('report') },
     {
       id: 'a-sync',
@@ -537,39 +448,66 @@ export function App() {
     },
   ]
 
-  const tabTitle = (tab: Tab): string => {
-    if (tab.kind === 'task') return state.tasks.find(t => t.id === tab.id)?.title ?? t('tab.task')
-    if (tab.kind === 'question') return `Q${tab.id}`
-    const rail = RAIL.find(r => r.tab && tabKey(r.tab) === tabKey(tab))
-    return rail ? railLabel(rail.label) : t('rail.home')
+  const logTasks = useMemo(() => [...state.tasks, ...state.archived], [state.tasks, state.archived])
+  const peersOf = (sessionId: string) =>
+    state.sessions
+      .filter(s => s.id !== sessionId && (state.live ?? []).includes(s.id))
+      .map(s => {
+        const task = state.tasks.find(one => one.session_id === s.id && isRunning(one))
+        return { id: s.id, name: s.project, label: `${s.project}${s.agent && s.agent !== 'claude' ? ` (${s.agent})` : ''}${task ? `: ${task.title}` : ''}` }
+      })
+  // What waits elsewhere once the session in view has nothing to answer: the oldest question, else permission ask.
+  const nextUp = (current: SessionRow): NextUp | null => {
+    const sending = waitingIds()
+    const questions = queueOf(state.questions).pending.filter(q => !sending.has(q.id) && q.session_id !== current.session?.id)
+    const asks = (state.approvals ?? []).filter(a => a.status === 'pending' && a.session_id !== current.session?.id)
+    const count = questions.length + asks.length
+    const q = questions[0]
+    if (q) return { count, kind: 'question', title: q.question, where: rowOfSession(q.session_id)?.title ?? q.project, go: () => openQuestion(q.id) }
+    const a = asks[0]
+    if (!a) return null
+    const row = rowOfSession(a.session_id)
+    return { count, kind: 'approval', title: a.tool, where: row?.title ?? a.project, go: () => (row ? openRow(row) : open(HOME)) }
   }
 
-  const logTasks = useMemo(() => [...state.tasks, ...state.archived], [state.tasks, state.archived])
-
-  const renderPage = (tab: Tab) => {
-    if (tab.kind === 'home')
+  const renderPage = (page: Route) => {
+    if (page.kind === 'session') {
+      if (!viewRow) return null
       return (
-        <HomePage
-          state={view}
-          badges={tags}
+        <SessionView
+          key={viewRow.key}
+          row={viewRow}
+          customs={customs}
+          nodes={viewRow.task ? state.nodes.filter(n => n.task_id === viewRow.task!.id) : []}
+          events={state.events}
+          tasks={logTasks}
+          agents={tags}
+          reach={viewRow.session ? reachOf(viewRow.session, state.live ?? []) : 'unknown'}
+          resume={viewRow.session && !viewRow.term ? resumeOf(viewRow.session.id) : undefined}
+          peers={viewRow.session ? peersOf(viewRow.session.id) : []}
+          next={nextUp(viewRow)}
+          keysAnywhere={state.settings[DECISION_KEYS_KEY] === true}
           onOpenTask={openTask}
-          onOpenQuestion={openQuestion}
-          onOpenQueue={() => {
-            setRailPick('question')
-            setSection('questions')
-            setSidebarOpen(true)
-            if (pending[0]) openQuestion(pending[0].id)
-          }}
-          onOpenHistory={() => open({ kind: 'history' })}
-          onPickFolder={() => void pickProject()}
-          onAnswerApproval={async (id, decision, note) => {
-            const reply = await window.ide.approve(id, decision, note)
-            if (!reply.ok) toast(t('approval.answerFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
-          }}
+          onCloseTerm={id => void terminals.close(id).then(() => setRoute(HOME))}
+          onAnswerApproval={(a, decision, note) => void answerApproval(a, decision, note)}
         />
       )
-    if (tab.kind === 'task') {
-      const task = state.tasks.find(t => t.id === tab.id)
+    }
+    if (page.kind === 'home')
+      return (
+        <HomePage
+          state={state}
+          rows={rows}
+          customs={customs}
+          resumeOf={resumeOf}
+          onOpenRow={openRow}
+          onOpenQuestion={openQuestion}
+          onPickFolder={() => void pickProject()}
+          onAnswerApproval={(a, decision, note) => void answerApproval(a, decision, note)}
+        />
+      )
+    if (page.kind === 'task') {
+      const task = state.tasks.find(one => one.id === page.id)
       if (!task) return null
       return (
         <TaskView
@@ -588,10 +526,10 @@ export function App() {
         />
       )
     }
-    if (tab.kind === 'question') {
-      const q = state.questions.find(one => one.id === tab.id)
+    if (page.kind === 'question') {
+      const q = state.questions.find(one => one.id === page.id)
       if (!q) return null
-      const task = state.tasks.find(t => t.session_id === q.session_id && t.title === q.task_title)
+      const task = state.tasks.find(one => one.session_id === q.session_id && one.title === q.task_title)
       return (
         <QuestionCard
           key={q.id}
@@ -600,299 +538,120 @@ export function App() {
           sessionProject={state.sessions.find(s => s.id === q.session_id)?.project ?? q.project}
           reach={reachOfQuestion(q)}
           resume={resumeOf(q.session_id)}
-          peers={state.sessions
-            .filter(s => s.id !== q.session_id && (state.live ?? []).includes(s.id))
-            .map(s => {
-              const task = state.tasks.find(one => one.session_id === s.id && isRunning(one))
-              return { id: s.id, name: s.project, label: `${s.project}${s.agent && s.agent !== 'claude' ? ` (${s.agent})` : ''}${task ? `: ${task.title}` : ''}` }
-            })}
-          onDone={() => void advance(q.id)}
+          peers={peersOf(q.session_id)}
+          onDone={() => open(HOME)}
           onReopen={() => openQuestion(q.id)}
           onOpenTask={task ? () => openTask(task.id) : null}
           keysAnywhere={state.settings[DECISION_KEYS_KEY] === true}
         />
       )
     }
-    if (tab.kind === 'history') return <History questions={view.questions} onOpen={openQuestion} />
-    if (tab.kind === 'archive') return <ArchivePage archived={view.archived} onRestore={id => void restore(id)} />
-    if (tab.kind === 'log') return <LogPage events={view.events} tasks={logTasks} agents={tags} />
-    if (tab.kind === 'linear') return <LinearPage sessions={view.sessions} />
-    if (tab.kind === 'settings') return <SettingsPage settings={state.settings} routines={state.routines} runs={state.routineRuns} projects={allProjects} />
-    if (tab.kind === 'gallery') return showDev ? <GalleryPage /> : null
+    if (page.kind === 'history') return <History questions={state.questions} onOpen={openQuestion} />
+    if (page.kind === 'archive') return <ArchivePage archived={state.archived} onRestore={id => void restore(id)} />
+    if (page.kind === 'log') return <LogPage events={state.events} tasks={logTasks} agents={tags} />
+    if (page.kind === 'sessions') return <SessionsPage running={state.live ?? []} />
+    if (page.kind === 'linear') return <LinearPage sessions={state.sessions} />
+    if (page.kind === 'settings') return <SettingsPage settings={state.settings} routines={state.routines} runs={state.routineRuns} projects={allProjects} />
+    if (page.kind === 'gallery') return showDev ? <GalleryPage /> : null
     return null
   }
 
+  // The task view lights the row of the session the task belongs to.
+  const taskRow = route.kind === 'task' ? rowOfSession(state.tasks.find(one => one.id === route.id)?.session_id ?? '') : undefined
+  const activeKey = route.kind === 'session' && !viewRow ? 'home' : (taskRow?.key ?? routeKey(route))
+  const sessionMode = route.kind === 'session' && !!viewRow
+  const watching = viewRow?.session?.id ?? null
+  // Home lists every question, so nothing pops up there.
+  const pendingAll = useMemo(() => queueOf(state.questions).pending, [state.questions])
+
   return (
     <ToastProvider value={toast}>
-      <div className={`shell ${sidebarOpen ? '' : 'sidebar-closed'} ${dockOpen ? '' : 'dock-closed'}`}>
-        <TopBar
-          state={state}
-          scoped={scope ? view : null}
-          live={live}
-          onToggleLive={toggleLive}
-          onToggleSidebar={() => setSidebarOpen(open => !open)}
-          onToggleDock={() => setDockOpen(open => !open)}
-          connected={connected === true}
+      <div className="shell">
+        <Sidebar
+          rows={rows}
+          projects={projects}
+          hidden={hidden}
+          hiddenPending={hiddenPending}
+          folders={folders}
+          customs={customs}
+          choices={choices}
+          active={activeKey}
+          waiting={wait.total}
+          nav={nav}
+          onHome={() => open(HOME)}
           onSearch={() => setPalette(true)}
-          onReport={() => void ask('report')}
-          onQuestions={showWaiting}
-          wait={wait}
-          waitScoped={waitHere}
-          onOpenUpdate={() => openSettingsAt('settings-update')}
+          onOpenRow={openRow}
+          onLaunch={launch}
+          onAddProject={() => void pickProject()}
+          update={(key, change) => void updateSetting(key, change)}
+          footer={
+            <StatusFooter
+              state={state}
+              connected={connected === true}
+              live={live}
+              onToggleLive={toggleLive}
+              onReport={() => void ask('report')}
+              onOpenUpdate={() => openSettingsAt('settings-update')}
+              onSettings={() => open({ kind: 'settings' })}
+            />
+          }
         />
 
-        <nav className="rail">
-          {rail.map(item => (
-            <IconButton
-              key={item.label}
-              icon={item.icon}
-              size="lg"
-              label={railLabel(item.label)}
-              data-rail={item.icon}
-              className="rail-button"
-              on={item.icon === railOn}
-              aria-current={item.icon === railOn ? 'page' : undefined}
-              badge={
-                item.section === 'questions' &&
-                waitShown.total > 0 && (
-                  <Badge shape="count" tone="warn" className="rail-badge" title={waitParts(waitShown)}>
-                    {waitShown.total}
-                  </Badge>
-                )
-              }
-              onClick={() => {
-                setRailPick(item.icon)
-                if (item.section) {
-                  setSidebarOpen(item.section === section ? !sidebarOpen : true)
-                  setSection(item.section)
-                }
-                if (item.tab) open(item.tab)
-              }}
-            />
-          ))}
-        </nav>
-
-        {sidebarOpen && (
-          <aside className="sidebar">
-            <IconButton icon="collapse" size="sm" label={t('sidebar.collapse')} className="sidebar-close" onClick={() => setSidebarOpen(false)} />
-            <ProjectList
-              projects={projects}
-              hidden={hidden}
-              hiddenPending={hiddenPending}
-              folders={folders}
-              scope={scope}
-              totals={{ running: state.tasks.filter(isRunning).length, pending: state.questions.filter(q => q.status === 'pending').length }}
-              badges={name => projectAgents(state.sessions, tags, name).map(tag => <AgentBadge key={tag.kind} tag={tag} />)}
-              onScope={setScope}
-              onAddProject={() => void pickProject()}
-              update={(key, change) => void updateSetting(key, change)}
-            />
-            {section === 'home' && offline && (
-              <section>
-                <h2>{t('sidebar.tasks')}</h2>
-                <EmptyState>{t('sidebar.offline')}</EmptyState>
-              </section>
-            )}
-            {section === 'home' && !offline && (
-              <section>
-                <h2>{t('sidebar.tasks')}</h2>
-                <div className="sidebar-meta">
-                  <span className="quiet small">
-                    {t('sidebar.taskCounts', { running: view.tasks.filter(isRunning).length, done: doneCount })}
-                  </span>
-                  {doneCount > 0 && (
-                    <Button variant="link" size="sm" onClick={() => void archiveDone()}>
-                      {t('sidebar.archiveDone', { n: doneCount })}
-                    </Button>
-                  )}
-                </div>
-                {view.tasks.length === 0 && (
-                  <EmptyState>
-                    <span title={t('sidebar.noTasksTitle')}>{t('sidebar.noTasks')}</span>
-                  </EmptyState>
-                )}
-                {/* Stays at zero too, so the place to look is always in the same spot. */}
-                <div className="project waiting-group">
-                  <h3>{t('sidebar.waiting', { n: waitShown.total })}</h3>
-                  {waitShown.total === 0 ? (
-                    <EmptyState className="small wait-empty">{t('wait.none')}</EmptyState>
-                  ) : (
-                    <Button variant="link" size="sm" className="wait-parts" onClick={showWaiting}>
-                      {waitParts(waitShown)}
-                    </Button>
-                  )}
-                  {waitingTasks.waiting.map(task => taskItem(task, scope === null))}
-                </div>
-                {tasksByProject(waitingTasks.rest).map(([project, list]) => (
-                  <div key={project} className="project">
-                    <h3>{project}</h3>
-                    {list.map(task => taskItem(task, false))}
-                  </div>
-                ))}
-              </section>
-            )}
-            {section === 'questions' && pendingApprovals.length > 0 && (
-              <section className="approvals">
-                <h2>
-                  {t('approval.title')} <span className="count warn">{pendingApprovals.length}</span>
-                </h2>
-                {pendingApprovals.map(a => (
-                  <ApprovalItem
-                    key={a.id}
-                    a={a}
-                    onAnswer={async (decision, note) => {
-                      const reply = await window.ide.approve(a.id, decision, note)
-                      if (!reply.ok) toast(t('approval.answerFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
-                    }}
-                  />
-                ))}
-              </section>
-            )}
-            {section === 'questions' && checkTasks.length > 0 && (
-              <section className="check-tasks">
-                <h2>
-                  {t('wait.tasksHead')} <span className="count warn">{checkTasks.length}</span>
-                </h2>
-                {checkTasks.map(task => taskItem(task, scope === null))}
-              </section>
-            )}
-            {section === 'questions' && (
-              <section>
-                <h2>
-                  {t('rail.questions')} <span className="count">{pending.length}</span>
-                </h2>
-                {pending.length === 0 && <EmptyState>{t('sidebar.noQuestions')}</EmptyState>}
-                {pending.map(q => (
-                  <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} gone={reachOfQuestion(q) === 'gone'} onClick={() => openQuestion(q.id)} />
-                ))}
-                <Button variant="link" className="mt-sm" onClick={() => open({ kind: 'history' })}>
-                  {t('rail.history')} <span className="count">{view.answeredCount}</span>
-                </Button>
-                {held.length > 0 && (
-                  <>
-                    <h3>{t('sidebar.held', { n: held.length })}</h3>
-                    {held.map(q => (
-                      <QueueItem key={q.id} q={q} active={tabs.active === `question:${q.id}`} gone={reachOfQuestion(q) === 'gone'} onClick={() => openQuestion(q.id)} />
-                    ))}
-                  </>
-                )}
-              </section>
-            )}
-            {section === 'debug' && <DebugPanel sessions={state.sessions} settings={state.settings} scope={scope} />}
-            {section === 'archive' && (
-              <section>
-                <h2>
-                  {t('rail.archive')} <span className="count">{view.archived.length}</span>
-                </h2>
-                {view.archived.length === 0 && <EmptyState>{t('sidebar.noArchived')}</EmptyState>}
-                {view.archived.slice(0, 30).map(task => (
-                  <div key={task.id} className="archived-row small">
-                    <span className="archived-title">{task.title}</span>
-                    <Button variant="link" size="sm" onClick={() => void restore(task.id)}>
-                      {t('sidebar.restore')}
-                    </Button>
-                  </div>
-                ))}
-              </section>
-            )}
-          </aside>
-        )}
-
-        <div className="tabbar" ref={tabbarRef}>
-          {!sidebarOpen && (
-            <div className="tabbar-scope">
-              <IconButton icon="expand" size="sm" label={t('tabbar.expand')} className="tabbar-expand" onClick={() => setSidebarOpen(true)} />
-              <Chip className="scope-chip" title={t('tabbar.changeProject')} onClick={() => setSidebarOpen(true)}>
-                {scope ?? t('sidebar.all')}
-              </Chip>
-            </div>
-          )}
-          <TabList
-            label={t('tabbar.label')}
-            active={activeKey}
-            onSelect={key => setTabs(current => ({ ...current, active: key }))}
-            items={shownTabs.map(tab => {
-              const key = tabKey(tab)
-              const task = tab.kind === 'task' ? state.tasks.find(t => t.id === tab.id) : undefined
-              const icon = TAB_ICON[tab.kind]
-              const title = tabTitle(tab)
-              return {
-                key,
-                label: (
-                  <>
-                    {task ? <NumberBadge task={task} /> : icon && <Icon name={icon} size="sm" />}
-                    <span className="tab-title">{title}</span>
-                  </>
-                ),
-                close: tab.kind === 'home' ? undefined : { label: t('tabbar.close', { title }), onClose: () => setTabs(current => closeTab(current, key)) },
-              }
-            })}
-          />
-        </div>
-
-        <main className="main">
-          {connected === true && !live && (
-            <Notice tone="warn" bar className="paused-note">
-              <span className="small">
-                {t('app.paused')}{' '}
-                <Button variant="link" size="sm" onClick={toggleLive}>
-                  {t('app.resumeLive')}
-                </Button>
-              </span>
-            </Notice>
-          )}
-          {connected === false && (
-            <Notice tone="error" bar title={t('app.disconnected')} className="disconnected">
-              <span className="small">{loaded ? t('app.disconnectedStale') : t('app.disconnectedEmpty')}</span>
-              {problem && (
-                <span className="small block-line">
-                  {t('app.bridgeLast', { line: problem.last || '-' })}{' '}
-                  <Button variant="link" size="sm" onClick={() => void window.ide.openBridgeLog()}>
-                    {t('app.openBridgeLog')}
+        <main className={`main ${sessionMode ? 'session-mode' : ''} ${route.kind === 'debug' ? 'browser-mode' : ''}`}>
+          <div className="main-notices">
+            {connected === true && !live && (
+              <Notice tone="warn" bar className="paused-note">
+                <span className="small">
+                  {t('app.paused')}{' '}
+                  <Button variant="link" size="sm" onClick={toggleLive}>
+                    {t('app.resumeLive')}
                   </Button>
                 </span>
-              )}
-            </Notice>
+              </Notice>
+            )}
+            {connected === false && (
+              <Notice tone="error" bar title={t('app.disconnected')} className="disconnected">
+                <span className="small">{loaded ? t('app.disconnectedStale') : t('app.disconnectedEmpty')}</span>
+                {problem && (
+                  <span className="small block-line">
+                    {t('app.bridgeLast', { line: problem.last || '-' })}{' '}
+                    <Button variant="link" size="sm" onClick={() => void window.ide.openBridgeLog()}>
+                      {t('app.openBridgeLog')}
+                    </Button>
+                  </span>
+                )}
+              </Notice>
+            )}
+          </div>
+          {route.kind === 'debug' && (
+            <aside className="browser-side">
+              <DebugPanel sessions={state.sessions} settings={state.settings} />
+            </aside>
           )}
-          {/* The browser stays mounted so its page and comments survive tab switches. */}
-          <DebugPage
-            sessions={state.sessions}
-            visible={active.kind === 'debug'}
-            scope={scope}
-            lan={state.settings[BROWSER_LAN_KEY] === true}
-            onShow={() => {
-              open({ kind: 'debug' })
-              setRailPick('debug')
-              setSection('debug')
-              setSidebarOpen(true)
-            }}
-          />
-          {active.kind !== 'debug' && (loaded || connected !== false) && renderPage(active)}
+          {/* The browser stays mounted so its page and comments survive switching screens. */}
+          <DebugPage sessions={state.sessions} visible={route.kind === 'debug'} lan={state.settings[BROWSER_LAN_KEY] === true} onShow={() => open({ kind: 'debug' })} />
+          {/* Every terminal stays mounted too; the session view shows its own between its header and answers. */}
+          <TerminalStage terms={terminals.terms} shown={sessionMode && viewRow?.term ? viewRow.term.id : null} themeKey={String(state.settings.theme ?? '')} />
+          {route.kind !== 'debug' && (loaded || connected !== false) && (offline && route.kind === 'home' ? null : renderPage(sessionMode || route.kind !== 'session' ? route : HOME))}
         </main>
-
-        <Dock
-          events={view.events}
-          tasks={logTasks}
-          scope={scope}
-          projects={projects}
-          themeKey={String(state.settings.theme ?? '')}
-          logShown={active.kind === 'log'}
-          emptyLog={offline ? t('app.offlineLog') : undefined}
-          onExpandLog={() => open({ kind: 'log' })}
-          onFolder={cwd => void addProject(cwd)}
-          agents={tags}
-          stalledSessions={stalledRuns}
-          customs={customs}
-          showOthers={showOtherAgents(state.settings[SHOW_OTHER_AGENTS_KEY])}
-          defaultAgent={typeof state.settings.defaultAgent === 'string' ? state.settings.defaultAgent : undefined}
-          onDefaultAgent={kind => void saveSetting('defaultAgent', kind)}
-        />
 
         {palette && <Palette items={paletteItems()} onClose={() => setPalette(false)} />}
         {help && <ShortcutHelp keysAnywhere={state.settings[DECISION_KEYS_KEY] === true} onClose={() => setHelp(false)} />}
-        <PropsPanel tab={active} state={state} node={pickedNode} />
+        {route.kind === 'task' && <PropsPanel tab={route} state={state} node={pickedNode} />}
+        <Incoming
+          pending={pendingAll}
+          ready={loaded}
+          watching={watching}
+          quiet={route.kind === 'home'}
+          where={q => {
+            const row = rowOfSession(q.session_id)
+            return row ? `${row.title}, ${row.project}` : q.project
+          }}
+          onOpen={q => openQuestion(q.id)}
+        />
         <Toast toasts={toasts} onDismiss={dismiss} />
       </div>
     </ToastProvider>
   )
 }
+

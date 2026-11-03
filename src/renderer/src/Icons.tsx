@@ -12,6 +12,9 @@ const PATHS = {
   gallery: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   linear: 'M4 15l5 5M4 10l10 10M5 6l13 13M9 4l11 11M14 4l6 6',
   search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.3-4.3',
+  plus: 'M12 5v14M5 12h14',
+  terminal: 'M3 5h18v14H3zM7 10l3 2-3 2M12 15h5',
+  sessions: 'M4 5h16M4 12h16M4 19h10M18 17l2 2-2 2',
   // Chevrons: collapse points left, expand right; up and down for menus and folds.
   collapse: 'M15 6l-6 6 6 6',
   expand: 'M9 6l6 6-6 6',

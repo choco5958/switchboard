@@ -16,31 +16,53 @@ import {
   type ProjectInfo,
 } from '../../shared/projects'
 
-// The project switcher at the top of the sidebar: every project, the folders the person sorts
-// them into (each opens and closes), and the projects taken off the list. A project moves by
+// The projects in the sidebar, each with its session rows under it (renderRows) and a button to
+// open a new session in it (renderAdd); a project opens and closes with a click. The folders the
+// person sorts them into open and close too, and projects taken off the list. A project moves by
 // dragging it onto a folder or through its ⋯ menu (also on right-click). Keys: F2 renames a
 // focused folder and Delete (or Backspace) deletes it, Delete takes a focused project off the
 // list, and the menu (ui.tsx Menu) takes arrows and Esc and hands focus back.
 
 const DRAG_TYPE = 'application/x-switchboard-project'
 
+const CLOSED_KEY = 'claude-ide:closed-projects'
+
+function loadClosed(): string[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(CLOSED_KEY) ?? '[]')
+    return Array.isArray(saved) ? saved.filter((n): n is string => typeof n === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 type Props = {
   projects: ProjectInfo[]
   hidden: string[]
   folders: ProjectFolder[]
-  scope: string | null
-  totals: { running: number; pending: number }
-  badges: (name: string) => ReactNode
+  renderRows: (project: ProjectInfo) => ReactNode
+  renderAdd: (project: ProjectInfo) => ReactNode
   // Decisions waiting in each project taken off the list, so they are not missed.
   hiddenPending?: Record<string, number>
-  onScope: (name: string | null) => void
   onAddProject: () => void
   // A change built on the latest saved value of the setting (writes still on their way included).
   update: (key: string, change: (current: unknown) => unknown) => void
 }
 
-export function ProjectList({ projects, hidden, folders, scope, totals, badges, hiddenPending = {}, onScope, onAddProject, update }: Props) {
+export function ProjectList({ projects, hidden, folders, renderRows, renderAdd, hiddenPending = {}, onAddProject, update }: Props) {
   const toast = useToast()
+  // Projects folded shut, kept per viewer.
+  const [closed, setClosed] = useState<string[]>(loadClosed)
+  const fold = (name: string) =>
+    setClosed(current => {
+      const next = current.includes(name) ? current.filter(n => n !== name) : [...current, name]
+      try {
+        localStorage.setItem(CLOSED_KEY, JSON.stringify(next))
+      } catch {
+        // per-viewer convenience only
+      }
+      return next
+    })
   // `p:<name>` or `f:<id>`: whose ⋯ menu is open.
   const [menu, setMenu] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
@@ -71,16 +93,8 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
   const move = (name: string, folderId: string | null) => changeFolders(current => moveToFolder(current, name, folderId))
   const unhide = (name: string) => update(HIDDEN_KEY, current => hiddenProjects(current).filter(h => h !== name))
   const hide = (name: string) => {
-    const wasScope = scope === name
     update(HIDDEN_KEY, current => [...hiddenProjects(current).filter(h => h !== name), name])
-    if (wasScope) onScope(null)
-    toast(t('sidebar.hiddenToast', { name }), 'info', {
-      label: t('common.undo'),
-      run: () => {
-        unhide(name)
-        if (wasScope) onScope(name)
-      },
-    })
+    toast(t('sidebar.hiddenToast', { name }), 'info', { label: t('common.undo'), run: () => unhide(name) })
   }
   const ungroup = (folder: ProjectFolder) => {
     const index = folders.findIndex(f => f.id === folder.id)
@@ -120,56 +134,61 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
   )
 
   const projectRow = (p: ProjectInfo, folder: ProjectFolder | null) => (
-    <div key={p.name} className="project-line" ref={menu === `p:${p.name}` ? menuRow : undefined}>
-      <button
-        type="button"
-        className={cx('row project-row', scope === p.name && 'on', folder && 'in-folder')}
-        aria-current={scope === p.name ? 'true' : undefined}
-        title={p.cwd || p.name}
-        draggable
-        onDragStart={event => {
-          event.dataTransfer.setData(DRAG_TYPE, p.name)
-          event.dataTransfer.effectAllowed = 'move'
-        }}
-        onDragEnd={() => setDropOn(null)}
-        onClick={() => onScope(p.name)}
-        onContextMenu={openMenuAt(`p:${p.name}`)}
-        onKeyDown={event => {
-          if (event.key === 'Delete') {
-            event.preventDefault()
-            hide(p.name)
-          }
-        }}
-      >
-        <span className="project-name">{p.name}</span>
-        {badges(p.name)}
-        {p.running > 0 && <span className="quiet small project-running">{t('sidebar.running', { n: p.running })}</span>}
-        {p.pending > 0 && (
-          <span className="count warn" title={t('sidebar.pendingTitle', { n: p.pending })}>
-            {p.pending}
+    <div key={p.name} className="project-block">
+      <div className="project-line" ref={menu === `p:${p.name}` ? menuRow : undefined}>
+        <button
+          type="button"
+          className={cx('row project-row', folder && 'in-folder')}
+          aria-expanded={!closed.includes(p.name)}
+          title={p.cwd || p.name}
+          draggable
+          onDragStart={event => {
+            event.dataTransfer.setData(DRAG_TYPE, p.name)
+            event.dataTransfer.effectAllowed = 'move'
+          }}
+          onDragEnd={() => setDropOn(null)}
+          onClick={() => fold(p.name)}
+          onContextMenu={openMenuAt(`p:${p.name}`)}
+          onKeyDown={event => {
+            if (event.key === 'Delete') {
+              event.preventDefault()
+              hide(p.name)
+            }
+          }}
+        >
+          <span className={`folder-chevron ${closed.includes(p.name) ? '' : 'open'}`}>
+            <Icon name="expand" size="sm" />
           </span>
+          <span className="project-name">{p.name}</span>
+          {closed.includes(p.name) && p.pending > 0 && (
+            <span className="count warn" title={t('sidebar.pendingTitle', { n: p.pending })}>
+              {p.pending}
+            </span>
+          )}
+        </button>
+        {renderAdd(p)}
+        {moreButton(`p:${p.name}`, t('sidebar.projectMenu'))}
+        {menu === `p:${p.name}` && (
+          <Menu label={t('sidebar.projectMenu')} className="row-menu" within={menuRow} onClose={() => setMenu(null)}>
+            {folders
+              .filter(f => f.id !== folder?.id)
+              .map(f => (
+                <MenuItem key={f.id} icon="folder" onSelect={() => move(p.name, f.id)}>
+                  {t('sidebar.moveTo', { name: f.name })}
+                </MenuItem>
+              ))}
+            <MenuItem icon="folder" onSelect={() => newFolder(p.name)}>
+              {t('sidebar.moveToNew')}
+            </MenuItem>
+            {folder && <MenuItem onSelect={() => move(p.name, null)}>{t('sidebar.moveOut')}</MenuItem>}
+            <MenuSeparator />
+            <MenuItem title={t('sidebar.hideTitle')} onSelect={() => hide(p.name)}>
+              {t('sidebar.hide')}
+            </MenuItem>
+          </Menu>
         )}
-      </button>
-      {moreButton(`p:${p.name}`, t('sidebar.projectMenu'))}
-      {menu === `p:${p.name}` && (
-        <Menu label={t('sidebar.projectMenu')} className="row-menu" within={menuRow} onClose={() => setMenu(null)}>
-          {folders
-            .filter(f => f.id !== folder?.id)
-            .map(f => (
-              <MenuItem key={f.id} icon="folder" onSelect={() => move(p.name, f.id)}>
-                {t('sidebar.moveTo', { name: f.name })}
-              </MenuItem>
-            ))}
-          <MenuItem icon="folder" onSelect={() => newFolder(p.name)}>
-            {t('sidebar.moveToNew')}
-          </MenuItem>
-          {folder && <MenuItem onSelect={() => move(p.name, null)}>{t('sidebar.moveOut')}</MenuItem>}
-          <MenuSeparator />
-          <MenuItem title={t('sidebar.hideTitle')} onSelect={() => hide(p.name)}>
-            {t('sidebar.hide')}
-          </MenuItem>
-        </Menu>
-      )}
+      </div>
+      {!closed.includes(p.name) && <div className="project-sessions">{renderRows(p)}</div>}
     </div>
   )
 
@@ -193,15 +212,6 @@ export function ProjectList({ projects, hidden, folders, scope, totals, badges, 
           </Button>
         </span>
       </div>
-      <button type="button" className={cx('row project-row', scope === null && 'on')} aria-current={scope === null ? 'true' : undefined} onClick={() => onScope(null)}>
-        <span className="project-name">{t('sidebar.all')}</span>
-        {totals.running > 0 && <span className="quiet small project-running">{t('sidebar.running', { n: totals.running })}</span>}
-        {totals.pending > 0 && (
-          <span className="count warn" title={t('sidebar.pendingTitle', { n: totals.pending })}>
-            {totals.pending}
-          </span>
-        )}
-      </button>
       {groups.folders.map(({ folder, items, running, pending }) => (
         <div key={folder.id} className={`project-folder ${dropOn === folder.id ? 'drop-on' : ''}`} onDragOver={dragOver(folder.id)} onDrop={drop(folder.id)}>
           <div className="project-line" ref={menu === `f:${folder.id}` ? menuRow : undefined}>

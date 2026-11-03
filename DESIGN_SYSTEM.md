@@ -26,7 +26,7 @@ Switchboard 화면은 토큰(CSS 변수)과 공용 부품으로 그립니다. �
 | 토큰 | 뜻 |
 |---|---|
 | `--bg` | 창 바탕. 본문 영역, 입력칸, 그래프 바탕 |
-| `--panel` | 판 바탕. 상단 바, 레일, 사이드바, 카드, 로그 영역 |
+| `--panel` | 판 바탕. 사이드바, 세션 머리와 답하는 칸, 카드, 계정 창 |
 | `--panel-2` | 판 안의 한 단계 깊은 바탕. 작업 항목, 선택지, 본문 상자, kbd |
 | `--line` | 장식용 구분선과 카드 테두리, 그래프 연결선, 스크롤바 |
 | `--line-strong` | 입력칸과 버튼의 테두리. 세 바탕 모두에서 3:1 이상 |
@@ -94,15 +94,15 @@ Switchboard 화면은 토큰(CSS 변수)과 공용 부품으로 그립니다. �
 
 | 부품 | 클래스 | 쓰는 곳 |
 |---|---|---|
-| `Button` (`default`, `primary`, `danger`, `ghost`, `link`, 크기 `md`, `sm`) | `.btn`, `.btn-primary`, `.btn-danger`, `.btn-ghost`, `.btn-sm`, `.link` | 결정 카드, 설정, 도크, 브라우저, 작업자, 권한 요청 등 모든 버튼. `.link`는 자기 바깥 여백이 없습니다. |
-| `IconButton` (크기 `sm` 24, `md` 28, `lg` 36, 이름 필수) | `.icon-btn` | 레일, 상단 바 아이콘, 사이드바 접기, 탭 닫기, 토스트 닫기, ⋯ 메뉴, 도크 접기, 속성 패널 |
+| `Button` (`default`, `primary`, `danger`, `ghost`, `link`, 크기 `md`, `sm`) | `.btn`, `.btn-primary`, `.btn-danger`, `.btn-ghost`, `.btn-sm`, `.link` | 결정 카드, 설정, 세션 화면, 브라우저, 서브에이전트, 권한 요청 등 모든 버튼. `.link`는 자기 바깥 여백이 없습니다. |
+| `IconButton` (크기 `sm` 24, `md` 28, `lg` 36, 이름 필수) | `.icon-btn` | 사이드바의 `+`와 ⋯, 사이드바 아래 테마와 설정, 토스트 닫기, 새 질문 창 닫기, 속성 패널 |
 | `Badge` (색 다섯, 모양 `box`, `pill`, `count`, 채움 `outline`, `soft`, `solid`) | `.badge` | 상태 칩, 태그, 에이전트 배지, 브랜치, 자동 표시, ccr 토큰, 번호 배지, 개수 배지, 추천 표시 |
-| `Chip` | `.badge.chip-button` | 누를 수 있는 칩: 상단 바의 결정 수와 실시간, Linear 필터, 브라우저 모드 |
+| `Chip` | `.badge.chip-button` | 누를 수 있는 칩: 계정 창의 진행 보고, 업데이트, Linear 필터, 브라우저 모드 |
 | `Input`, `TextArea`, `Select` (`compact`, `mono`) | `.input` | 모든 입력칸. 자리 표시 글만 있는 칸은 `aria-label`을 붙입니다. |
 | `Card`, `surfaceClass` (`pad` sm, md, `sunk`, `interactive`, `on`, `tone`) | `.surface` | 홈 카드와 숫자, 작업 항목, 선택지, 테마와 언어 고르기, 노드 정보, 작업자, 예약, 권한 요청, 코멘트 |
 | 행 | `.row` | 프로젝트, 결정 대기, 찾기 항목, 에이전트 고르기 |
-| `Menu`, `MenuItem`, `MenuSeparator` | `.menu`, `.menu-item` | 프로젝트와 폴더의 ⋯ 메뉴, 도크의 폴더 고르기 |
-| `TabList` | `.tablist`, `.tab-item`, `.tab` | 위쪽 탭과 도크 탭 |
+| `Menu`, `MenuItem`, `MenuSeparator` | `.menu`, `.menu-item` | 프로젝트와 그룹의 ⋯ 메뉴, 프로젝트 옆 `+` 메뉴 |
+| `TabList` | `.tablist`, `.tab-item`, `.tab` | 부품 갤러리의 탭 |
 | `Dialog` | `.scrim`, `.dialog` | 찾기 창, 작업자 대화 기록 |
 | `Notice` (`error`, `warn`, `info`, `bar`) | `.notice` | 연결 끊김과 실시간 멈춤 띠, 결정 카드 오류, 저장 오류 |
 | `EmptyState` | `.empty-state` | 비어 있는 목록의 안내 |
@@ -178,7 +178,7 @@ Switchboard 화면은 토큰(CSS 변수)과 공용 부품으로 그립니다. �
 | `solarizedlight` | 솔라라이즈드 (밝음) | Solarized base3 바탕, 강조색을 조금 어둡게 맞춤. 밝은 테마 |
 | `githublight` | GitHub 밝음 | Primer 밝은 색, 초록 주 버튼, 주황 탭 밑줄. 밝은 테마 |
 
-상단 바의 밝기 버튼은 `LIGHT_THEMES`로 밝은지 어두운지 가르고, 짝이 있는 테마(`a3`와 `a3light`, Solarized)는 `PAIRS`로 서로 오갑니다. 짝이 없는 어두운 테마는 `metro`로 가고, 돌아올 때는 마지막으로 쓴 어두운 테마로 갑니다.
+사이드바 아래의 밝기 버튼은 `LIGHT_THEMES`로 밝은지 어두운지 가르고, 짝이 있는 테마(`a3`와 `a3light`, Solarized)는 `PAIRS`로 서로 오갑니다. 짝이 없는 어두운 테마는 `metro`로 가고, 돌아올 때는 마지막으로 쓴 어두운 테마로 갑니다.
 
 ## 글꼴
 
