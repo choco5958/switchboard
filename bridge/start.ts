@@ -7,7 +7,7 @@
 import { spawn } from 'node:child_process'
 import { mkdirSync, openSync } from 'node:fs'
 import { request } from 'node:http'
-import { dirname, join } from 'node:path'
+import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ideDir, requestTarget, resolveEndpoint } from './endpoint.ts'
 
@@ -28,7 +28,9 @@ if (import.meta.main) {
   if (await healthy()) process.exit(0)
   mkdirSync(ideDir(), { recursive: true, mode: 0o700 })
   const log = openSync(join(ideDir(), 'bridge.log'), 'a')
-  const server = join(dirname(fileURLToPath(import.meta.url)), 'server.ts')
+  // server.mjs beside a built start.mjs (scripts/build-node.ts), server.ts beside start.ts.
+  const self = fileURLToPath(import.meta.url)
+  const server = join(dirname(self), `server${extname(self)}`)
   // An AppImage's own executable lives in a folder mounted for one run; the file itself stays.
   spawn(process.env.APPIMAGE ?? process.execPath, [server], { detached: true, stdio: ['ignore', log, log], windowsHide: true }).unref()
   for (let i = 0; i < 50; i++) {

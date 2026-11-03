@@ -8,6 +8,8 @@ directories:
   output: dist
 files:
   - out/**
+  # Beside the .ts files in Resources/node instead (extraResources).
+  - '!out/node/**'
   - resources/**
   - package.json
   # Font licences for the bundled fonts (src/renderer/src/fonts.css).
@@ -32,6 +34,10 @@ extraResources:
       - src/main/termProtocol.ts
       - '!**/*.test.ts'
       - '!**/*.unit.ts'
+  # The same, built to JavaScript (scripts/build-node.ts, run by pnpm build): what the app runs,
+  # so no process of the Node side loads the TypeScript compiler (src/main/runtime.ts nodeEntry).
+  - from: out/node
+    to: node
 asarUnpack:
   - node_modules/node-pty/**
 # Fuses written into the executable (@electron/fuses). NODE_OPTIONS and --inspect would let any

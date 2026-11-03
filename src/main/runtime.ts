@@ -27,6 +27,14 @@ const cmdLines = (...lines: string[]) => `${['@echo off', ...lines].join('\r\n')
 // Paths as the target system writes them, whatever system computes them (the tests).
 const pathsOf = (platform: string) => (platform === 'win32' ? win32 : posix)
 
+// A Node-side entry point such as 'bridge/server': the built .mjs where the installed app has
+// one (scripts/build-node.ts), which loads no TypeScript compiler; else the .ts file, as the
+// repo runs it.
+export function nodeEntry(root: string, entry: string, platform: string = process.platform): string {
+  const base = pathsOf(platform).join(root, ...entry.split('/'))
+  return existsSync(`${base}.mjs`) ? `${base}.mjs` : `${base}.ts`
+}
+
 export function nodeLauncher(home: string, platform: string = process.platform): string {
   return pathsOf(platform).join(home, '.claude-ide', 'bin', platform === 'win32' ? 'switchboard-node.cmd' : 'switchboard-node')
 }
@@ -35,8 +43,8 @@ export function runtimeFiles(input: RuntimeInput): RuntimeFile[] {
   const platform = input.platform ?? process.platform
   const { join } = pathsOf(platform)
   const dir = join(input.home, '.claude-ide')
-  const start = join(input.root, 'bridge', 'start.ts')
-  const cli = join(input.root, 'scripts', 'switchboard.ts')
+  const start = nodeEntry(input.root, 'bridge/start', platform)
+  const cli = nodeEntry(input.root, 'scripts/switchboard', platform)
   const env = { ELECTRON_RUN_AS_NODE: '1', SWITCHBOARD_VERSION: input.version }
   // What the app, the MCP server and the mod run to start the bridge, with no shell between.
   const startJson: RuntimeFile = { path: join(dir, 'start-bridge.json'), mode: 0o600, content: `${JSON.stringify({ argv: [input.execPath, start], env }, null, 2)}\n` }

@@ -10,7 +10,7 @@ import type { AgentDetect, Reply, TermInfo } from '../shared/types'
 import { cliBins, detectScript, mcpNode, parseDetect, serverFor } from './agentDetect'
 import { openTerminal } from './terminals'
 import { nodeRoot } from './appRoot'
-import { nodeLauncher } from './runtime'
+import { nodeEntry, nodeLauncher } from './runtime'
 import { loginShell } from './shell'
 import { trustFolder } from './agentTrust'
 
@@ -109,7 +109,7 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
     // npm-installed CLIs run as node (cliBins).
     bins: preset ? cliBins(preset.bin, headOf(found.found[preset.bin])) : cliBins(custom!.command.trim().split(/\s+/)[0] ?? '', null),
     prepare: key => {
-      const server = serverFor(node ?? 'node', join(nodeRoot(), 'mcp', 'server.ts'), id, key, process.env.CLAUDE_IDE_SOCKET)
+      const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET)
       const configFile = join(DIR, `${key}-${id}.json`)
       const launch = preset ? presetLaunch(preset, server, configFile) : customLaunch(custom!, server, configFile)
       writeFiles(launch)

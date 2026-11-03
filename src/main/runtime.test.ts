@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
-import { buildId, contentHash, copyRuntime, nodeLauncher, oldBridgePid, pruneRuntimes, runtimeFiles, staleBridge, writeRuntime } from './runtime'
+import { buildId, contentHash, copyRuntime, nodeEntry, nodeLauncher, oldBridgePid, pruneRuntimes, runtimeFiles, staleBridge, writeRuntime } from './runtime'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -100,4 +100,20 @@ test('a rebuild of the same version is a build of its own: its copy and its brid
   writeFileSync(join(source, 'mod', 'hooks', 'other.ts'), 'v2')
   rmSync(join(source, 'mod', 'hooks', 'register.ts'))
   expect(contentHash(source)).not.toBe(renamed)
+})
+
+test('the Node side runs its built .mjs files where they are, and the .ts files elsewhere', () => {
+  const root = mkdtempSync(join(tmpdir(), 'sb-runtime-'))
+  dirs.push(root)
+  mkdirSync(join(root, 'bridge'))
+  writeFileSync(join(root, 'bridge', 'server.ts'), '')
+  expect(nodeEntry(root, 'bridge/server')).toBe(join(root, 'bridge', 'server.ts'))
+  writeFileSync(join(root, 'bridge', 'server.mjs'), '')
+  expect(nodeEntry(root, 'bridge/server')).toBe(join(root, 'bridge', 'server.mjs'))
+  // The launchers follow: start-bridge runs bridge/start, the command scripts/switchboard.
+  mkdirSync(join(root, 'scripts'))
+  writeFileSync(join(root, 'bridge', 'start.mjs'), '')
+  const files = runtimeFiles({ execPath: join(root, 'Switchboard'), root, home: join(root, 'home'), version: '1.0.0' })
+  expect(JSON.parse(files.find(f => f.path.endsWith('start-bridge.json'))!.content).argv[1]).toBe(join(root, 'bridge', 'start.mjs'))
+  expect(files.find(f => /[\\/]switchboard(\.cmd)?$/.test(f.path))!.content).toContain(join(root, 'scripts', 'switchboard.ts'))
 })

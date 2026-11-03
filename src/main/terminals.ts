@@ -13,6 +13,7 @@ import { createScreen, type Screen } from './termScreen'
 import { t } from '../shared/i18n'
 import { writeOpenUrl } from './openUrl'
 import { nodeRoot } from './appRoot'
+import { nodeEntry } from './runtime'
 import { loginShell } from './shell'
 import { resumableId, shellWord } from '../shared/agents'
 import { HOST_DOWN, hostSupported, localBackend, terminalHosts, type HostEvents, type Hosts, type TermBackend } from './termClient'
@@ -238,7 +239,7 @@ export async function startTerminalHost(key: string, build: string, lastingKey: 
     // An AppImage runs from a mount that goes with the app; the file itself gives the host its own.
     execPath: process.env.APPIMAGE ?? process.execPath,
     appImage: !!process.env.APPIMAGE,
-    script: join(nodeRoot(), 'src', 'main', 'termHost.ts'),
+    script: nodeEntry(nodeRoot(), 'src/main/termHost'),
     build,
     dir: hostDir(homedir()),
     key,

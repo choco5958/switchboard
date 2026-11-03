@@ -22,9 +22,10 @@ const dir = unix ? mkdtempSync(join('/tmp', 'sbth-')) : ''
 const pids = new Set<number>()
 
 // TERMHOST_TEST_EXEC: another runtime for the hosts, such as Electron's executable (run as Node).
+// TERMHOST_TEST_SCRIPT: another host script, such as the built out/node/src/main/termHost.mjs.
 const options = (build: string, events?: Partial<HostEvents>): LaunchOptions & { events: HostEvents } => ({
   execPath: process.env.TERMHOST_TEST_EXEC || process.execPath,
-  script: join(ROOT, 'src', 'main', 'termHost.ts'),
+  script: process.env.TERMHOST_TEST_SCRIPT || join(ROOT, 'src', 'main', 'termHost.ts'),
   build,
   dir,
   key: KEY,

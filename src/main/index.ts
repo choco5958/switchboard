@@ -17,7 +17,7 @@ import { registerSessionHistory } from './sessionHistory'
 import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
 import { nodeRoot, useNodeRoot } from './appRoot'
-import { buildId, copyRuntime, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
+import { buildId, copyRuntime, nodeEntry, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
 import { registerUpdates, startUpdates } from './updater'
 import { requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
 import { bridgeClient } from './bridgeClient'
@@ -71,7 +71,7 @@ async function launchBridge(): Promise<boolean> {
   const log = openSync(join(DIR, 'bridge.log'), 'a')
   let child: ReturnType<typeof spawn>
   try {
-    child = spawn(process.env.APPIMAGE ?? process.execPath, [join(nodeRoot(), 'bridge', 'server.ts')], {
+    child = spawn(process.env.APPIMAGE ?? process.execPath, [nodeEntry(nodeRoot(), 'bridge/server')], {
       detached: true,
       windowsHide: true,
       stdio: ['pipe', log, log],
