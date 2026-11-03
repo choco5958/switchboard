@@ -77,6 +77,14 @@ export function BrowserView({
 }) {
   const view = useRef<WebviewTag | null>(null)
   const debug = useDebugStore()
+  // The page starts the first time the browser is shown (by the person, or by a session that
+  // opens a page, which shows it first), not with the app: until then no page of the last
+  // address runs hidden in the background.
+  const [started, setStarted] = useState(visible)
+  const on = started || visible
+  useEffect(() => {
+    if (visible) setStarted(true)
+  }, [visible])
   const [address, setAddress] = useState(savedUrl)
   const [src, setSrc] = useState(savedUrl)
   const [page, setPage] = useState(savedUrl) // the address the page really shows
@@ -140,10 +148,9 @@ export function BrowserView({
     // start leaves an error page, which still counts); before that the first
     // load is still under way, so the address goes to the src it loads.
     const wv = view.current
-    if (!wv) return
     setStatus('')
     setAddress(url)
-    if (ready.current) void wv.loadURL(url).catch(() => undefined)
+    if (wv && ready.current) void wv.loadURL(url).catch(() => undefined)
     else setSrc(url)
   }
 
@@ -267,7 +274,7 @@ export function BrowserView({
       wv.removeEventListener('did-navigate', onNavigate)
       wv.removeEventListener('did-navigate-in-page', onNavigate)
     }
-  }, [])
+  }, [on])
 
   useEffect(() => {
     void run(`window.__claudeIde && window.__claudeIde.set(${commenting})`)
@@ -332,6 +339,8 @@ export function BrowserView({
       return value
     }
     const act = async (action: string, args: Record<string, unknown>): Promise<{ text?: string; path?: string }> => {
+      // A browser shown for the first time just now is still loading its first page.
+      for (let waited = 0; !(view.current && (ready.current || action === 'navigate')) && waited < 10_000; waited += 100) await settle(100)
       const wv = view.current
       if (!wv) throw new Error('the browser is not ready')
       if (commentingRef.current) throw new Error('the person is leaving screen comments in this browser now; try again later')
@@ -490,7 +499,7 @@ export function BrowserView({
       </div>
       <div className="browser-body">
         <div className="webview-wrap">
-          <webview ref={view} src={src} partition="persist:claude-ide" className="webview" />
+          {on && <webview ref={view} src={src} partition="persist:claude-ide" className="webview" />}
           {failure && (
             <div className="load-failure" role="alert">
               <Card pad="none" className="load-failure-box">

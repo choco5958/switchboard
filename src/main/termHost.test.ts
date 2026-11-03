@@ -110,10 +110,14 @@ describe.skipIf(!unix)('the terminal host', () => {
 
   it('a host that goes away takes its terminals with it, and the app hears of each', async () => {
     const lost: string[] = []
-    const hosts = terminalHosts(options('build-crash', { lost: id => lost.push(id) }))
+    let output = ''
+    const hosts = terminalHosts(options('build-crash', { lost: id => lost.push(id), data: (_id, data) => (output += data) }))
     expect(await hosts.ready()).toBe(true)
     const pid = (await connected('build-crash')).pid
-    await hosts.spawn({ id: 'crash-t1', file: '/bin/sh', args: ['-c', 'sleep 30'], cwd: dir, env: { PATH: '/usr/bin:/bin' }, cols: 80, rows: 24, meta: { project: 'p', cwd: dir, title: 'shell', claude: false, shell: '/bin/sh', bins: [] } })
+    await hosts.spawn({ id: 'crash-t1', file: '/bin/sh', args: ['-c', 'echo up; exec sleep 30'], cwd: dir, env: { PATH: '/usr/bin:/bin' }, cols: 80, rows: 24, meta: { project: 'p', cwd: dir, title: 'shell', claude: false, shell: '/bin/sh', bins: [] } })
+    // Killed before the shell has started, node-pty's spawn-helper waits on the terminal for good
+    // and outlives the test; once the shell runs, the closed terminal hangs it up.
+    await wait(() => output.includes('up'))
     process.kill(pid, 'SIGKILL')
     await wait(() => lost.length > 0)
     expect(lost).toEqual(['crash-t1'])
