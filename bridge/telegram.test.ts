@@ -162,6 +162,14 @@ test('a permission ask: allow takes a second press, deny one; an ask dies with i
   // A second reply finds it answered.
   queued.push({ message: { message_id: 61, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '역시 허용', reply_to_message: { message_id: repliedMessage } } })
   await until(() => sent('sendMessage').some(c => c.body.reply_to_message_id === 61 && /이미 답했거나/.test(c.body.text)))
+  // A reply as long as Telegram allows still fits the closed message with the command.
+  const long = await ask(`rm -rf ${'x'.repeat(2990)}`, 'toolu_a5')
+  await until(() => sent('sendMessage').some(c => c.body.text?.includes(`권한 확인 A${long}`)))
+  const longMessage = messageId - 1
+  queued.push({ message: { message_id: 62, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '가'.repeat(4096), reply_to_message: { message_id: longMessage } } })
+  await until(() => sent('editMessageText').some(c => c.body.message_id === longMessage))
+  assert.ok(sent('editMessageText').find(c => c.body.message_id === longMessage)!.body.text.length <= 4096)
+  assert.equal((await call('GET', `/approvals/${long}`)).json.note.length, 2000)
 
   // The session's delivery stream closes: its open ask expires.
   const stream = request({ socketPath, path: '/deliveries?session=tg-1' })

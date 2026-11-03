@@ -78,6 +78,9 @@ export function allowsHere(a: TelegramApproval): boolean {
   return a.summary.length <= SUMMARY_SHOWN && maskSecrets(a.summary) === a.summary && !hasHidden(a.summary)
 }
 const SUMMARY_SHOWN = 3000
+// A deny's reason as the closed message repeats it. A reply can be 4096 characters, Telegram's
+// whole limit, so the edit with the summary would be refused and the buttons would stay.
+const NOTE_SHOWN = 1000
 
 export function approvalMessage(a: TelegramApproval, lang: Lang): { text: string; keyboard: { text: string; callback_data: string }[][] } {
   const here = allowsHere(a)
@@ -249,7 +252,9 @@ export function createTelegram(deps: TelegramDeps) {
           await call('sendMessage', { chat_id: chat(), text: say('telegram.approvalGone'), reply_to_message_id: message.message_id })
           return
         }
-        await call('editMessageText', { chat_id: chat(), message_id: message.reply_to_message.message_id, text: approvalClosedText(a, 'deny', 'telegram', message.text.trim()) })
+        const note = message.text.trim()
+        const shown = note.length > NOTE_SHOWN ? `${note.slice(0, NOTE_SHOWN - 1)}…` : note
+        await call('editMessageText', { chat_id: chat(), message_id: message.reply_to_message.message_id, text: approvalClosedText(a, 'deny', 'telegram', shown) })
         return
       }
       const questionId = deps.questionOf(message.reply_to_message.message_id)
