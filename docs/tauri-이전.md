@@ -26,7 +26,7 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
 ## 단계
 
 1. [x] **Platform 분리:** `src/main`의 앱 논리가 Electron 대신 `Platform`에 기대게 한다. Electron판 동작은 그대로 둔다.
-2. [ ] **화면 API 표:** preload와 Tauri용 층이 같은 채널 표를 쓰게 한다.
+2. [x] **화면 API 표:** preload와 Tauri용 층이 같은 채널 표를 쓰게 한다.
 3. [ ] **Node 호스트와 Rust 셸:** 저장소에서 Tauri판을 띄워 모든 화면(내장 브라우저 제외)이 동작하게 한다.
 4. [ ] **OS 기능:** 알림, 대화상자, Dock 배지, 잠금과 절전, 잠자기 막기, 한 번만 실행, 키체인.
 5. [ ] **Node 동봉과 패키지:** 플랫폼별 Node 실행 파일을 싣고, 실행 스크립트(start-bridge, switchboard)가 그것을 쓰게 한다.
