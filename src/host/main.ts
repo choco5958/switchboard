@@ -14,6 +14,8 @@ import type { IdleState, Platform, PowerEvent, QuitHook } from '../main/platform
 import { usePlatform } from '../main/platform'
 import { nodeRoot } from '../main/appRoot'
 import { registerCore, startCore, watchCore } from '../main/core'
+import { terminalStates } from '../main/terminals'
+import { registerUpdates, startHostUpdates } from '../main/updateFlow'
 import { resolveLang, setLang } from '../shared/i18n'
 import { decodeArgs } from '../shared/ideCalls'
 
@@ -26,6 +28,9 @@ type HostInfo = {
   resourcesPath: string
   userDataPath: string
   appKey: AppKey
+  // The shell's executable and process, for an update's swap (updateFlow.ts macUpdates).
+  exePath: string
+  appPid: number
 }
 
 const info = JSON.parse(process.env.SWITCHBOARD_HOST ?? '{}') as HostInfo
@@ -155,6 +160,11 @@ process.stdin.on('end', () => void quitting())
 usePlatform(hostPlatform)
 setLang(resolveLang(undefined, info.locale))
 registerCore()
+registerUpdates(hostPlatform.ipc, hostPlatform.send)
 await startCore()
 write({ t: 'ready' })
 watchCore()
+// Installed only, and never in a check without a person at the screen.
+if (info.packaged && !process.env.CLAUDE_IDE_CAPTURE_JS) {
+  startHostUpdates({ exe: info.exePath, pid: info.appPid, whenQuit: start => hostPlatform.onQuit('will', () => start()) }, terminalStates)
+}

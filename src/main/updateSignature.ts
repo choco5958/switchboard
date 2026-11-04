@@ -17,6 +17,8 @@ MCowBQYDK2VwAyEA+8F52lsNdBbDt8uelWsItRrZK/6i5RdEzlFRIRi9nCE=
 -----END PUBLIC KEY-----`,
 ]
 
+const LATEST_BASE = 'https://github.com/choco5958/switchboard/releases/latest/download'
+
 // An update file is under 1 KiB, its signature 89 bytes.
 const MAX_FILE = 64 * 1024
 const MAX_SIGNATURE = 1024
@@ -114,6 +116,17 @@ export function sameUpdate(found: object, signed: Fields): boolean {
 
 export type SignedUpdate = { version: string; files: readonly { url: string; sha512?: string; size?: number }[] }
 
+// A version whose update file is missing its signature, has another one, or differs from the file
+// signed: not installed, and the settings page says so.
+export class UpdateRefused extends Error {
+  constructor(
+    message: string,
+    readonly version: string,
+  ) {
+    super(message)
+  }
+}
+
 // Fetches the update file of the version electron-updater found and its signature from the
 // same release, and returns the file once a pinned key verifies it and it is what
 // electron-updater read. Throws otherwise: a missing or wrong signature, another file.
@@ -125,11 +138,24 @@ export async function signedUpdate(
 ): Promise<SignedUpdate> {
   const { version } = found
   // electron-updater downloads from the release named by the tag; it has to be this version's.
-  if (!/^\d+\.\d+\.\d+$/.test(version) || found.tag !== `v${version}`) throw new Error(`no signed update for ${found.tag} ${version}`)
+  if (!/^\d+\.\d+\.\d+$/.test(version) || found.tag !== `v${version}`) throw new UpdateRefused(`no signed update for ${found.tag} ${version}`, version)
   const url = releaseUrl(version, file)
   const [data, signature] = await Promise.all([fetch(url, MAX_FILE), fetch(`${url}.sig`, MAX_SIGNATURE)])
-  if (!signedBy(data, signature.toString('utf8'), keys)) throw new Error(`${file} of ${version} has no valid signature`)
+  if (!signedBy(data, signature.toString('utf8'), keys)) throw new UpdateRefused(`${file} of ${version} has no valid signature`, version)
   const signed = parseUpdateFile(data.toString('utf8'))
-  if (!sameUpdate(found, signed) || !Array.isArray(signed.files)) throw new Error(`${file} of ${version} is not the one signed`)
+  if (!sameUpdate(found, signed) || !Array.isArray(signed.files)) throw new UpdateRefused(`${file} of ${version} is not the one signed`, version)
   return signed as SignedUpdate
+}
+
+// The latest release's update file for this system, signed (the Tauri app's check, without
+// electron-updater): GitHub sends the latest release's copy, and signedUpdate then reads the
+// file and its signature from that version's own release and holds them to it.
+export async function latestSigned(
+  file: string,
+  fetch: (url: string, max: number) => Promise<Buffer> = fetchSmall,
+  keys: readonly string[] = UPDATE_KEYS,
+): Promise<SignedUpdate> {
+  const found = parseUpdateFile((await fetch(`${LATEST_BASE}/${encodeURIComponent(file)}`, MAX_FILE)).toString('utf8'))
+  const version = typeof found.version === 'string' ? found.version : ''
+  return signedUpdate({ ...found, version, tag: `v${version}` }, file, fetch, keys)
 }

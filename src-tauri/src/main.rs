@@ -29,6 +29,10 @@ struct Host {
     pending: Pending,
     next: AtomicU64,
     quitting: Mutex<bool>,
+    // True once the host has started the app (its ready message). The Electron app opens its window
+    // only then; here the page loads at once, and its calls wait for it, so the first state it reads
+    // is the bridge's and not an empty one.
+    ready: tokio::sync::watch::Sender<bool>,
 }
 
 impl Host {
@@ -43,6 +47,8 @@ impl Host {
 #[tauri::command]
 async fn ide_invoke(webview: tauri::Webview, host: State<'_, Arc<Host>>, channel: String, args: Vec<Value>) -> Result<Value, String> {
     browser::from_app(&webview)?;
+    let mut ready = host.ready.subscribe();
+    ready.wait_for(|ready| *ready).await.map_err(|_| "the app's Node host has stopped".to_string())?;
     let id = host.next.fetch_add(1, Ordering::SeqCst);
     let (tx, rx) = oneshot::channel();
     host.pending.lock().unwrap().insert(id, tx);
@@ -185,7 +191,9 @@ fn layout(app: &AppHandle) -> Layout {
 
 fn start_host(app: &AppHandle) -> Arc<Host> {
     let place = layout(app);
-    let data = app.path().app_data_dir().unwrap_or_else(|_| place.root.join(".tauri-data"));
+    // The Electron app's data folder (its userData, named after package.json): the two share the
+    // settings, the update folder and the key the Electron app kept (os::app_key).
+    let data = app.path().config_dir().map(|dir| dir.join("claude-ide")).unwrap_or_else(|_| place.root.join(".tauri-data"));
     let _ = std::fs::create_dir_all(&data);
     let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".into());
     let info = json!({
@@ -195,7 +203,10 @@ fn start_host(app: &AppHandle) -> Arc<Host> {
         "appPath": place.root,
         "resourcesPath": place.root,
         "userDataPath": data,
-        "appKey": os::app_key(),
+        "appKey": os::app_key(&data),
+        // For an update's swap (src/main/macUpdate.ts): the bundle to replace and the process to wait for.
+        "exePath": std::env::current_exe().map(|exe| exe.to_string_lossy().into_owned()).unwrap_or_default(),
+        "appPid": std::process::id(),
     });
     let mut child = Command::new(&place.node)
         .arg(&place.host)
@@ -213,6 +224,7 @@ fn start_host(app: &AppHandle) -> Arc<Host> {
         pending: Arc::new(Mutex::new(HashMap::new())),
         next: AtomicU64::new(1),
         quitting: Mutex::new(false),
+        ready: tokio::sync::watch::Sender::new(false),
     });
     let reader_host = host.clone();
     let handle = app.clone();
@@ -233,7 +245,10 @@ fn start_host(app: &AppHandle) -> Arc<Host> {
                     let _ = handle.emit(message["channel"].as_str().unwrap_or(""), message["payload"].clone());
                 }
                 Some("os") => on_os(&handle, &reader_host, &message),
-                Some("ready") => eprintln!("host: ready"),
+                Some("ready") => {
+                    eprintln!("host: ready");
+                    reader_host.ready.send_replace(true);
+                }
                 _ => {}
             }
         }
@@ -270,8 +285,22 @@ fn stop_host(host: &Host) {
     }
 }
 
+// macOS puts an app whose window is hidden to sleep (App Nap): its page's timers then all but stop,
+// and the page has work of its own while the window is closed (an answer's five seconds to take
+// it back, the session list kept current for the Dock badge). Held for the life of the app, as the
+// Electron app's page keeps running; the computer may still go to sleep when idle.
+#[cfg(target_os = "macos")]
+fn stay_awake_while_hidden() {
+    use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
+    let reason = NSString::from_str("Switchboard follows its sessions while its window is hidden");
+    let activity = NSProcessInfo::processInfo().beginActivityWithOptions_reason(NSActivityOptions::UserInitiatedAllowingIdleSystemSleep, &reason);
+    std::mem::forget(activity);
+}
+
 fn main() {
     os::prepare_notifications();
+    #[cfg(target_os = "macos")]
+    stay_awake_while_hidden();
     let app = tauri::Builder::default()
         // A second start brings the running window forward and ends (first, before the rest).
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))

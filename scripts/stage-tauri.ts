@@ -72,7 +72,9 @@ export function stageTauri(root = ROOT, out = OUT, platform: string = process.pl
     .sort()
 }
 
+// node scripts/stage-tauri.ts [platform arch]: another architecture's node-pty (a Mac builds both).
 if (import.meta.main) {
-  const files = stageTauri()
+  const [platform, arch] = process.argv.slice(2)
+  const files = stageTauri(ROOT, OUT, platform ?? process.platform, arch ?? process.arch)
   console.log(`out/tauri/node: ${files.length} files`)
 }

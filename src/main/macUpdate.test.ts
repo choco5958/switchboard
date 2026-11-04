@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { allowedUrl, BUNDLE_ID, bundleOf, canReplace, cleanUpdates, fetchSmall, fileMatches, isNewer, releaseUrl, SWAP_SCRIPT, swapArgs, unpack, zipFor } from './macUpdate'
+import { allowedUrl, BUNDLE_ID, bundleOf, canReplace, cleanUpdates, fetchSmall, fileMatches, isNewer, NeedsNewerSystem, releaseUrl, SWAP_SCRIPT, swapArgs, systemAtLeast, unpack, zipFor } from './macUpdate'
 
 const root = mkdtempSync(join(tmpdir(), 'sb-macupdate-'))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -173,13 +173,14 @@ describe.skipIf(process.platform !== 'darwin')('unpacking the release zip', () =
     if (done.status !== 0) throw new Error(`${file}: ${done.stderr}`)
   }
   // A bundle like the release's: an executable, its Info.plist and an ad hoc signature.
-  const makeZip = (name: string, id: string, version: string) => {
+  const makeZip = (name: string, id: string, version: string, minimum?: string) => {
     const dir = join(root, name)
     const bundle = join(dir, 'Switchboard.app')
     mkdirSync(join(bundle, 'Contents', 'MacOS'), { recursive: true })
     copyFileSync('/usr/bin/true', join(bundle, 'Contents', 'MacOS', 'Switchboard'))
     const plist = join(bundle, 'Contents', 'Info.plist')
     tool('/usr/libexec/PlistBuddy', ['-c', 'Add :CFBundleExecutable string Switchboard', '-c', `Add :CFBundleIdentifier string ${id}`, '-c', `Add :CFBundleShortVersionString string ${version}`, plist])
+    if (minimum) tool('/usr/libexec/PlistBuddy', ['-c', `Add :LSMinimumSystemVersion string ${minimum}`, plist])
     tool('/usr/bin/codesign', ['--force', '--sign', '-', bundle])
     const zip = join(dir, 'release.zip')
     tool('/usr/bin/ditto', ['-c', '-k', '--keepParent', bundle, zip])
@@ -203,5 +204,25 @@ describe.skipIf(process.platform !== 'darwin')('unpacking the release zip', () =
     rmSync(changed.zip)
     tool('/usr/bin/ditto', ['-c', '-k', '--keepParent', changed.bundle, changed.zip])
     await expect(unpack(changed.zip, join(root, 'changed-stage'), '0.3.5')).rejects.toThrow(/codesign/)
+  })
+
+  // The Tauri app asks for macOS 13.5 (its Node's own minimum): a Mac below it keeps its version.
+  it('refuses a bundle that needs a newer macOS than this Mac runs', async () => {
+    const { zip } = makeZip('future', BUNDLE_ID, '0.3.5', '99.0')
+    await expect(unpack(zip, join(root, 'future-stage'), '0.3.5')).rejects.toBeInstanceOf(NeedsNewerSystem)
+    const fits = makeZip('fits', BUNDLE_ID, '0.3.5', '11.0')
+    await expect(unpack(fits.zip, join(root, 'fits-stage'), '0.3.5')).resolves.toBe(join(root, 'fits-stage', 'Switchboard.app'))
+  })
+})
+
+describe('the macOS a bundle asks for', () => {
+  it('compares dotted versions part by part', () => {
+    expect(systemAtLeast('13.5', '13.5')).toBe(true)
+    expect(systemAtLeast('13.5.1\n', '13.5')).toBe(true)
+    expect(systemAtLeast('13.4.1', '13.5')).toBe(false)
+    expect(systemAtLeast('14', '13.5')).toBe(true)
+    expect(systemAtLeast('26.1', '13.5')).toBe(true)
+    expect(systemAtLeast('13.10', '13.9')).toBe(true)
+    expect(systemAtLeast('garbage', '13.5')).toBe(false)
   })
 })

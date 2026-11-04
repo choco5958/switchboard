@@ -172,8 +172,22 @@ function run(file: string, args: string[]): Promise<string> {
   )
 }
 
+// Whether this Mac's system (sw_vers -productVersion) is at least `minimum` (LSMinimumSystemVersion).
+export function systemAtLeast(current: string, minimum: string): boolean {
+  const a = current.trim().split('.').map(Number)
+  const b = minimum.trim().split('.').map(Number)
+  if ([...a, ...b].some(n => !Number.isInteger(n))) return false
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0)
+  return true
+}
+
+// A version this Mac cannot open (its bundle asks for a newer macOS): not installed, nor
+// downloaded again while the app runs.
+export class NeedsNewerSystem extends Error {}
+
 // Unpacks the zip into `dir` (ditto keeps the bundle's symlinks and permissions) and checks that
-// it holds this app at the expected version with an intact signature. Returns the new bundle.
+// it holds this app at the expected version with an intact signature, for a macOS this Mac runs.
+// Returns the new bundle.
 export async function unpack(zip: string, dir: string, version: string): Promise<string> {
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -183,6 +197,11 @@ export async function unpack(zip: string, dir: string, version: string): Promise
   const id = (await run('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', plist])).trim()
   const shown = (await run('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', plist])).trim()
   if (id !== BUNDLE_ID || shown !== version) throw new Error(`the zip holds ${id} ${shown}, not ${BUNDLE_ID} ${version}`)
+  const minimum = (await run('/usr/libexec/PlistBuddy', ['-c', 'Print :LSMinimumSystemVersion', plist]).catch(() => '')).trim()
+  if (minimum) {
+    const system = await run('/usr/bin/sw_vers', ['-productVersion'])
+    if (!systemAtLeast(system, minimum)) throw new NeedsNewerSystem(`${version} needs macOS ${minimum}, this Mac runs ${system.trim()}`)
+  }
   await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', fresh])
   return fresh
 }

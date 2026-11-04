@@ -1,0 +1,61 @@
+# The Tauri app's macOS release files (docs/tauri-이전.md, step 7): both chips' bundles, their zips
+# and disk images, and latest-mac.yml, under the names the Electron release uses
+# (scripts/pack-tauri-mac.ts). Run by hand to try a build; the release workflow calls it once
+# macOS ships the Tauri app (then it takes the place of the Electron mac build there, and the
+# release job signs latest-mac.yml as before). Like the Electron builds it runs the dependencies'
+# code, so it can write nothing and sees no key.
+name: Tauri app (macOS)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      artifact:
+        description: Name of the artifact with the release files
+        type: string
+        default: tauri-mac
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            src-tauri/target
+          key: tauri-mac-${{ hashFiles('src-tauri/Cargo.lock') }}
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Each chip gets its own Node (nodejs.org, checked against its SHA-256) and node-pty build.
+      - name: Build the app for each chip
+        run: |
+          for pair in aarch64-apple-darwin:arm64 x86_64-apple-darwin:x64; do
+            triple=${pair%%:*}
+            node scripts/fetch-node.ts "$triple"
+            node scripts/stage-tauri.ts darwin "${pair##*:}"
+            pnpm tauri build --target "$triple" --bundles app
+          done
+      - run: node scripts/pack-tauri-mac.ts dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ inputs.artifact || 'tauri-mac' }}
+          path: |
+            dist/latest-mac.yml
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 7

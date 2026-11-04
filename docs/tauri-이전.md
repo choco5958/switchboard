@@ -33,7 +33,15 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
 6. [x] **내장 브라우저 (macOS):** 브라우저 화면은 PageSurface(src/renderer/src/pageSurface.ts)만 다루고, Tauri판은 주 창의 하위 웹뷰로 이것을 구현한다(src-tauri/src/browser.rs, src/renderer/src/tauriSurface.ts). 스크립트는 WebKit의 앱 전용 세계(switchboard)에서 돌고 값을 돌려주며, 화면 찍기는 WebKit 스냅숏을 쓴다. 페이지 안에 넣은 스크립트(browser_page.js)가 콘솔, 오류, fetch와 XHR의 실패, 제목, 페이지 안 이동을 모으고, 셸이 0.4초마다 가져간다. Windows와 Linux는 8단계에서 채운다.
    - Electron판과 다른 점: 누르기와 입력은 진짜 입력이 아니라 DOM 이벤트다(isTrusted가 false). 연결 거부와 주소 못 찾음만 오류 화면으로 알린다(불러오기 전에 Rust가 연결해 본다). 이미지나 스크립트 같은 하위 자원의 실패는 오류 이벤트로만 남는다. 하위 웹뷰는 앱 화면 위에 그려지므로, 브라우저 자리 위로 뜨는 메뉴나 알림은 그 아래에 가린다.
    - 세션처럼 로컬 시험 페이지를 다뤄(POST /browser/act) 주소 열기, 읽기, 누르기, 입력, 화면 찍기, 콘솔과 실패한 요청을 두 앱에서 같게 확인했다. 화면 코멘트(⌥M로 요소 고르기)는 사람이 눌러 봐야 확인된다.
-7. [ ] **업데이트와 릴리스:** Tauri 업데이터, 릴리스 워크플로, Electron판에서 Tauri판으로 넘어가는 중간 버전.
+7. [x] **업데이트와 릴리스 (macOS):** 새 업데이터를 만들지 않고 지금 방식을 이어 쓴다. 릴리스의 latest-mac.yml에 프로젝트 키로 서명하고, 앱은 서명이 맞는 버전의 zip만 받아 종료할 때 번들을 교체한다. 그래서 Electron판도 Tauri판 zip을 다른 업데이트처럼 설치한다.
+   - 두 셸이 같은 코드를 쓴다(src/main/updateFlow.ts). Electron판은 electron-updater로 새 버전을 찾고, Tauri판의 Node 호스트는 최신 릴리스의 latest-mac.yml을 직접 읽는다(updateSignature.ts latestSigned). 교체는 둘 다 macUpdate.ts의 스크립트가 하며, Tauri판은 Rust 셸의 pid와 실행 파일 위치를 호스트에 넘긴다.
+   - 데이터 폴더: Tauri판도 Electron판의 userData(`~/Library/Application Support/claude-ide`)를 쓴다. 설정, 업데이트 폴더, Electron판이 남긴 키가 거기 있다.
+   - 앱 키 이어받기: Tauri판의 키체인에 키가 없으면 Electron판의 app-key.bin을 연다(safeStorage 형식: "v10", 키체인 항목 "claude-ide Safe Storage"의 암호에서 PBKDF2로 만든 AES-128-CBC 키). 실제 Electron 45가 봉인한 값으로 Rust 테스트를 둔다. 키가 같으면 Electron판이 띄워 둔 브리지와 터미널 호스트를 그대로 쓰므로 세션과 터미널이 이어진다. 처음 한 번 키체인이 허락을 묻는다. 거절하면 새 키로 브리지를 다시 띄우고, 이전 터미널 호스트의 터미널은 보이지 않는다(계속 돌기는 한다).
+   - macOS 최소 버전: Node 24가 macOS 13.5 이상에서만 돌아서 번들에 13.5를 적는다. 릴리스의 latest-mac.yml에 `minimumSystemVersion: 22.6.0`(Darwin 버전)을 적어, 설치된 Electron판(electron-updater 6.8)이 그보다 낮은 macOS에서는 넘어가지 않게 한다. 교체 코드도 번들의 최소 버전을 확인한다.
+   - 서명: Electron판처럼 ad hoc으로 서명하고 hardened runtime은 끈다(tauri.conf.json). 켜면 앱 안의 Node가 ad hoc 서명된 node-pty를 불러오지 못한다. 교체 전에 앱이 하는 `codesign --verify --deep --strict`를 두 칩의 번들이 통과한다.
+   - 릴리스 파일: `.github/workflows/tauri-mac.yml`이 두 칩의 앱을 만들고 scripts/pack-tauri-mac.ts가 zip, dmg(hdiutil로 만든다), latest-mac.yml을 Electron판과 같은 이름으로 만든다. 서명은 지금처럼 release 잡이 한다.
+   - macOS를 넘기는 릴리스에서는 release.yml의 build 행렬에서 mac을 빼고 tauri-mac.yml을 `artifact: dist-mac`으로 부르는 잡을 넣는다. release 잡은 그 잡도 기다린다.
+   - Windows와 Linux의 Tauri판은 아직 스스로 설치하지 않고, 새 버전이 나오면 다운로드 페이지를 알린다(8단계).
 8. [ ] **Windows와 Linux 확인, 전환.**
 
 ## 패키지 만들기 (macOS)
@@ -41,6 +49,16 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
 ```sh
 pnpm build && pnpm tauri:stage            # Node 받기와 out/tauri/node 준비
 PATH="$HOME/.cargo/bin:$PATH" pnpm tauri build --bundles app
+```
+
+릴리스 파일(두 칩)은 tauri-mac.yml과 같은 순서로 만든다.
+
+```sh
+for pair in aarch64-apple-darwin:arm64 x86_64-apple-darwin:x64; do
+  node scripts/fetch-node.ts ${pair%%:*} && node scripts/stage-tauri.ts darwin ${pair##*:}
+  pnpm tauri build --target ${pair%%:*} --bundles app
+done
+node scripts/pack-tauri-mac.ts dist
 ```
 
 설치된 모양으로 돌 때(앱 안에 switchboard-node와 Resources/node가 있을 때)는 Electron판처럼 `~/.claude-ide/runtime`에 복사본을 만들고 실행 스크립트를 쓴다. `SWITCHBOARD_REPO`를 주면 저장소 모양으로 돈다.
@@ -58,9 +76,11 @@ cd src-tauri && cargo build --release
 ## 지금까지 알게 된 것
 
 - **숨은 창의 페이지:** WebKit은 보이지 않는 창의 페이지를 멈춘다. 답 보내기의 5초 되돌리기처럼 페이지가 뒤에서 하는 일이 있어서, 주 창은 `backgroundThrottling: disabled`로 둔다. 그래도 한 번도 보인 적 없는 창은 그리지 않아서, 숨은 시험에서는 터미널 글자가 화면에 그려지는지 확인할 수 없다.
+- **App Nap:** 앱 번들로 띄운 Tauri판은 창이 안 보이면 macOS가 재워서 페이지의 타이머가 거의 멈춘다(3초 대기가 2분 넘게 끝나지 않았다). 번들 밖의 실행 파일로 띄우면 생기지 않아서 저장소 모양의 시험에서는 보이지 않았다. Rust 셸이 시작할 때 NSProcessInfo 활동을 걸어 App Nap을 끈다(컴퓨터의 잠자기는 막지 않는다).
+- **페이지가 호스트보다 먼저 뜬다:** Electron판은 앱 논리가 시작된 뒤 창을 만들지만, Tauri판은 창의 페이지가 곧바로 뜬다. 그 사이의 호출은 브리지가 없어 빈 상태를 받았고, 바뀐 것이 생길 때까지 세션 목록이 비어 있었다. 이제 페이지의 호출은 호스트가 ready를 보낼 때까지 기다린다.
 - **undefined 인자:** Electron IPC는 undefined를 그대로 넘기고 처리기는 그것을 null과 구분한다. JSON에는 undefined가 없어서 Tauri 쪽은 표시를 붙여 보내고 호스트가 되살린다(src/shared/ideCalls.ts).
 - **시험 실행과 OS 기능:** `CLAUDE_IDE_CAPTURE_JS`가 있으면 키체인, 대화상자, 알림을 건드리지 않는다. 키는 실행마다 새로 만들고(그래서 터미널 호스트 대신 Node 호스트 안에서 터미널이 돈다), 확인 대화상자는 취소로, 폴더 고르기는 고르지 않음으로 답하고, 알림은 로그에만 남긴다.
-- **사람이 봐야 확인되는 것:** 키체인(처음 저장, 다시 읽기, 거절), 확인 대화상자, 폴더 고르기, 알림 누르기, 한 번만 실행, 창을 닫았다가 Dock으로 다시 열기. 잠자기 막기와 자리 비움은 Rust 단위 테스트로 확인했다.
+- **사람이 봐야 확인되는 것:** 키체인(처음 저장, 다시 읽기, 거절, Electron판 키 이어받기), 확인 대화상자, 폴더 고르기, 알림 누르기, 한 번만 실행, 창을 닫았다가 Dock으로 다시 열기. 잠자기 막기와 자리 비움은 Rust 단위 테스트로 확인했다.
 
 ## 주의
 

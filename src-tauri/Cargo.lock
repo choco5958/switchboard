@@ -2814,6 +2814,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pbkdf2"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
+dependencies = [
+ "digest",
+ "hmac",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3768,8 +3778,10 @@ dependencies = [
 name = "switchboard"
 version = "0.0.0"
 dependencies = [
+ "aes",
  "base64 0.22.1",
  "block2",
+ "cbc",
  "getrandom 0.3.4",
  "keepawake",
  "keyring",
@@ -3779,8 +3791,10 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-foundation",
  "objc2-web-kit",
+ "pbkdf2",
  "serde",
  "serde_json",
+ "sha1",
  "sys-locale",
  "tauri",
  "tauri-build",

@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { signUpdates } from '../../scripts/sign-update.ts'
-import { channelFile, parseUpdateFile, sameUpdate, signedBy, signedUpdate, UPDATE_KEYS } from './updateSignature'
+import { MINIMUM_DARWIN, updateFile } from '../../scripts/pack-tauri-mac.ts'
+import { channelFile, latestSigned, parseUpdateFile, sameUpdate, signedBy, signedUpdate, UPDATE_KEYS, UpdateRefused } from './updateSignature'
 
 // electron-updater's own reading of an update file (js-yaml), which parseUpdateFile has to match.
 const { parseUpdateInfo } = createRequire(import.meta.url)('electron-updater/out/providers/Provider.js') as {
@@ -188,6 +189,49 @@ describe('update signatures', () => {
     await expect(signedUpdate({ ...found(), tag: 'v0.3.4' }, 'latest.yml', good, [key.pub])).rejects.toThrow(/no signed update/)
     await expect(signedUpdate({ ...found(), version: '0.3.5/../x', tag: 'v0.3.5/../x' }, 'latest.yml', good, [key.pub])).rejects.toThrow(/no signed update/)
     expect(asked).toEqual([])
+  })
+
+  // The Tauri app reads the latest release's file itself, then holds it to the signed one of that version.
+  it('finds the latest signed update without electron-updater', async () => {
+    const sig = signed(LATEST)
+    const asked: string[] = []
+    const fetch = (latest: string) => async (url: string) => {
+      asked.push(url)
+      if (url.endsWith('/latest/download/latest.yml')) return Buffer.from(latest)
+      if (url.endsWith('/v0.3.5/latest.yml')) return Buffer.from(LATEST)
+      if (url.endsWith('/v0.3.5/latest.yml.sig')) return Buffer.from(sig)
+      throw new Error(`${url} answered 404`)
+    }
+    const update = await latestSigned('latest.yml', fetch(LATEST), [key.pub])
+    expect(update.version).toBe('0.3.5')
+    expect(asked[0]).toBe('https://github.com/choco5958/switchboard/releases/latest/download/latest.yml')
+    // Another key, or a latest copy that differs from the signed file of its version.
+    await expect(latestSigned('latest.yml', fetch(LATEST), [other.pub])).rejects.toBeInstanceOf(UpdateRefused)
+    await expect(latestSigned('latest.yml', fetch(LATEST.replace('size: 252078335', 'size: 1')), [key.pub])).rejects.toThrow(/not the one signed/)
+    await expect(latestSigned('latest.yml', fetch(LATEST.replace('version: 0.3.5', 'version: 0.3.6')), [key.pub])).rejects.toThrow(/404/)
+  })
+
+  // The Tauri release writes latest-mac.yml itself (scripts/pack-tauri-mac.ts): electron-updater in
+  // an installed Electron app has to read it as this file does, or it would refuse the update.
+  it('writes the Tauri release update file the way electron-builder does', () => {
+    const files = [
+      { url: 'Switchboard-0.4.0-mac-arm64.dmg', sha512: 'ZGFh', size: 30 },
+      { url: 'Switchboard-0.4.0-mac-arm64.zip', sha512: 'YWFh', size: 20 },
+      { url: 'Switchboard-0.4.0-mac-x64.zip', sha512: 'eHh4', size: 10 },
+      { url: 'Switchboard-0.4.0-mac-x64.dmg', sha512: 'eGRk', size: 40 },
+    ]
+    const text = updateFile('0.4.0', files, new Date('2026-11-04T00:00:00.000Z'))
+    const ours = parseUpdateFile(text)
+    expect(ours).toMatchObject({ version: '0.4.0', path: 'Switchboard-0.4.0-mac-x64.zip', sha512: 'eHh4', minimumSystemVersion: MINIMUM_DARWIN, releaseDate: '2026-11-04T00:00:00.000Z' })
+    expect((ours.files as { url: string }[]).map(one => one.url)).toEqual([
+      'Switchboard-0.4.0-mac-x64.zip',
+      'Switchboard-0.4.0-mac-arm64.zip',
+      'Switchboard-0.4.0-mac-x64.dmg',
+      'Switchboard-0.4.0-mac-arm64.dmg',
+    ])
+    const theirs = { ...(parseUpdateInfo(text, 'latest-mac.yml', 'https://example.invalid/latest-mac.yml') as object), tag: 'v0.4.0' }
+    expect(sameUpdate(theirs, ours)).toBe(true)
+    expect(() => updateFile('0.4.0', files.filter(one => one.url.endsWith('.dmg')), new Date())).toThrow(/no zip/)
   })
 
   it('reads the update file electron-updater reads on each system', () => {
