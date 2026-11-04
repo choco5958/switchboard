@@ -53,7 +53,7 @@ export async function until<T>(what: string, check: () => Promise<T | undefined 
 
 // Sample sessions, a task and two questions, written by a bridge of the repo's own and kept in the
 // database the app's bridge then opens.
-async function seed(env: Env, home: string, scratch: string): Promise<void> {
+export async function seed(env: Env, home: string, scratch: string): Promise<void> {
   const bridge = spawn(process.execPath, [join(ROOT, 'bridge', 'server.ts')], { cwd: ROOT, env, stdio: 'ignore' })
   try {
     await until('the seeding bridge', async () => (await call(env, home, 'GET', '/health')).status === 200, 20000)

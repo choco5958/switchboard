@@ -37,17 +37,29 @@ pub fn app_key(data: &std::path::Path) -> Value {
     let service = std::env::var("CLAUDE_IDE_KEYCHAIN_SERVICE").ok().filter(|name| name.strip_prefix(SERVICE).is_some_and(|rest| rest.len() > 1 && rest.starts_with('.'))).unwrap_or_else(|| SERVICE.to_string());
     let entry = match keyring::Entry::new(&service, "app-key") {
         Ok(entry) => entry,
-        Err(_) => return fresh(),
+        Err(error) => {
+            eprintln!("keychain: no entry for the app key: {error}");
+            return fresh();
+        }
     };
     match entry.get_password() {
         Ok(key) if valid_key(&key) => json!({ "key": key, "refused": false, "lasting": true }),
         Ok(_) | Err(keyring::Error::NoEntry) => {
             let key = electron_key(data).unwrap_or_else(random_key);
-            let lasting = entry.set_password(&key).is_ok();
-            json!({ "key": key, "refused": false, "lasting": lasting })
+            let saved = entry.set_password(&key);
+            if let Err(error) = &saved {
+                eprintln!("keychain: could not keep the app key: {error}");
+            }
+            json!({ "key": key, "refused": false, "lasting": saved.is_ok() })
         }
-        Err(keyring::Error::NoStorageAccess(_)) => json!({ "key": random_key(), "refused": true, "lasting": false }),
-        Err(_) => fresh(),
+        Err(keyring::Error::NoStorageAccess(error)) => {
+            eprintln!("keychain: refused: {error}");
+            json!({ "key": random_key(), "refused": true, "lasting": false })
+        }
+        Err(error) => {
+            eprintln!("keychain: could not read the app key: {error}");
+            fresh()
+        }
     }
 }
 
