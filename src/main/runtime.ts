@@ -9,7 +9,7 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, posix, relative, win32 } from 'node:path'
+import { basename, dirname, join, posix, relative, win32 } from 'node:path'
 
 export type RuntimeFile = { path: string; content: string; mode: number }
 
@@ -116,6 +116,19 @@ export function copyRuntime(source: string, home: string, build: string): string
     const partial = `${target}.partial`
     rmSync(partial, { recursive: true, force: true })
     cpSync(source, partial, { recursive: true })
+    renameSync(partial, target)
+  }
+  return target
+}
+
+// The Tauri app's Node beside the runtime copy (appRoot.ts nodeExecutable), made once per build.
+export function copyNode(execPath: string, runtime: string): string {
+  const target = join(runtime, 'bin', basename(execPath))
+  if (!existsSync(target)) {
+    mkdirSync(dirname(target), { recursive: true })
+    const partial = `${target}.partial`
+    cpSync(execPath, partial)
+    chmodSync(partial, 0o755)
     renameSync(partial, target)
   }
   return target

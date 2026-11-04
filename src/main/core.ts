@@ -18,8 +18,8 @@ import { dockIdOf, onTerminalsChange, openClaudeIn, registerTerminals, setCloseT
 import { registerSessionHistory } from './sessionHistory'
 import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
-import { nodeRoot, useNodeRoot } from './appRoot'
-import { buildId, copyRuntime, nodeEntry, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
+import { nodeExecutable, nodeRoot, useNodeExecutable, useNodeRoot } from './appRoot'
+import { buildId, copyNode, copyRuntime, nodeEntry, oldBridgePid, pruneRuntimes, staleBridge, writeRuntime } from './runtime'
 import { requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
 import { bridgeClient } from './bridgeClient'
 import { ROUTINE_FAIL_LIMIT } from '../../bridge/schedule.ts'
@@ -54,7 +54,7 @@ async function launchBridge(): Promise<boolean> {
   const log = openSync(join(DIR, 'bridge.log'), 'a')
   let child: ReturnType<typeof spawn>
   try {
-    child = spawn(process.env.APPIMAGE ?? process.execPath, [nodeEntry(nodeRoot(), 'bridge/server')], {
+    child = spawn(nodeExecutable().path, [nodeEntry(nodeRoot(), 'bridge/server')], {
       detached: true,
       windowsHide: true,
       stdio: ['pipe', log, log],
@@ -136,9 +136,9 @@ async function prepareRuntime(): Promise<void> {
   try {
     const id = buildId(nodeRoot(), platform().version())
     useNodeRoot(copyRuntime(nodeRoot(), homedir(), id))
+    if (!process.versions.electron && process.platform !== 'darwin') useNodeExecutable(copyNode(process.execPath, nodeRoot()))
     build = id
-    // An AppImage runs from a folder mounted for this run only; the file itself stays.
-    writeRuntime({ execPath: process.env.APPIMAGE ?? process.execPath, root: nodeRoot(), home: homedir(), version: id })
+    writeRuntime({ execPath: nodeExecutable().path, root: nodeRoot(), home: homedir(), version: id })
     pruneRuntimes(homedir(), id, hostBuilds(hostDir(homedir())))
   } catch (error) {
     console.error('could not write the launchers:', error)

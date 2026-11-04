@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { signUpdates } from '../../scripts/sign-update.ts'
 import { MINIMUM_DARWIN, updateFile } from '../../scripts/pack-tauri-mac.ts'
+import { updateFile as otherUpdateFile } from '../../scripts/pack-tauri.ts'
 import { channelFile, latestSigned, parseUpdateFile, sameUpdate, signedBy, signedUpdate, UPDATE_KEYS, UpdateRefused } from './updateSignature'
 
 // electron-updater's own reading of an update file (js-yaml), which parseUpdateFile has to match.
@@ -232,6 +233,20 @@ describe('update signatures', () => {
     const theirs = { ...(parseUpdateInfo(text, 'latest-mac.yml', 'https://example.invalid/latest-mac.yml') as object), tag: 'v0.4.0' }
     expect(sameUpdate(theirs, ours)).toBe(true)
     expect(() => updateFile('0.4.0', files.filter(one => one.url.endsWith('.dmg')), new Date())).toThrow(/no zip/)
+  })
+
+  // The same for Windows and Linux: the installer and the AppImage electron-updater installs come first.
+  it('writes the Windows and Linux update files the way electron-builder does', () => {
+    for (const [file, files] of [
+      ['latest.yml', [{ url: 'Switchboard-0.4.0-win-x64.exe', sha512: 'eDY0', size: 10 }, { url: 'Switchboard-0.4.0-win-arm64.exe', sha512: 'YXJt', size: 11 }]],
+      ['latest-linux.yml', [{ url: 'Switchboard-0.4.0-linux-x86_64.AppImage', sha512: 'YXBw', size: 12 }, { url: 'Switchboard-0.4.0-linux-amd64.deb', sha512: 'ZGVi', size: 13 }]],
+    ] as const) {
+      const text = otherUpdateFile('0.4.0', files, new Date('2026-11-04T00:00:00.000Z'))
+      const ours = parseUpdateFile(text)
+      expect(ours).toMatchObject({ version: '0.4.0', path: files[0].url, sha512: files[0].sha512 })
+      const theirs = { ...(parseUpdateInfo(text, file, `https://example.invalid/${file}`) as object), tag: 'v0.4.0' }
+      expect(sameUpdate(theirs, ours)).toBe(true)
+    }
   })
 
   it('reads the update file electron-updater reads on each system', () => {

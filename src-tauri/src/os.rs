@@ -49,29 +49,47 @@ pub fn app_key(data: &std::path::Path) -> Value {
 }
 
 // The key the Electron app kept (docs/tauri-이전.md, step 7): app-key.bin in the same data folder,
-// sealed by Electron's safeStorage. Taking it over keeps the bridge and the terminal host that app
-// left running, with their sessions and terminals; without it the app starts a bridge of its own.
-// On macOS the seal is Chromium's: "v10", then AES-128-CBC under a key derived from the password
-// of the keychain item "claude-ide Safe Storage" (the keychain asks the person once).
+// sealed by Electron's safeStorage. Taking it over keeps the terminal host that app left running,
+// with its terminals; without it the app starts its own and those terminals are not shown again.
+// The seal is Chromium's: a version, then AES-128-CBC under a key derived (PBKDF2-SHA1, "saltysalt")
+// from a password the system keeps for the app.
+// - macOS: "v10", the password of the keychain item "claude-ide Safe Storage" (the keychain asks
+//   the person once), 1003 rounds.
+// - Linux: "v11", the secret service's item for the application "claude-ide" (GNOME keyring and
+//   the like), 1 round. Without a secret service the Electron app kept no key (appKey.ts).
+// - Windows has no terminal host to keep (termClient.ts hostSupported): nothing to take over.
 #[cfg(target_os = "macos")]
 fn electron_key(data: &std::path::Path) -> Option<String> {
     let sealed = std::fs::read(data.join("app-key.bin")).ok()?;
     let password = keyring::Entry::new("claude-ide Safe Storage", "claude-ide Key").ok()?.get_password().ok()?;
-    let key = open_safe_storage(&password, &sealed)?;
+    let key = open_safe_storage(&password, sealed.strip_prefix(b"v10")?, 1003)?;
     valid_key(&key).then_some(key)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn electron_key(data: &std::path::Path) -> Option<String> {
+    use dbus_secret_service::{EncryptionType, SecretService};
+    let sealed = std::fs::read(data.join("app-key.bin")).ok()?;
+    let body = sealed.strip_prefix(b"v11")?;
+    let service = SecretService::connect(EncryptionType::Dh).ok()?;
+    let found = service.search_items(std::collections::HashMap::from([("application", "claude-ide")])).ok()?;
+    let item = found.unlocked.into_iter().chain(found.locked).next()?;
+    item.ensure_unlocked().ok()?;
+    let password = String::from_utf8(item.get_secret().ok()?).ok()?;
+    let key = open_safe_storage(&password, body, 1)?;
+    valid_key(&key).then_some(key)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn electron_key(_data: &std::path::Path) -> Option<String> {
     None
 }
 
-#[cfg(target_os = "macos")]
-fn open_safe_storage(password: &str, sealed: &[u8]) -> Option<String> {
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn open_safe_storage(password: &str, body: &[u8], rounds: u32) -> Option<String> {
     use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
-    let body = sealed.strip_prefix(b"v10")?;
     let mut key = [0u8; 16];
-    pbkdf2::pbkdf2_hmac::<sha1::Sha1>(password.as_bytes(), b"saltysalt", 1003, &mut key);
+    pbkdf2::pbkdf2_hmac::<sha1::Sha1>(password.as_bytes(), b"saltysalt", rounds, &mut key);
     let plain = cbc::Decryptor::<aes::Aes128>::new(&key.into(), &[b' '; 16].into()).decrypt_padded_vec_mut::<Pkcs7>(body).ok()?;
     String::from_utf8(plain).ok()
 }
@@ -161,23 +179,23 @@ pub fn prepare_notifications() {}
 mod tests {
     use super::*;
 
-    // A key sealed the way Electron's safeStorage seals it on macOS opens; another password does not.
-    #[cfg(target_os = "macos")]
+    // A key sealed the way Electron's safeStorage seals it opens; another password does not.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn opens_a_key_the_electron_app_sealed() {
         use cbc::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
         let key = "0123456789abcdef".repeat(4);
-        let mut derived = [0u8; 16];
-        pbkdf2::pbkdf2_hmac::<sha1::Sha1>(b"secret", b"saltysalt", 1003, &mut derived);
-        let body = cbc::Encryptor::<aes::Aes128>::new(&derived.into(), &[b' '; 16].into()).encrypt_padded_vec_mut::<Pkcs7>(key.as_bytes());
-        let sealed = [b"v10".as_slice(), &body].concat();
-        assert_eq!(open_safe_storage("secret", &sealed), Some(key.clone()));
-        assert_eq!(open_safe_storage("other", &sealed), None);
-        assert_eq!(open_safe_storage("secret", &body), None);
-        // Sealed by Electron 45's safeStorage itself, with --use-mock-keychain (password "mock_password").
+        for rounds in [1, 1003] {
+            let mut derived = [0u8; 16];
+            pbkdf2::pbkdf2_hmac::<sha1::Sha1>(b"secret", b"saltysalt", rounds, &mut derived);
+            let body = cbc::Encryptor::<aes::Aes128>::new(&derived.into(), &[b' '; 16].into()).encrypt_padded_vec_mut::<Pkcs7>(key.as_bytes());
+            assert_eq!(open_safe_storage("secret", &body, rounds), Some(key.clone()));
+            assert_eq!(open_safe_storage("other", &body, rounds), None);
+        }
+        // Sealed by Electron 45's safeStorage itself on macOS, with --use-mock-keychain (password "mock_password").
         let electron = "76313009ba585e3735bf093177b9036964f7cfeb005f35741cb3f96c1d3db3540c1cd19675ebd7ede7c46843d02b800e027f5afd6088f735b5c88d7dfe47a93d6ebafc8458245f6d28c61c6d4eda5439b266c6";
         let electron: Vec<u8> = (0..electron.len()).step_by(2).map(|i| u8::from_str_radix(&electron[i..i + 2], 16).unwrap()).collect();
-        assert_eq!(open_safe_storage("mock_password", &electron), Some(key));
+        assert_eq!(open_safe_storage("mock_password", electron.strip_prefix(b"v10").unwrap(), 1003), Some(key));
     }
 
     #[test]

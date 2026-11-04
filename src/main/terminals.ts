@@ -12,7 +12,7 @@ import { pasteModeAfter, type TypingTarget } from './agentInput'
 import { createScreen, type Screen } from './termScreen'
 import { t } from '../shared/i18n'
 import { writeOpenUrl } from './openUrl'
-import { nodeRoot } from './appRoot'
+import { nodeExecutable, nodeRoot } from './appRoot'
 import { nodeEntry } from './runtime'
 import { loginShell } from './shell'
 import { resumableId, shellWord } from '../shared/agents'
@@ -236,9 +236,8 @@ function restored(snapshot: Snapshot, backend: TermBackend): void {
 export async function startTerminalHost(key: string, build: string, lastingKey: boolean): Promise<void> {
   if (!hostSupported(process.platform, lastingKey, process.env)) return
   const made = terminalHosts({
-    // An AppImage runs from a mount that goes with the app; the file itself gives the host its own.
-    execPath: process.env.APPIMAGE ?? process.execPath,
-    appImage: !!process.env.APPIMAGE,
+    execPath: nodeExecutable().path,
+    appImage: nodeExecutable().appImage,
     script: nodeEntry(nodeRoot(), 'src/main/termHost'),
     build,
     dir: hostDir(homedir()),

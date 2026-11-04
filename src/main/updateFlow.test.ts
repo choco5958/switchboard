@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { usePlatform, type Platform } from './platform'
-import { registerUpdates, startHostUpdates } from './updateFlow'
+import { registerUpdates, stagedUpdates, startHostUpdates, updateTracker } from './updateFlow'
 import { UpdateRefused, type SignedUpdate } from './updateSignature'
 import type { UpdateStatus } from '../shared/types'
 
@@ -63,5 +63,65 @@ describe("the Tauri app's update checks", () => {
     await flush()
     expect(notes).toHaveLength(1)
     expect(handlers.get('update:status')!(undefined)).toMatchObject({ state: 'manual', latest: '0.3.17' })
+  })
+})
+
+describe('an update staged for the quit', () => {
+  const update = (version: string, listed = true): SignedUpdate => ({ version, files: listed ? [{ url: `Switchboard-${version}.exe`, sha512: 'eA==', size: 1 }] : [] })
+
+  function staged(failed: string[] = []) {
+    const hooks = { quit: () => undefined as void, shutdown: () => undefined as void }
+    usePlatform({
+      version: () => '0.3.16',
+      userDataPath: () => '/nonexistent',
+      notificationsSupported: () => false,
+      onPower: (_event: string, listener: () => void) => void (hooks.shutdown = listener),
+    } as unknown as Platform)
+    const status = updateTracker('0.3.16')
+    const installs: [string, boolean][] = []
+    const discarded: string[] = []
+    const control = { fail: false }
+    const found = stagedUpdates(() => [], status, { exe: '', pid: 1, whenQuit: start => void (hooks.quit = start) }, new Set(failed), {
+      file: one => (one.files[0] ? { name: one.files[0].url, sha512: 'eA==', size: 1 } : null),
+      canInstall: () => true,
+      stage: async (_file, version) => {
+        if (control.fail) throw new Error('offline')
+        return version
+      },
+      discard: version => void discarded.push(version),
+      install: (version, relaunch) => void installs.push([version, relaunch]),
+    })
+    return { found, status, installs, discarded, control, hooks }
+  }
+
+  it('downloads a newer version once and installs the last one staged when the app quits', async () => {
+    const { found, status, installs, discarded, control, hooks } = staged(['0.3.19'])
+    expect(await found(update('0.3.16'))).toBe(true)
+    expect(status.get().state).toBe('latest')
+    // No file for this system, or one whose install failed before: the person downloads it.
+    expect(await found(update('0.3.17', false))).toBe(false)
+    expect(await found(update('0.3.19'))).toBe(false)
+    expect(await found(update('0.3.17'))).toBe(true)
+    expect(status.get()).toMatchObject({ state: 'ready', latest: '0.3.17' })
+    expect(await found(update('0.3.18'))).toBe(true)
+    expect(discarded).toEqual(['0.3.17'])
+    // A download that fails keeps the version staged before.
+    control.fail = true
+    expect(await found(update('0.3.20'))).toBe(true)
+    expect(status.get()).toMatchObject({ state: 'ready', latest: '0.3.18' })
+    hooks.quit()
+    hooks.quit()
+    expect(installs).toEqual([['0.3.18', false]])
+  })
+
+  it('installs nothing at a shutdown, and nothing when no version waits', async () => {
+    const quiet = staged()
+    quiet.hooks.quit()
+    expect(quiet.installs).toEqual([])
+    const { found, installs, hooks } = staged()
+    expect(await found(update('0.3.17'))).toBe(true)
+    hooks.shutdown()
+    hooks.quit()
+    expect(installs).toEqual([])
   })
 })

@@ -8,10 +8,11 @@
 // for it from the notification after being told which terminals that closes.
 
 import { mkdirSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { t } from '../shared/i18n'
 import type { UpdateStatus } from '../shared/types'
-import { bundleOf, canReplace, cleanUpdates, download, isNewer, NeedsNewerSystem, releaseUrl, startSwap, unpack, zipFor } from './macUpdate'
+import { appImageTarget, installerName, replaceAppImage, startWindowsInstall } from './installUpdate'
+import { bundleOf, canReplace, cleanUpdates, download, isNewer, NeedsNewerSystem, releaseFile, releaseUrl, startSwap, unpack, zipFor, type ZipFile } from './macUpdate'
 import { platform, type Ipc } from './platform'
 import { channelFile, latestSigned, UpdateRefused, type SignedUpdate } from './updateSignature'
 
@@ -100,36 +101,40 @@ export async function installNowAllowed(terminals: () => readonly { alive: boole
 }
 
 // The running app, for the swap: its executable (inside the bundle to replace), the process the
-// swap waits for, and the hook that starts the swap once the app is going away.
-export type AppPlace = { exe: string; pid: number; whenQuit: (start: () => void) => void }
+// swap waits for, and the hook that starts the swap once the app is going away. `arch`: the
+// machine's own, when it differs from the process's (process.arch): an x64 build emulated on ARM64
+// Windows, which the Electron app's update brings there, then updates to the ARM64 build.
+export type AppPlace = { exe: string; pid: number; whenQuit: (start: () => void) => void; arch?: string }
 
-// The macOS path: returns what to do with a version found, given its signed latest-mac.yml
-// (updateSignature.ts), whose sha512 the zip has to match. Resolves true when it is downloaded or
-// on its way, false when the person has to download it themselves.
-// The bridge keeps running through the swap. It runs the app's Node (Electron's executable as
-// Node, or the Tauri app's switchboard-node), but macOS keeps a moved or deleted file open for the
-// process using it, and its scripts are a copy under ~/.claude-ide/runtime (runtime.ts). The new
-// version replaces it when it starts (staleBridge). The terminal host does the same and is not
-// replaced: it keeps its terminals until they end.
-export function macUpdates(terminals: () => readonly { alive: boolean }[], status: Tracker, place: AppPlace): (found: SignedUpdate) => Promise<boolean> {
-  const bundle = bundleOf(place.exe)
-  const dir = join(platform().userDataPath(), 'updates')
-  const log = join(platform().userDataPath(), 'update.log')
-  // Versions whose swap failed before (macUpdate.ts SWAP_SCRIPT): offered as a download instead.
-  const failed = cleanUpdates(dir, platform().version())
-  let staged: { version: string; fresh: string; stage: string } | null = null
+// How one system gets a version into place: the file to download for it (null: this copy cannot
+// install that version), whether this copy can install at all, the download staged for the install,
+// and the install itself, run as the app quits.
+type Steps<S> = {
+  file(found: SignedUpdate): ZipFile | null
+  canInstall(): boolean
+  stage(file: ZipFile, version: string): Promise<S>
+  discard(staged: S): void
+  install(staged: S, relaunch: boolean): void
+}
+
+// Returns what to do with a version found, given its signed update file (updateSignature.ts),
+// whose sha512 the download has to match. Resolves true when it is downloaded or on its way, false
+// when the person has to download it themselves. `failed`: versions whose install failed before,
+// offered as a download instead.
+export function stagedUpdates<S>(terminals: () => readonly { alive: boolean }[], status: Tracker, place: AppPlace, failed: Set<string>, steps: Steps<S>): (found: SignedUpdate) => Promise<boolean> {
+  let staged: { version: string; it: S } | null = null
   let busy = ''
   let relaunch = false
-  let swapped = false
-  // A shutdown or logout quits the app too, but the system may stop the swap halfway; that
+  let installed = false
+  // A shutdown or logout quits the app too, but the system may stop the install halfway; that
   // update waits for the next quit.
   let shuttingDown = false
   platform().onPower('shutdown', () => (shuttingDown = true))
   place.whenQuit(() => {
-    if (!staged || swapped || shuttingDown || !bundle || !canReplace(bundle)) return
-    swapped = true
+    if (!staged || installed || shuttingDown || !steps.canInstall()) return
+    installed = true
     try {
-      startSwap({ pid: place.pid, target: bundle, fresh: staged.fresh, stage: staged.stage, relaunch, log })
+      steps.install(staged.it, relaunch)
     } catch (error) {
       console.error('could not start the update:', error)
     }
@@ -147,20 +152,16 @@ export function macUpdates(terminals: () => readonly { alive: boolean }[], statu
       return true
     }
     if (staged?.version === version || busy === version) return true
-    const file = zipFor(found.files, version, process.arch)
-    if (!bundle || !file || failed.has(version) || !canReplace(bundle)) return false
+    const file = steps.file(found)
+    if (!file || failed.has(version) || !steps.canInstall()) return false
     busy = version
     status.set({ state: 'downloading', latest: version, checkedAt: Date.now() })
     try {
-      mkdirSync(dir, { recursive: true, mode: 0o700 })
-      const zip = join(dir, file.name)
-      const stage = join(dir, version)
-      await download(releaseUrl(version, file.name), zip, file)
-      // A quit while this unpacks installs what was staged before, if anything.
-      const fresh = await unpack(zip, stage, version).finally(() => rmSync(zip, { force: true }))
+      // A quit while this downloads installs what was staged before, if anything.
+      const it = await steps.stage(file, version)
       const before = staged
-      staged = { version, fresh, stage }
-      if (before) rmSync(before.stage, { recursive: true, force: true })
+      staged = { version, it }
+      if (before) steps.discard(before.it)
       onInstallReady(() => installNow(version))
       status.set({ state: 'ready', latest: version })
       notifyUpdate(t('update.ready', { version }), () => installNow(version))
@@ -178,14 +179,81 @@ export function macUpdates(terminals: () => readonly { alive: boolean }[], statu
   }
 }
 
+// macOS: the release's zip for this chip, unpacked beside the app's data and swapped in for the
+// bundle by a script once the app has quit (macUpdate.ts).
+// The bridge keeps running through the swap. It runs the app's Node (Electron's executable as
+// Node, or the Tauri app's switchboard-node), but macOS keeps a moved or deleted file open for the
+// process using it, and its scripts are a copy under ~/.claude-ide/runtime (runtime.ts). The new
+// version replaces it when it starts (staleBridge). The terminal host does the same and is not
+// replaced: it keeps its terminals until they end.
+export function macUpdates(terminals: () => readonly { alive: boolean }[], status: Tracker, place: AppPlace): (found: SignedUpdate) => Promise<boolean> {
+  const bundle = bundleOf(place.exe)
+  const dir = join(platform().userDataPath(), 'updates')
+  const log = join(platform().userDataPath(), 'update.log')
+  return stagedUpdates(terminals, status, place, cleanUpdates(dir, platform().version()), {
+    file: found => zipFor(found.files, found.version, process.arch),
+    canInstall: () => !!bundle && canReplace(bundle),
+    stage: async (file, version) => {
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      const zip = join(dir, file.name)
+      const stage = join(dir, version)
+      await download(releaseUrl(version, file.name), zip, file)
+      const fresh = await unpack(zip, stage, version).finally(() => rmSync(zip, { force: true }))
+      return { fresh, stage }
+    },
+    discard: ({ stage }) => rmSync(stage, { recursive: true, force: true }),
+    install: ({ fresh, stage }, relaunch) => startSwap({ pid: place.pid, target: bundle!, fresh, stage, relaunch, log }),
+  })
+}
+
+// Windows and a Linux AppImage (installUpdate.ts); null where this copy installs nothing itself (a
+// .deb, another system), and the person is told where to download the new version.
+export function installerUpdates(terminals: () => readonly { alive: boolean }[], status: Tracker, place: AppPlace, env: Record<string, string | undefined> = process.env): ((found: SignedUpdate) => Promise<boolean>) | null {
+  const dir = join(platform().userDataPath(), 'updates')
+  const log = join(platform().userDataPath(), 'update.log')
+  const file = (found: SignedUpdate) => {
+    const name = installerName(found.version, process.platform, place.arch ?? process.arch)
+    return name ? releaseFile(found.files, found.version, name) : null
+  }
+  if (process.platform === 'win32') {
+    return stagedUpdates(terminals, status, place, cleanUpdates(dir, platform().version()), {
+      file,
+      canInstall: () => true,
+      stage: async (found, version) => {
+        mkdirSync(dir, { recursive: true, mode: 0o700 })
+        const installer = join(dir, found.name)
+        await download(releaseUrl(version, found.name), installer, found)
+        return { installer, version }
+      },
+      discard: ({ installer }) => rmSync(installer, { force: true }),
+      install: ({ installer, version }, relaunch) => startWindowsInstall({ pid: place.pid, installer, relaunch, log, failedMark: join(dir, `${version}.failed`) }),
+    })
+  }
+  const target = process.platform === 'linux' ? appImageTarget(env) : null
+  if (!target) return null
+  // Beside the AppImage, hidden; a download an earlier run left there goes first.
+  const fresh = join(dirname(target), '.switchboard-update.AppImage')
+  rmSync(fresh, { force: true })
+  return stagedUpdates(terminals, status, place, new Set(), {
+    file,
+    canInstall: () => appImageTarget(env) !== null,
+    stage: async (found, version) => {
+      await download(releaseUrl(version, found.name), fresh, found)
+      return fresh
+    },
+    discard: () => undefined,
+    install: (path, relaunch) => replaceAppImage({ pid: place.pid, target, fresh: path, relaunch }),
+  })
+}
+
 // The Tauri shell's updates, run by its Node host (src/host/main.ts): every few hours, and when
-// the settings page asks, the latest release's signed update file for this system. macOS installs
-// it (macUpdates); Windows and Linux are told where to download it until the Tauri app installs
-// there too (docs/tauri-이전.md, step 8).
+// the settings page asks, the latest release's signed update file for this system. macOS, Windows
+// and an AppImage install it (macUpdates, installerUpdates); any other copy is told where to
+// download it.
 export function startHostUpdates(place: AppPlace, terminals: () => readonly { alive: boolean }[], latest: (file: string) => Promise<SignedUpdate> = latestSigned): void {
   const status = tracker()
   status.set({ state: 'idle' })
-  const mac = process.platform === 'darwin' ? macUpdates(terminals, status, place) : null
+  const install = process.platform === 'darwin' ? macUpdates(terminals, status, place) : installerUpdates(terminals, status, place)
   const tellAvailable = manualUpdates(status)
   let running = false
   const check = async () => {
@@ -196,8 +264,8 @@ export function startHostUpdates(place: AppPlace, terminals: () => readonly { al
       const update = await latest(channelFile())
       if (!isNewer(update.version, platform().version())) {
         if (status.get().state === 'checking') status.set({ state: 'latest', latest: undefined, checkedAt: Date.now() })
-      } else if (mac) {
-        if (!(await mac(update))) tellAvailable(update.version)
+      } else if (install) {
+        if (!(await install(update))) tellAvailable(update.version)
       } else tellAvailable(update.version)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

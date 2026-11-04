@@ -22,6 +22,7 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 getrandom = "0.3"
 
 base64 = "0.22"
+open = "5"
 
 # The in-app browser's page on macOS (src/browser.rs): scripts in a world of the app's own, and
 # snapshots, through WebKit itself. The same versions Tauri's webview (wry) uses.
@@ -32,11 +33,28 @@ objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDicti
 objc2-app-kit = { version = "0.3", features = ["NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics", "NSView", "NSResponder"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKContentWorld", "WKFrameInfo", "WKSnapshotConfiguration", "WKNavigation", "block2", "objc2-app-kit", "objc2-core-foundation"] }
 objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
+
 # The key the Electron app sealed with safeStorage (src/os.rs electron_key).
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 pbkdf2 = "0.12"
 sha1 = "0.10"
+
+# The in-app browser's page on Linux and Windows (src/browser.rs): the versions Tauri's webview
+# (wry) uses. WebKitGTK 2.40 or later, for scripts that answer in a world of the app's own.
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service = { version = "4", features = ["crypto-rust"] }
+webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
+javascriptcore-rs = "=1.1.2"
+gtk = "0.18"
+glib = "0.18"
+gio = "0.18"
+cairo-rs = { version = "0.18", features = ["png"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_System_Threading", "Win32_System_SystemInformation"] }
 
 [profile.release]
 opt-level = "s"

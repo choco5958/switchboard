@@ -31,6 +31,8 @@ type HostInfo = {
   // The shell's executable and process, for an update's swap (updateFlow.ts macUpdates).
   exePath: string
   appPid: number
+  // The machine's own architecture (an x64 build emulated on ARM64 Windows says arm64).
+  machineArch?: string
 }
 
 const info = JSON.parse(process.env.SWITCHBOARD_HOST ?? '{}') as HostInfo
@@ -166,5 +168,5 @@ write({ t: 'ready' })
 watchCore()
 // Installed only, and never in a check without a person at the screen.
 if (info.packaged && !process.env.CLAUDE_IDE_CAPTURE_JS) {
-  startHostUpdates({ exe: info.exePath, pid: info.appPid, whenQuit: start => hostPlatform.onQuit('will', () => start()) }, terminalStates)
+  startHostUpdates({ exe: info.exePath, pid: info.appPid, arch: info.machineArch, whenQuit: start => hostPlatform.onQuit('will', () => start()) }, terminalStates)
 }

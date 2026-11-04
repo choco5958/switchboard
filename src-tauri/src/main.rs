@@ -1,3 +1,6 @@
+// No console window beside the app on Windows (a debug build keeps one, for its output).
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 // Switchboard's Tauri shell (docs/tauri-이전.md). Thin on purpose: the app logic runs in the Node
 // host (src/host/main.ts, the same core the Electron shell runs), and this shell relays.
 // - The page's calls (window.ide, by the channels of src/shared/ideCalls.ts) go to the host as
@@ -78,17 +81,12 @@ fn capture_log(webview: tauri::Webview, text: String) {
     eprintln!("capture: {text}");
 }
 
+// A file, folder or link in the program the system opens it with (ShellExecute on Windows, so no
+// shell reads the text; xdg-open and its kin on Linux).
 fn open_with_system(target: &str) -> String {
-    #[cfg(target_os = "macos")]
-    let opened = Command::new("open").arg(target).status();
-    #[cfg(target_os = "windows")]
-    let opened = Command::new("cmd").args(["/C", "start", "", target]).status();
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let opened = Command::new("xdg-open").arg(target).status();
-    match opened {
-        Ok(status) if status.success() => String::new(),
-        Ok(status) => format!("could not open {target}: {status}"),
-        Err(error) => error.to_string(),
+    match open::that(target) {
+        Ok(()) => String::new(),
+        Err(error) => format!("could not open {target}: {error}"),
     }
 }
 
@@ -136,7 +134,9 @@ fn on_os(app: &AppHandle, host: &Arc<Host>, message: &Value) {
             }
             Value::Null
         }
+        // The Dock's badge; the Electron app shows none on Windows and Linux either.
         "setBadge" => {
+            #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
                 let text = message["text"].as_str().unwrap_or("");
                 let _ = window.set_badge_label(if text.is_empty() { None } else { Some(text.to_string()) });
@@ -207,8 +207,13 @@ fn start_host(app: &AppHandle) -> Arc<Host> {
         // For an update's swap (src/main/macUpdate.ts): the bundle to replace and the process to wait for.
         "exePath": std::env::current_exe().map(|exe| exe.to_string_lossy().into_owned()).unwrap_or_default(),
         "appPid": std::process::id(),
+        "machineArch": machine_arch(),
     });
-    let mut child = Command::new(&place.node)
+    let mut command = Command::new(&place.node);
+    // Windows gives a console program started from a windowed one a console window of its own.
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
+    let mut child = command
         .arg(&place.host)
         .current_dir(&place.root)
         .env("SWITCHBOARD_HOST", info.to_string())
@@ -260,6 +265,26 @@ fn start_host(app: &AppHandle) -> Arc<Host> {
         }
     });
     host
+}
+
+// The machine's architecture in Node's words. An x64 build that ARM64 Windows runs emulated says
+// arm64, so its next update is the ARM64 build (src/main/updateFlow.ts AppPlace).
+fn machine_arch() -> &'static str {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::System::SystemInformation::IMAGE_FILE_MACHINE;
+        use windows::Win32::System::Threading::{GetCurrentProcess, IsWow64Process2};
+        let (mut process, mut native) = (IMAGE_FILE_MACHINE(0), IMAGE_FILE_MACHINE(0));
+        // IMAGE_FILE_MACHINE_ARM64
+        if IsWow64Process2(GetCurrentProcess(), &mut process, Some(&mut native)).is_ok() && native.0 == 0xAA64 {
+            return "arm64";
+        }
+    }
+    match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "x64",
+        other => other,
+    }
 }
 
 // The quit waits for the host's own (terminals, dev servers) for up to ten seconds.
@@ -327,7 +352,9 @@ fn main() {
             if capture.is_some() {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
-            if capture.is_none() {
+            // CLAUDE_IDE_CAPTURE_SHOW: shown all the same, for a check on a virtual display (Xvfb),
+            // where WebKitGTK draws, and so snapshots, only a window that is on screen.
+            if capture.is_none() || std::env::var("CLAUDE_IDE_CAPTURE_SHOW").is_ok() {
                 show_main(app.handle());
             }
             Ok(())

@@ -6,7 +6,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 export const NODE_VERSION = '24.19.0'
@@ -23,7 +23,8 @@ export const ARCHIVES: Record<string, { dist: string; ext: 'tar.gz' | 'zip'; exe
 }
 
 function hostTriple(): string {
-  const out = execFileSync(join(process.env.HOME ?? '', '.cargo', 'bin', 'rustc'), ['-vV'], { encoding: 'utf8' })
+  const cargo = join(homedir(), '.cargo', 'bin', process.platform === 'win32' ? 'rustc.exe' : 'rustc')
+  const out = execFileSync(existsSync(cargo) ? cargo : 'rustc', ['-vV'], { encoding: 'utf8' })
   return /^host: (.+)$/m.exec(out)![1]!.trim()
 }
 
@@ -55,8 +56,10 @@ export async function fetchNode(triple: string, root = ROOT): Promise<string> {
   const work = mkdtempSync(join(tmpdir(), 'switchboard-node-'))
   try {
     writeFileSync(join(work, file), bytes)
-    // bsdtar (macOS, Windows 10+) and GNU tar both read .tar.gz; bsdtar also reads .zip.
-    execFileSync('tar', ['-xf', join(work, file), '-C', work, `${name}/${archive.exe}`])
+    // bsdtar (macOS, Windows 10+) and GNU tar both read .tar.gz; bsdtar also reads .zip. On Windows
+    // the system's own, not a GNU tar some other tool put first on PATH.
+    const tar = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
+    execFileSync(tar, ['-xf', join(work, file), '-C', work, `${name}/${archive.exe}`])
     mkdirSync(join(root, 'src-tauri', 'binaries'), { recursive: true })
     writeFileSync(target, readFileSync(join(work, name, archive.exe)))
     chmodSync(target, 0o755)

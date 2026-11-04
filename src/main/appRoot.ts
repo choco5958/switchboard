@@ -15,3 +15,22 @@ export function nodeRoot(): string {
 export function useNodeRoot(path: string): void {
   root = path
 }
+
+// What runs the Node side (the bridge, the terminal host, the launchers of runtime.ts). The
+// Electron app: its own executable in Node mode, or, in an AppImage, the AppImage file, as the
+// mount it runs from goes with the app. The Tauri app: its own Node, switchboard-node, which on
+// Windows and Linux the start copies beside the runtime copy of Resources/node (runtime.ts
+// copyNode), so an update can replace the installed one while the bridge runs (Windows locks a
+// running executable) and an AppImage's mount can go. `appImage`: the executable is an AppImage,
+// whose launcher takes arguments of its own.
+let node: { path: string; appImage: boolean } | null = null
+
+export function nodeExecutable(): { path: string; appImage: boolean } {
+  if (node) return node
+  if (process.versions.electron && process.env.APPIMAGE) return { path: process.env.APPIMAGE, appImage: true }
+  return { path: process.execPath, appImage: false }
+}
+
+export function useNodeExecutable(path: string): void {
+  node = { path, appImage: false }
+}

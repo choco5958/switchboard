@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
-import { buildId, contentHash, copyRuntime, nodeEntry, nodeLauncher, oldBridgePid, pruneRuntimes, runtimeFiles, staleBridge, writeRuntime } from './runtime'
+import { buildId, contentHash, copyNode, copyRuntime, nodeEntry, nodeLauncher, oldBridgePid, pruneRuntimes, runtimeFiles, staleBridge, writeRuntime } from './runtime'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -52,6 +52,22 @@ test.skipIf(process.platform === 'win32')('a bridge without a pid is found by it
   expect(await oldBridgePid('/s', seen('4242\n', '/usr/bin/node /src/other/server.ts'))).toBe(null)
   expect(await oldBridgePid('/s', seen('4242\n4243\n', '/usr/bin/node /src/bridge/server.ts'))).toBe(null)
   expect(await oldBridgePid('/s', seen('', ''))).toBe(null)
+})
+
+test("the Tauri app's Node is copied beside the runtime copy once, runnable", () => {
+  const home = mkdtempSync(join(tmpdir(), 'sb-runtime-'))
+  dirs.push(home)
+  const node = join(home, 'app', 'switchboard-node')
+  mkdirSync(join(home, 'app'))
+  writeFileSync(node, 'v1')
+  const runtime = join(home, 'runtime', '0.4.0-abc')
+  const copy = copyNode(node, runtime)
+  expect(copy).toBe(join(runtime, 'bin', 'switchboard-node'))
+  expect(readFileSync(copy, 'utf8')).toBe('v1')
+  if (process.platform !== 'win32') expect(statSync(copy).mode & 0o111).not.toBe(0)
+  writeFileSync(node, 'v2')
+  expect(copyNode(node, runtime)).toBe(copy)
+  expect(readFileSync(copy, 'utf8')).toBe('v1')
 })
 
 test('each version gets one copy of the Node side, and older copies go', () => {

@@ -34,6 +34,7 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
+      "icons/icon.ico",
       "icons/icon.png"
     ],
     "externalBin": [
@@ -46,6 +47,19 @@
       "signingIdentity": "-",
       "hardenedRuntime": false,
       "minimumSystemVersion": "13.5"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libxss1"
+        ]
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/hooks.nsh"
+      }
     }
   }
 }

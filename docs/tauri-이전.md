@@ -42,7 +42,15 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
    - 릴리스 파일: `.github/workflows/tauri-mac.yml`이 두 칩의 앱을 만들고 scripts/pack-tauri-mac.ts가 zip, dmg(hdiutil로 만든다), latest-mac.yml을 Electron판과 같은 이름으로 만든다. 서명은 지금처럼 release 잡이 한다.
    - macOS를 넘기는 릴리스에서는 release.yml의 build 행렬에서 mac을 빼고 tauri-mac.yml을 `artifact: dist-mac`으로 부르는 잡을 넣는다. release 잡은 그 잡도 기다린다.
    - Windows와 Linux의 Tauri판은 아직 스스로 설치하지 않고, 새 버전이 나오면 다운로드 페이지를 알린다(8단계).
-8. [ ] **Windows와 Linux 확인, 전환.**
+8. [ ] **Windows와 Linux 확인, 전환.** 만들기와 숨긴 확인까지 했다. 전환은 아직이다.
+   - Rust 셸: Windows에서 콘솔 창을 띄우지 않고(앱과 Node 호스트 모두), 파일과 링크는 셸을 거치지 않고 연다(open 크레이트, Windows는 ShellExecute). Dock 배지는 macOS만 쓴다(Electron판도 다른 OS에서는 배지가 없다).
+   - 내장 브라우저: Linux는 WebKitGTK의 이름 붙은 세계에서 스크립트를 돌리고(call_async_javascript_function, WebKitGTK 2.40 이상) get_snapshot으로 화면을 찍는다. Windows는 WebView2의 DevTools 채널을 쓴다(Page.createIsolatedWorld로 앱 전용 세계, Runtime.evaluate, Page.captureScreenshot). macOS도 앱 전용 세계(WKContentWorld)를 앱이 붙잡고 있어야 그 안의 값이 남는다는 것을 이번에 알았다. 붙잡지 않으면 호출마다 새 세계가 생겨 화면 코멘트의 상태가 사라질 수 있었다.
+   - Node 실행 파일: Windows와 Linux의 Tauri판은 시작할 때 switchboard-node를 runtime 복사본 옆(`~/.claude-ide/runtime/<빌드>/bin`)에 복사해 브리지, 터미널 호스트, 실행 스크립트가 그것을 쓴다(src/main/appRoot.ts nodeExecutable). Windows는 실행 중인 파일을 잠가서 설치 폴더의 Node를 쓰면 업데이트가 덮어쓰지 못하고, AppImage는 앱이 끝나면 마운트가 사라진다. Electron판처럼 `$APPIMAGE`를 실행하면 Tauri판에서는 Node 대신 앱이 하나 더 뜨므로 이것도 함께 고쳤다.
+   - 앱 키 이어받기: Linux의 Electron판 키(safeStorage "v11", 비밀 서비스의 application "claude-ide" 항목, PBKDF2 1회)도 연다. Windows는 터미널 호스트가 없어 이어받을 것이 없다.
+   - 패키지: Windows는 NSIS 설치 파일(사용자별 설치), Linux는 AppImage와 deb. scripts/pack-tauri.ts가 Electron판과 같은 이름과 latest.yml, latest-linux.yml, latest-linux-arm64.yml을 만든다. Linux는 Ubuntu 22.04에서 만든다(더 새 배포판에서도 돌도록).
+   - Electron판에서 넘어오기(Windows): 설치된 Electron판은 새 설치 파일을 `--updated /S`로 실행한다. Tauri판 설치 파일은 먼저 Electron판을 그 제거 프로그램으로 지우고(바로가기, 설치된 앱 목록 항목, 파일. 데이터 폴더는 남는다), `--force-run`이 있으면 설치 뒤 앱을 띄운다(src-tauri/windows/hooks.nsh). 모든 사용자용으로 설치한 Electron판(HKLM)은 관리자 권한이 필요해 그대로 둔다. latest.yml의 첫 설치 파일이 x64라서 ARM64 PC의 Electron판도 x64 Tauri판을 받는다. 셸이 기계의 실제 아키텍처(IsWow64Process2)를 호스트에 알려, 그다음 업데이트에서 ARM64판으로 바뀐다.
+   - Tauri판의 업데이트: Windows는 설치 파일을 받아 앱이 끝난 뒤 PowerShell이 `/S`로 실행한다(`/R`이면 다시 띄운다). AppImage는 받은 파일이 앱이 끝날 때 `$APPIMAGE` 자리에 들어간다. deb는 지금처럼 다운로드 페이지를 알린다(src/main/installUpdate.ts).
+   - 확인: `.github/workflows/tauri-check.yml`이 Windows(x64, arm64)와 Linux(x64, arm64)에서 만들고, Windows에서는 Electron판 0.3.17을 설치한 뒤 Tauri판으로 넘어가는지 보고, 설치된 앱을 scripts/tauri-smoke.ts로 숨겨서 돌린다(브리지, 세션 목록, 질문, 터미널, 내장 브라우저). 이 스크립트는 macOS에서도 같게 돈다.
 
 ## 패키지 만들기 (macOS)
 
@@ -80,6 +88,7 @@ cd src-tauri && cargo build --release
 - **페이지가 호스트보다 먼저 뜬다:** Electron판은 앱 논리가 시작된 뒤 창을 만들지만, Tauri판은 창의 페이지가 곧바로 뜬다. 그 사이의 호출은 브리지가 없어 빈 상태를 받았고, 바뀐 것이 생길 때까지 세션 목록이 비어 있었다. 이제 페이지의 호출은 호스트가 ready를 보낼 때까지 기다린다.
 - **undefined 인자:** Electron IPC는 undefined를 그대로 넘기고 처리기는 그것을 null과 구분한다. JSON에는 undefined가 없어서 Tauri 쪽은 표시를 붙여 보내고 호스트가 되살린다(src/shared/ideCalls.ts).
 - **시험 실행과 OS 기능:** `CLAUDE_IDE_CAPTURE_JS`가 있으면 키체인, 대화상자, 알림을 건드리지 않는다. 키는 실행마다 새로 만들고(그래서 터미널 호스트 대신 Node 호스트 안에서 터미널이 돈다), 확인 대화상자는 취소로, 폴더 고르기는 고르지 않음으로 답하고, 알림은 로그에만 남긴다.
+- **WebKitGTK의 화면 찍기:** 한 번도 화면에 나오지 않은 창은 그리지 않아서 찍히지 않는다. 숨긴 확인을 가상 화면(Xvfb)에서 할 때는 `CLAUDE_IDE_CAPTURE_SHOW=1`로 창을 띄운다.
 - **사람이 봐야 확인되는 것:** 키체인(처음 저장, 다시 읽기, 거절, Electron판 키 이어받기), 확인 대화상자, 폴더 고르기, 알림 누르기, 한 번만 실행, 창을 닫았다가 Dock으로 다시 열기. 잠자기 막기와 자리 비움은 Rust 단위 테스트로 확인했다.
 
 ## 주의

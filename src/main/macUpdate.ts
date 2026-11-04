@@ -39,14 +39,22 @@ export function isNewer(candidate: string, current: string): boolean {
   return current.includes('-')
 }
 
-// The zip for this Mac's chip among the files of latest-mac.yml (electron-updater's info.files).
-// Only the exact name the release workflow gives it: the name becomes part of a URL and a path.
-export function zipFor(files: readonly { url: string; sha512?: string; size?: number }[], version: string, arch: string): ZipFile | null {
-  if (!parts(version) || (arch !== 'arm64' && arch !== 'x64')) return null
-  const name = `Switchboard-${version}-mac-${arch}.zip`
+type Listed = readonly { url: string; sha512?: string; size?: number }[]
+
+// The file of that exact name among the files of an update file (electron-updater's info.files),
+// with the sha512 and size the download has to match. Only a name the release workflow gives:
+// it becomes part of a URL and a path.
+export function releaseFile(files: Listed, version: string, name: string): ZipFile | null {
+  if (!parts(version)) return null
   const file = files.find(one => one.url === name)
   if (!file || typeof file.sha512 !== 'string' || !file.sha512 || typeof file.size !== 'number' || !(file.size > 0)) return null
   return { name, sha512: file.sha512, size: file.size }
+}
+
+// The zip for this Mac's chip among the files of latest-mac.yml.
+export function zipFor(files: Listed, version: string, arch: string): ZipFile | null {
+  if (arch !== 'arm64' && arch !== 'x64') return null
+  return releaseFile(files, version, `Switchboard-${version}-mac-${arch}.zip`)
 }
 
 // A file of the release of `version`: its zip, or its update file and that file's signature.
@@ -154,12 +162,12 @@ export async function fileMatches(path: string, size: number, sha512: string): P
   return hash.digest('base64') === sha512
 }
 
-// Downloads the zip and keeps it only when it matches.
+// Downloads the file and keeps it only when it matches its update file.
 export async function download(url: string, dest: string, file: ZipFile): Promise<void> {
   rmSync(dest, { force: true })
   try {
     await fetchTo(url, dest, file.size)
-    if (!(await fileMatches(dest, file.size, file.sha512))) throw new Error('the download does not match latest-mac.yml')
+    if (!(await fileMatches(dest, file.size, file.sha512))) throw new Error(`the download does not match the update file (${file.name})`)
   } catch (error) {
     rmSync(dest, { force: true })
     throw error
