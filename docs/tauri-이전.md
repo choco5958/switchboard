@@ -49,6 +49,7 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
    - 앱 키 이어받기: Linux의 Electron판 키(safeStorage "v11", 비밀 서비스의 application "claude-ide" 항목, PBKDF2 1회)도 연다. Windows는 터미널 호스트가 없어 이어받을 것이 없다.
    - 패키지: Windows는 NSIS 설치 파일(사용자별 설치), Linux는 AppImage와 deb. scripts/pack-tauri.ts가 Electron판과 같은 이름과 latest.yml, latest-linux.yml, latest-linux-arm64.yml을 만든다. Linux는 Ubuntu 22.04에서 만든다(더 새 배포판에서도 돌도록).
    - Electron판에서 넘어오기(Windows): 설치된 Electron판은 새 설치 파일을 `--updated /S`로 실행한다. Tauri판 설치 파일은 먼저 Electron판을 그 제거 프로그램으로 지우고(바로가기, 설치된 앱 목록 항목, 파일. 데이터 폴더는 남는다), `--force-run`이 있으면 설치 뒤 앱을 띄운다(src-tauri/windows/hooks.nsh). 모든 사용자용으로 설치한 Electron판(HKLM)은 관리자 권한이 필요해 그대로 둔다. latest.yml의 첫 설치 파일이 x64라서 ARM64 PC의 Electron판도 x64 Tauri판을 받는다. 셸이 기계의 실제 아키텍처(IsWow64Process2)를 호스트에 알려, 그다음 업데이트에서 ARM64판으로 바뀐다.
+   - Electron판에서 넘어오기(Linux): AppImage는 Electron판의 업데이터가 새 파일을 제자리에 두고 `APPIMAGE_EXIT_AFTER_INSTALL`로 한 번 실행해 끝나기를 기다린다. Tauri판은 이때 바로 끝나고, 다음에 열 때 뜬다. deb는 패키지 이름이 바뀌어서(claude-ide에서 switchboard로) Conflicts와 Replaces를 적어, apt로 설치하면 Electron판 패키지가 빠진다.
    - Tauri판의 업데이트: Windows는 설치 파일을 받아 앱이 끝난 뒤 PowerShell이 `/S`로 실행한다(`/R`이면 다시 띄운다). AppImage는 받은 파일이 앱이 끝날 때 `$APPIMAGE` 자리에 들어간다. deb는 지금처럼 다운로드 페이지를 알린다(src/main/installUpdate.ts).
    - 확인: `.github/workflows/tauri-check.yml`이 Windows(x64, arm64)와 Linux(x64, arm64)에서 만들고, Windows에서는 Electron판 0.3.17을 설치한 뒤 Tauri판으로 넘어가는지 보고, 설치된 앱을 scripts/tauri-smoke.ts로 숨겨서 돌린다(브리지, 세션 목록, 질문, 터미널, 내장 브라우저). 이 스크립트는 macOS에서도 같게 돈다.
 

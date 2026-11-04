@@ -323,6 +323,13 @@ fn stay_awake_while_hidden() {
 }
 
 fn main() {
+    // The Electron app's updater puts an AppImage in place, then runs it with this set and waits for
+    // it to end, for the set-up electron-builder's AppImages do then. This one has none to do: it
+    // starts the next time the person opens it.
+    #[cfg(target_os = "linux")]
+    if std::env::var("APPIMAGE_EXIT_AFTER_INSTALL").as_deref() == Ok("true") {
+        return;
+    }
     os::prepare_notifications();
     #[cfg(target_os = "macos")]
     stay_awake_while_hidden();

@@ -52,6 +52,12 @@
       "deb": {
         "depends": [
           "libxss1"
+        ],
+        "conflicts": [
+          "claude-ide"
+        ],
+        "replaces": [
+          "claude-ide"
         ]
       }
     },

@@ -31,10 +31,15 @@
 !macroend
 
 ; electron-updater asks the update to start the app again with --force-run (this installer's own
-; switch for that is /R).
+; switch for that is /R). RunAsUser starts it as the person even from an installer running as an
+; administrator, through the desktop's shell; with no desktop shell (it answers 1) it starts as is.
 !macro NSIS_HOOK_POSTINSTALL
   ${GetOptions} $CMDLINE "--force-run" $R9
   ${IfNot} ${Errors}
     nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
+    Pop $R9
+    ${If} $R9 != 0
+      Exec '"$INSTDIR\${MAINBINARYNAME}.exe"'
+    ${EndIf}
   ${EndIf}
 !macroend
