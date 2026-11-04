@@ -131,8 +131,13 @@ export function stagedUpdates<S>(terminals: () => readonly { alive: boolean }[],
   let shuttingDown = false
   platform().onPower('shutdown', () => (shuttingDown = true))
   place.whenQuit(() => {
-    if (!staged || installed || shuttingDown || !steps.canInstall()) return
+    if (!staged || installed) return
+    if (shuttingDown || !steps.canInstall()) {
+      console.error(`update ${staged.version} waits: ${shuttingDown ? 'the system is shutting down' : 'this copy cannot be replaced now'}`)
+      return
+    }
     installed = true
+    console.error(`update ${staged.version}: installing as the app quits${relaunch ? ', then starting it again' : ''}`)
     try {
       steps.install(staged.it, relaunch)
     } catch (error) {
@@ -159,6 +164,7 @@ export function stagedUpdates<S>(terminals: () => readonly { alive: boolean }[],
     try {
       // A quit while this downloads installs what was staged before, if anything.
       const it = await steps.stage(file, version)
+      console.error(`update ${version}: ${file.name} downloaded`)
       const before = staged
       staged = { version, it }
       if (before) steps.discard(before.it)

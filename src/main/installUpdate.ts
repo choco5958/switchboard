@@ -60,6 +60,7 @@ export function windowsInstallScript(input: WindowsInstall): string {
 // What PowerShell prints, errors included, goes to the update log with the script's own lines.
 export function startWindowsInstall(input: WindowsInstall): void {
   const encoded = Buffer.from(windowsInstallScript(input), 'utf16le').toString('base64')
+  console.error(`update: ${input.installer} runs once process ${input.pid} has ended; log ${input.log}`)
   appendFileSync(input.log, `${new Date().toISOString()} the app quits; the installer runs after it (${input.installer})\n`)
   const out = openSync(input.log, 'a')
   try {
