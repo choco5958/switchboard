@@ -198,6 +198,10 @@ async function main(): Promise<number> {
   }
   if (failure) {
     console.log(`FAILED: ${failure}`)
+    if (PLATFORM === 'win32') {
+      const log = join(process.env.APPDATA ?? '', 'claude-ide', 'update.log')
+      console.log(`--- ${log}:\n${existsSync(log) ? readFileSync(log, 'utf8') : '(none)'}`)
+    }
     console.log('--- the app said:')
     for (const line of lines.slice(-60)) console.log(line)
     return 1
@@ -214,10 +218,11 @@ function pageScript(): string {
   const end = Date.now() + 230000
   let last = ''
   for (;;) {
-    const status = await window.ide.updateStatus()
+    // window.ide may come after this script, and a call before the host is up may fail.
+    const status = await Promise.resolve().then(() => window.ide.updateStatus()).catch(e => ({ state: 'unknown', error: String(e && e.message || e) }))
     if (status.state !== last) report('update state ' + (last = status.state))
     if (status.state === 'ready') break
-    if (['error', 'refused', 'manual'].includes(status.state) || Date.now() > end) {
+    if (['refused', 'manual'].includes(status.state) || Date.now() > end) {
       report('update failed: ' + JSON.stringify(status))
       return
     }

@@ -3,7 +3,8 @@
 // carries the release key's signature (updateSignature.ts) and matches that file's sha512; it
 // goes in once the app has quit (updateFlow.ts stagedUpdates).
 // - Windows: the installer (Switchboard-<v>-win-<arch>.exe), run with /S by a PowerShell that first
-//   waits for the app to end; /R starts the app again. The bridge and the terminal host run on a
+//   waits for the app to end, then starts the app again itself (the installer's /R starts it through
+//   the desktop shell, which an elevated or shell-less session does not have). The bridge and the terminal host run on a
 //   copy of the app's Node (runtime.ts copyNode), so nothing holds the installed files.
 // - Linux: the AppImage (Switchboard-<v>-linux-<x86_64|arm64>.AppImage) takes the place of the file
 //   the app runs from ($APPIMAGE), which a running AppImage allows. A .deb or any other package is
@@ -37,21 +38,26 @@ const psQuote = (value: string) => `'${value.replace(/'/g, "''")}'`
 
 // What PowerShell runs after the app has quit (-EncodedCommand: no quoting by a shell between).
 // An installer that fails marks its version so the app offers a download instead (cleanUpdates).
-export function windowsInstallScript(input: { pid: number; installer: string; relaunch: boolean; log: string; failedMark: string }): string {
-  const args = input.relaunch ? "@('/S', '/R')" : "@('/S')"
+// `app`: the app's executable, started again once the installer has put the new version there.
+type WindowsInstall = { pid: number; installer: string; relaunch: boolean; app: string; log: string; failedMark: string }
+
+export function windowsInstallScript(input: WindowsInstall): string {
   return [
     "$ErrorActionPreference = 'SilentlyContinue'",
     `Wait-Process -Id ${input.pid} -Timeout 120`,
     `Add-Content -LiteralPath ${psQuote(input.log)} -Value ((Get-Date -Format o) + ' installing ' + ${psQuote(input.installer)})`,
-    `$run = Start-Process -FilePath ${psQuote(input.installer)} -ArgumentList ${args} -PassThru`,
+    `$run = Start-Process -FilePath ${psQuote(input.installer)} -ArgumentList @('/S') -PassThru`,
+    '$null = $run.Handle',
     '$run.WaitForExit()',
     `Add-Content -LiteralPath ${psQuote(input.log)} -Value ((Get-Date -Format o) + ' the installer ended with ' + $run.ExitCode)`,
     `if ($run.ExitCode -ne 0) { Set-Content -LiteralPath ${psQuote(input.failedMark)} -Value ('installer exit ' + $run.ExitCode) }`,
     `Remove-Item -LiteralPath ${psQuote(input.installer)} -Force`,
+    // A failed install leaves the version there was: it starts again as well.
+    ...(input.relaunch ? [`Start-Process -FilePath ${psQuote(input.app)}`] : []),
   ].join('\n')
 }
 
-export function startWindowsInstall(input: { pid: number; installer: string; relaunch: boolean; log: string; failedMark: string }): void {
+export function startWindowsInstall(input: WindowsInstall): void {
   const encoded = Buffer.from(windowsInstallScript(input), 'utf16le').toString('base64')
   spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
 }

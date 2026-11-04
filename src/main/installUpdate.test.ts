@@ -47,12 +47,15 @@ test('the new AppImage takes the place of the running one, runnable', () => {
 })
 
 test('the Windows install waits for the app, runs the installer quietly and keeps paths literal', () => {
-  const script = windowsInstallScript({ pid: 4242, installer: "C:\\Users\\O'Brien\\updates\\Switchboard-0.4.0-win-x64.exe", relaunch: true, log: 'C:\\Users\\me\\update.log', failedMark: 'C:\\Users\\me\\updates\\0.4.0.failed' })
+  const app = 'C:\\Users\\me\\AppData\\Local\\Switchboard\\switchboard.exe'
+  const script = windowsInstallScript({ pid: 4242, installer: "C:\\Users\\O'Brien\\updates\\Switchboard-0.4.0-win-x64.exe", relaunch: true, app, log: 'C:\\Users\\me\\update.log', failedMark: 'C:\\Users\\me\\updates\\0.4.0.failed' })
   const lines = script.split('\n')
   expect(lines[1]).toBe('Wait-Process -Id 4242 -Timeout 120')
-  expect(script).toContain("Start-Process -FilePath 'C:\\Users\\O''Brien\\updates\\Switchboard-0.4.0-win-x64.exe' -ArgumentList @('/S', '/R') -PassThru")
+  expect(script).toContain("Start-Process -FilePath 'C:\\Users\\O''Brien\\updates\\Switchboard-0.4.0-win-x64.exe' -ArgumentList @('/S') -PassThru")
   expect(script).toContain("Set-Content -LiteralPath 'C:\\Users\\me\\updates\\0.4.0.failed'")
+  // Started again by the script, once the installer is done.
+  expect(lines.at(-1)).toBe(`Start-Process -FilePath '${app}'`)
   // Nothing of a path is read as PowerShell: no double-quoted strings that expand $ or `.
   expect(script).not.toMatch(/"[^"]*\\[^"]*"/)
-  expect(windowsInstallScript({ pid: 1, installer: 'C:\\a.exe', relaunch: false, log: 'C:\\l', failedMark: 'C:\\f' })).toContain("-ArgumentList @('/S') -PassThru")
+  expect(windowsInstallScript({ pid: 1, installer: 'C:\\a.exe', relaunch: false, app, log: 'C:\\l', failedMark: 'C:\\f' })).not.toContain(app)
 })

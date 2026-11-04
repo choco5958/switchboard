@@ -32,7 +32,10 @@ pub fn app_key(data: &std::path::Path) -> Value {
     if capturing() {
         return fresh();
     }
-    let entry = match keyring::Entry::new(SERVICE, "app-key") {
+    // A check with a person at the screen (docs/tauri-이전.md) keeps its key in an entry of its own
+    // (SERVICE.<name>), so the app's own entry stays as it was.
+    let service = std::env::var("CLAUDE_IDE_KEYCHAIN_SERVICE").ok().filter(|name| name.strip_prefix(SERVICE).is_some_and(|rest| rest.len() > 1 && rest.starts_with('.'))).unwrap_or_else(|| SERVICE.to_string());
+    let entry = match keyring::Entry::new(&service, "app-key") {
         Ok(entry) => entry,
         Err(_) => return fresh(),
     };

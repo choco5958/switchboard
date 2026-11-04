@@ -159,10 +159,14 @@ jobs:
             triple: x86_64-unknown-linux-gnu
             arch: x64
             appimage: x86_64
+            # From 0.3.13 the Electron release built x64 on Ubuntu 26.04, whose node-pty needs glibc
+            # 2.42: those do not start here. 0.3.12 seals its key the same way.
+            electron: 0.3.12
           - os: ubuntu-22.04-arm
             triple: aarch64-unknown-linux-gnu
             arch: arm64
             appimage: arm64
+            electron: 0.3.17
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -212,7 +216,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download v0.3.17 -R "$GITHUB_REPOSITORY" -p 'Switchboard-0.3.17-linux-${{ matrix.appimage }}.AppImage' -D electron
+          gh release download v${{ matrix.electron }} -R "$GITHUB_REPOSITORY" -p 'Switchboard-${{ matrix.electron }}-linux-${{ matrix.appimage }}.AppImage' -D electron
           chmod +x electron/*.AppImage
           xvfb-run -a dbus-run-session -- sh -c 'printf pw | gnome-keyring-daemon --unlock --components=secrets >/dev/null && node scripts/tauri-key-check.ts "$0" "$1"' electron/*.AppImage "$(ls dist/*.AppImage)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

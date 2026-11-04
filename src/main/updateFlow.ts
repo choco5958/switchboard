@@ -226,7 +226,7 @@ export function installerUpdates(terminals: () => readonly { alive: boolean }[],
         return { installer, version }
       },
       discard: ({ installer }) => rmSync(installer, { force: true }),
-      install: ({ installer, version }, relaunch) => startWindowsInstall({ pid: place.pid, installer, relaunch, log, failedMark: join(dir, `${version}.failed`) }),
+      install: ({ installer, version }, relaunch) => startWindowsInstall({ pid: place.pid, installer, relaunch, app: place.exe, log, failedMark: join(dir, `${version}.failed`) }),
     })
   }
   const target = process.platform === 'linux' ? appImageTarget(env) : null
