@@ -1,6 +1,7 @@
 // Answers from the decision card wait a few seconds in this window before they go to the bridge,
 // so the toast's Undo can take one back: until the wait is over nothing has left the app, and the
-// session has seen nothing. After that the answer is the session's, and there is no undo.
+// session has seen nothing. After that the answer is the session's, and there is no undo. One the
+// bridge did not take (refused, out of reach) comes back as a draft, so the card opens with it again.
 // The window closing (or reloading) sends whatever still waits at once rather than dropping it.
 // Each waiting answer is also written to localStorage until the bridge has it, so one the app
 // could not send (a forced quit, a crash) goes at the next start (resendLeft). A second send of
@@ -9,14 +10,25 @@
 export const SEND_DELAY_MS = 5000
 
 export type Draft = { choice: string; memo: string }
-type Waiting = Draft & { timer: ReturnType<typeof setTimeout>; send: () => Promise<void> }
-
-// Sends, then drops the stored copy whether the bridge took it or refused it (the toast says which).
-const go = (id: number, entry: Pick<Waiting, 'send'>) => void entry.send().then(() => forget(id))
+// send resolves true once the bridge has the answer, false when it did not take it.
+type Waiting = Draft & { timer: ReturnType<typeof setTimeout>; send: () => Promise<boolean> }
 
 const waiting = new Map<number, Waiting>()
-// What an Undo took back, so the card that opens again starts from it.
+// What an Undo took back, or what the bridge did not take, so the card that opens again starts from it.
 const drafts = new Map<number, Draft>()
+
+// Sends, then drops the stored copy whether the bridge took it or refused it (the toast says which).
+// Not taken: the question is still open, and its card gets the answer back to send again.
+function go(id: number, entry: Waiting): void {
+  const settle = (took: boolean) => {
+    forget(id)
+    if (took || waiting.has(id)) return
+    drafts.set(id, { choice: entry.choice, memo: entry.memo })
+    changed()
+  }
+  void entry.send().then(settle, () => settle(false))
+}
+
 const listeners = new Set<() => void>()
 
 const STORE = 'switchboard.outbox'
@@ -75,16 +87,17 @@ export function waitingIds(): Set<number> {
 
 // send runs once the delay is over, unless takeBack came first. A second answer to the same
 // question replaces the first.
-export function queueAnswer(id: number, draft: Draft, send: () => Promise<void>, delay = SEND_DELAY_MS): void {
+export function queueAnswer(id: number, draft: Draft, send: () => Promise<boolean>, delay = SEND_DELAY_MS): void {
   const before = waiting.get(id)
   if (before) clearTimeout(before.timer)
   drafts.delete(id)
   const timer = setTimeout(() => {
     waiting.delete(id)
     changed()
-    go(id, { send })
+    go(id, entry)
   }, delay)
-  waiting.set(id, { ...draft, timer, send })
+  const entry: Waiting = { ...draft, timer, send }
+  waiting.set(id, entry)
   keep(id, draft)
   changed()
 }
