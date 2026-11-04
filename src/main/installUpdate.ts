@@ -11,7 +11,7 @@
 //   the system package manager's to update: that copy is told where to download it.
 
 import { spawn } from 'node:child_process'
-import { accessSync, chmodSync, constants, renameSync } from 'node:fs'
+import { accessSync, appendFileSync, chmodSync, closeSync, constants, openSync, renameSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 // The release file of `version` for this system, or null where this copy does not install one.
@@ -57,9 +57,18 @@ export function windowsInstallScript(input: WindowsInstall): string {
   ].join('\n')
 }
 
+// What PowerShell prints, errors included, goes to the update log with the script's own lines.
 export function startWindowsInstall(input: WindowsInstall): void {
   const encoded = Buffer.from(windowsInstallScript(input), 'utf16le').toString('base64')
-  spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+  appendFileSync(input.log, `${new Date().toISOString()} the app quits; the installer runs after it (${input.installer})\n`)
+  const out = openSync(input.log, 'a')
+  try {
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], { detached: true, stdio: ['ignore', out, out], windowsHide: true })
+    child.on('error', error => appendFileSync(input.log, `${new Date().toISOString()} PowerShell did not start: ${error.message}\n`))
+    child.unref()
+  } finally {
+    closeSync(out)
+  }
 }
 
 // The AppImage downloaded beside the running one takes its place; the running app keeps the file

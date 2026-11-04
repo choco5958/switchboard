@@ -201,6 +201,8 @@ async function main(): Promise<number> {
     if (PLATFORM === 'win32') {
       const log = join(process.env.APPDATA ?? '', 'claude-ide', 'update.log')
       console.log(`--- ${log}:\n${existsSync(log) ? readFileSync(log, 'utf8') : '(none)'}`)
+      const updates = join(process.env.APPDATA ?? '', 'claude-ide', 'updates')
+      console.log(`--- ${updates}: ${existsSync(updates) ? readdirSync(updates).join(', ') : '(none)'}`)
     }
     console.log('--- the app said:')
     for (const line of lines.slice(-60)) console.log(line)
