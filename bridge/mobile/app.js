@@ -186,16 +186,32 @@ function trouble(error) {
   flash(say('failed', { error: error.message }), true)
 }
 
-async function act(method, path, body, done) {
+// Requests on their way, by the data-key of the button that sent them: that button waits, so a
+// second tap does not send the same answer or message twice.
+const sending = new Set()
+
+// key: the sending button's data-key. sent: what to do once the bridge took the request, such as
+// forgetting the choice and text typed for it. Until then they stay: a refusal or a lost
+// connection leaves them on the page to send again.
+async function act(method, path, body, done, { key, sent } = {}) {
+  if (key) {
+    if (sending.has(key)) return
+    sending.add(key)
+    render()
+  }
+  let result
   try {
-    const result = await api(method, path, body)
-    if (result.json?.strong) return flash(say(result.json.pairAgain ? 'pairAgain' : 'needStrong'), true)
-    if (result.json?.hidden) return flash(say('hiddenChars'), true)
-    if (result.status >= 400) return flash(say('failed', { error: result.json?.error ?? result.status }), true)
-    if (done) flash(done)
+    result = await api(method, path, body)
   } catch (error) {
+    sending.delete(key)
     return trouble(error)
   }
+  sending.delete(key)
+  if (result.json?.strong) return flash(say(result.json.pairAgain ? 'pairAgain' : 'needStrong'), true)
+  if (result.json?.hidden) return flash(say('hiddenChars'), true)
+  if (result.status >= 400) return flash(say('failed', { error: result.json?.error ?? result.status }), true)
+  sent?.()
+  if (done) flash(done)
   await refresh()
 }
 
@@ -486,13 +502,13 @@ function drawDecisions() {
           {
             className: 'btn primary',
             'data-key': `send:${q.id}`,
+            disabled: sending.has(`send:${q.id}`),
             onclick: () => {
               const choice = picks.get(q.id) ?? ''
               const text = mayStrong() ? (memos.get(q.id) ?? '').trim() : ''
               if (!choice && !text) return flash(say('needChoice'), true)
-              picks.delete(q.id)
-              memos.delete(q.id)
-              void act('POST', `/questions/${q.id}/answer`, { choice, memo: text }, say('answered'))
+              const sent = () => (picks.delete(q.id), memos.delete(q.id))
+              void act('POST', `/questions/${q.id}/answer`, { choice, memo: text }, say('answered'), { key: `send:${q.id}`, sent })
             },
           },
           say('send'),
@@ -554,10 +570,11 @@ function drawApprovals() {
           {
             className: 'btn deny',
             'data-key': `deny:${a.id}`,
+            disabled: sending.has(`deny:${a.id}`),
             onclick: () => {
               const note = mayStrong() ? (denyNotes.get(a.id) ?? '').trim() : ''
-              denyNotes.delete(a.id)
-              void act('POST', `/approvals/${a.id}/answer`, note ? { decision: 'deny', note } : { decision: 'deny' })
+              const sent = () => denyNotes.delete(a.id)
+              void act('POST', `/approvals/${a.id}/answer`, note ? { decision: 'deny', note } : { decision: 'deny' }, undefined, { key: `deny:${a.id}`, sent })
             },
           },
           say('deny'),
@@ -615,11 +632,11 @@ function drawSessions() {
           {
             className: 'btn primary',
             'data-key': `post:${s.id}`,
+            disabled: sending.has(`post:${s.id}`),
             onclick: () => {
               const text = (drafts.get(s.id) ?? '').trim()
               if (!text) return
-              drafts.delete(s.id)
-              void act('POST', '/outbox', { sessionId: s.id, text }, say('messageSent'))
+              void act('POST', '/outbox', { sessionId: s.id, text }, say('messageSent'), { key: `post:${s.id}`, sent: () => drafts.delete(s.id) })
             },
           },
           say('send'),
