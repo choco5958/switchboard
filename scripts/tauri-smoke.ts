@@ -23,9 +23,9 @@ import { requestTarget, resolveEndpoint } from '../bridge/endpoint.ts'
 const ROOT = resolve(import.meta.dirname, '..')
 const WINDOWS = process.platform === 'win32'
 
-type Env = Record<string, string | undefined>
+export type Env = Record<string, string | undefined>
 
-function call(env: Env, home: string, method: string, path: string, body?: unknown): Promise<{ status: number; text: string }> {
+export function call(env: Env, home: string, method: string, path: string, body?: unknown): Promise<{ status: number; text: string }> {
   const target = requestTarget(resolveEndpoint(env, home))
   return new Promise((done, fail) => {
     const sent = request({ ...target, method, path, headers: { ...target.headers, 'content-type': 'application/json' }, timeout: 5000 }, reply => {
@@ -39,7 +39,7 @@ function call(env: Env, home: string, method: string, path: string, body?: unkno
   })
 }
 
-async function until<T>(what: string, check: () => Promise<T | undefined | false> | T | undefined | false, ms: number): Promise<T> {
+export async function until<T>(what: string, check: () => Promise<T | undefined | false> | T | undefined | false, ms: number): Promise<T> {
   const end = Date.now() + ms
   for (;;) {
     const value = await Promise.resolve()
@@ -130,19 +130,15 @@ function pageScript(scratch: string, page: string): string {
 })()`
 }
 
-function stop(child: ChildProcess): void {
+export function stop(child: ChildProcess): void {
   if (child.exitCode !== null || child.pid === undefined) return
   if (WINDOWS) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
   else child.kill()
 }
 
-async function main(): Promise<number> {
-  const [exe, flag] = process.argv.slice(2)
-  if (!exe) {
-    console.error('usage: node scripts/tauri-smoke.ts <app executable> [--repo]')
-    return 2
-  }
-  const work = realpathSync(mkdtempSync(join(tmpdir(), 'sb-smoke-')))
+// A temporary home for a run of the app: nothing it writes goes outside (Windows: but %APPDATA%).
+export function testHome(prefix: string): { work: string; home: string; scratch: string; env: Env } {
+  const work = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
   const home = join(work, 'home')
   const scratch = join(work, 'scratch')
   for (const dir of [home, scratch, join(work, 'claude')]) mkdirSync(dir, { recursive: true })
@@ -155,6 +151,31 @@ async function main(): Promise<number> {
     CLAUDE_IDE_DB: join(work, 'bridge.db'),
     ...(WINDOWS ? {} : { CLAUDE_IDE_SOCKET: join(work, 'b.sock'), SHELL: process.env.SHELL || '/bin/sh' }),
   }
+  return { work, home, scratch, env }
+}
+
+// Every line the app prints, kept, and the ones that tell how it goes shown.
+export function collectLines(app: ChildProcess, lines: string[]): void {
+  for (const stream of [app.stdout!, app.stderr!]) {
+    let rest = ''
+    stream.on('data', chunk => {
+      const parts = (rest + chunk).split(/\r?\n/)
+      rest = parts.pop() ?? ''
+      for (const line of parts) {
+        lines.push(line)
+        if (/^capture: |panicked|error|update/i.test(line)) console.log(line)
+      }
+    })
+  }
+}
+
+async function main(): Promise<number> {
+  const [exe, flag] = process.argv.slice(2)
+  if (!exe) {
+    console.error('usage: node scripts/tauri-smoke.ts <app executable> [--repo]')
+    return 2
+  }
+  const { work, home, scratch, env } = testHome('sb-smoke-')
   const site = createServer((_req, res) => {
     res.setHeader('content-type', 'text/html')
     res.end('<!doctype html><title>Smoke page</title><h1 id="t">hello</h1><script>console.log("smoke console")</script>')
@@ -170,17 +191,7 @@ async function main(): Promise<number> {
       env: { ...env, CLAUDE_IDE_CAPTURE_JS: pageScript(scratch, page), ...(flag === '--repo' ? { SWITCHBOARD_REPO: ROOT } : {}) },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    for (const stream of [app.stdout!, app.stderr!]) {
-      let rest = ''
-      stream.on('data', chunk => {
-        const parts = (rest + chunk).split(/\r?\n/)
-        rest = parts.pop() ?? ''
-        for (const line of parts) {
-          lines.push(line)
-          if (/^capture: |panicked|error/i.test(line)) console.log(line)
-        }
-      })
-    }
+    collectLines(app, lines)
     const ended = new Promise(r => app!.once('exit', code => r(`the app ended (${code})`)))
     const outcome = await Promise.race([until('the page script', () => lines.includes('capture: done'), 240000).then(() => 'done'), ended])
     if (outcome !== 'done') console.log(outcome)
@@ -218,4 +229,4 @@ async function main(): Promise<number> {
   return 0
 }
 
-process.exit(await main())
+if (import.meta.main) process.exit(await main())

@@ -7,7 +7,7 @@
 // imports Electron, so the tests run all of it.
 
 import { createPublicKey, verify } from 'node:crypto'
-import { fetchSmall, releaseUrl } from './macUpdate'
+import { fetchSmall, latestUrl, releaseUrl, useReleasesAt } from './macUpdate'
 
 // SPKI PEM. A list, so a new key can ship in one version before the releases are signed with it.
 // scripts/sign-update.ts refuses to sign with a key that is not here.
@@ -17,14 +17,23 @@ MCowBQYDK2VwAyEA+8F52lsNdBbDt8uelWsItRrZK/6i5RdEzlFRIRi9nCE=
 -----END PUBLIC KEY-----`,
 ]
 
-const LATEST_BASE = 'https://github.com/choco5958/switchboard/releases/latest/download'
+// The keys checked: UPDATE_KEYS, but for a check of the update path (useTestReleases).
+let trusted: readonly string[] = UPDATE_KEYS
+
+// A check of the update path (scripts/tauri-update-check.ts): the releases of a local server, signed
+// by a key of the check's own. The Tauri app's host sets it only when it runs with nobody at the
+// screen and is told to (src/host/main.ts).
+export function useTestReleases(origin: string, key: string): void {
+  useReleasesAt(origin)
+  trusted = [key]
+}
 
 // An update file is under 1 KiB, its signature 89 bytes.
 const MAX_FILE = 64 * 1024
 const MAX_SIGNATURE = 1024
 
 // Whether one of `keys` signed `data`: `signature` is the text of the .sig file.
-export function signedBy(data: Buffer, signature: string, keys: readonly string[] = UPDATE_KEYS): boolean {
+export function signedBy(data: Buffer, signature: string, keys: readonly string[] = trusted): boolean {
   const text = signature.trim()
   if (!/^[A-Za-z0-9+/]{86}==$/.test(text)) return false
   const raw = Buffer.from(text, 'base64')
@@ -134,7 +143,7 @@ export async function signedUpdate(
   found: { version: string; tag?: string },
   file: string,
   fetch: (url: string, max: number) => Promise<Buffer> = fetchSmall,
-  keys: readonly string[] = UPDATE_KEYS,
+  keys: readonly string[] = trusted,
 ): Promise<SignedUpdate> {
   const { version } = found
   // electron-updater downloads from the release named by the tag; it has to be this version's.
@@ -153,9 +162,9 @@ export async function signedUpdate(
 export async function latestSigned(
   file: string,
   fetch: (url: string, max: number) => Promise<Buffer> = fetchSmall,
-  keys: readonly string[] = UPDATE_KEYS,
+  keys: readonly string[] = trusted,
 ): Promise<SignedUpdate> {
-  const found = parseUpdateFile((await fetch(`${LATEST_BASE}/${encodeURIComponent(file)}`, MAX_FILE)).toString('utf8'))
+  const found = parseUpdateFile((await fetch(latestUrl(file), MAX_FILE)).toString('utf8'))
   const version = typeof found.version === 'string' ? found.version : ''
   return signedUpdate({ ...found, version, tag: `v${version}` }, file, fetch, keys)
 }

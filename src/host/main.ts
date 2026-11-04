@@ -16,6 +16,7 @@ import { nodeRoot } from '../main/appRoot'
 import { registerCore, startCore, watchCore } from '../main/core'
 import { terminalStates } from '../main/terminals'
 import { registerUpdates, startHostUpdates } from '../main/updateFlow'
+import { useTestReleases } from '../main/updateSignature'
 import { resolveLang, setLang } from '../shared/i18n'
 import { decodeArgs } from '../shared/ideCalls'
 
@@ -37,6 +38,17 @@ type HostInfo = {
 
 const info = JSON.parse(process.env.SWITCHBOARD_HOST ?? '{}') as HostInfo
 delete process.env.SWITCHBOARD_HOST
+
+// A check of the update path (scripts/tauri-update-check.ts), only in a run with nobody at the
+// screen: this copy takes itself for an older version and updates from the check's own server,
+// under the check's key. Not handed on: the copy the update starts again checks nothing.
+const updateTest = process.env.CLAUDE_IDE_CAPTURE_JS ? process.env.CLAUDE_IDE_UPDATE_TEST : undefined
+delete process.env.CLAUDE_IDE_UPDATE_TEST
+if (updateTest) {
+  const test = JSON.parse(updateTest) as { origin: string; key: string; version: string }
+  useTestReleases(test.origin, test.key)
+  info.version = test.version
+}
 
 // Everything the logic prints goes to stderr: stdout is the shell's channel.
 for (const name of ['log', 'info', 'warn', 'debug'] as const) console[name] = (...args: unknown[]) => console.error(...args)
@@ -166,7 +178,7 @@ registerUpdates(hostPlatform.ipc, hostPlatform.send)
 await startCore()
 write({ t: 'ready' })
 watchCore()
-// Installed only, and never in a check without a person at the screen.
-if (info.packaged && !process.env.CLAUDE_IDE_CAPTURE_JS) {
+// Installed only, and never in a check without a person at the screen but the update path's.
+if (info.packaged && (!process.env.CLAUDE_IDE_CAPTURE_JS || updateTest)) {
   startHostUpdates({ exe: info.exePath, pid: info.appPid, arch: info.machineArch, whenQuit: start => hostPlatform.onQuit('will', () => start()) }, terminalStates)
 }

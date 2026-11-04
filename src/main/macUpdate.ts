@@ -15,9 +15,11 @@ import { pipeline } from 'node:stream/promises'
 export const BUNDLE_ID = 'io.github.choco5958.switchboard'
 // The bundle in the release zip (productName), whatever the person named their copy.
 const APP_NAME = 'Switchboard.app'
-const DOWNLOAD_BASE = 'https://github.com/choco5958/switchboard/releases/download'
-// GitHub answers a release download with a redirect to its file storage.
-const HOSTS = new Set(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com'])
+// The project's releases. GitHub answers a release download with a redirect to its file storage.
+const source = {
+  releases: 'https://github.com/choco5958/switchboard/releases',
+  hosts: new Set(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']),
+}
 const MAX_REDIRECTS = 5
 // A download that stalls this long is dropped; the next check starts it again.
 const IDLE_MS = 60_000
@@ -59,14 +61,29 @@ export function zipFor(files: Listed, version: string, arch: string): ZipFile | 
 
 // A file of the release of `version`: its zip, or its update file and that file's signature.
 export function releaseUrl(version: string, name: string): string {
-  return `${DOWNLOAD_BASE}/v${version}/${encodeURIComponent(name)}`
+  return `${source.releases}/download/v${version}/${encodeURIComponent(name)}`
+}
+
+// A file of the latest release, as GitHub sends it.
+export function latestUrl(name: string): string {
+  return `${source.releases}/latest/download/${encodeURIComponent(name)}`
+}
+
+// A check of the update path (scripts/tauri-update-check.ts): the releases come from a local HTTPS
+// server, laid out as GitHub's, and nothing else is downloaded. Set by the Tauri app's host only.
+export function useReleasesAt(origin: string): void {
+  const url = new URL(origin)
+  if (url.protocol !== 'https:' || url.pathname !== '/') throw new Error(`not a releases origin: ${origin}`)
+  source.releases = `${url.origin}/releases`
+  source.hosts = new Set([url.host])
 }
 
 // Where a download, or a redirect of one, may go.
 export function allowedUrl(url: string): boolean {
   try {
     const parsed = new URL(url)
-    return parsed.protocol === 'https:' && HOSTS.has(parsed.hostname) && !parsed.username && !parsed.password && (parsed.port === '' || parsed.port === '443')
+    // `host` carries a port other than 443: none of the release hosts has one.
+    return parsed.protocol === 'https:' && source.hosts.has(parsed.host) && !parsed.username && !parsed.password
   } catch {
     return false
   }

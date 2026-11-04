@@ -50,6 +50,10 @@ jobs:
             pnpm tauri build --target "$triple" --bundles app
           done
       - run: node scripts/pack-tauri-mac.ts dist
+      # The app's own update on this Mac's chip: found, downloaded, swapped in when it quits, opened
+      # again (docs/tauri-이전.md, step 8; scripts/tauri-update-check.ts).
+      - name: Update itself
+        run: node scripts/tauri-update-check.ts "src-tauri/target/$(uname -m | sed s/arm64/aarch64/)-apple-darwin/release/bundle/macos/Switchboard.app" dist
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ inputs.artifact || 'tauri-mac' }}

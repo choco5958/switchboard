@@ -102,6 +102,10 @@ jobs:
         if: success() || failure()
         shell: pwsh
         run: node scripts/tauri-smoke.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe"
+      # The Tauri app's own update: found, downloaded, installed when it quits, started again.
+      - name: Update itself
+        shell: pwsh
+        run: node scripts/tauri-update-check.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe" dist --expect-arch x64
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ inputs.artifact || 'tauri' }}-win
@@ -110,6 +114,40 @@ jobs:
             dist/*.exe
           if-no-files-found: error
           retention-days: 7
+
+  # An ARM64 PC: the Electron app's update brings the x64 build there (latest.yml names it first),
+  # which runs emulated and then updates itself to the ARM64 build.
+  windows-arm:
+    needs: windows
+    runs-on: windows-11-arm
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.artifact || 'tauri' }}-win
+          path: dist
+      - name: Install the x64 build
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\Switchboard-*-win-x64.exe | Select-Object -First 1
+          $run = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru
+          $null = $run.Handle
+          if (-not $run.WaitForExit(300000) -or $run.ExitCode -ne 0) { throw "the installer ended with $($run.ExitCode)" }
+      - name: Run the x64 build hidden
+        shell: pwsh
+        run: node scripts/tauri-smoke.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe"
+      - name: Update to the ARM64 build
+        shell: pwsh
+        run: node scripts/tauri-update-check.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe" dist --expect-arch arm64
+      - name: Run the ARM64 build hidden
+        shell: pwsh
+        run: node scripts/tauri-smoke.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe"
 
   linux:
     strategy:
@@ -120,9 +158,11 @@ jobs:
           - os: ubuntu-22.04
             triple: x86_64-unknown-linux-gnu
             arch: x64
+            appimage: x86_64
           - os: ubuntu-22.04-arm
             triple: aarch64-unknown-linux-gnu
             arch: arm64
+            appimage: arm64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -142,10 +182,11 @@ jobs:
             ~/.cargo/registry/cache
             src-tauri/target
           key: tauri-${{ matrix.triple }}-${{ hashFiles('src-tauri/Cargo.lock') }}
-      # WebKitGTK and what the shell links (idle time: libxss; the secret service: dbus).
+      # WebKitGTK and what the shell links (idle time: libxss; the secret service: dbus), and a
+      # secret service for the key check (gnome-keyring, read with secret-tool).
       - run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libxss-dev libdbus-1-dev libssl-dev xvfb
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libxss-dev libdbus-1-dev libssl-dev xvfb gnome-keyring libsecret-tools dbus
       - run: pnpm install --frozen-lockfile --config.side-effects-cache=false
       - run: pnpm build
       - run: node scripts/fetch-node.ts ${{ matrix.triple }}
@@ -163,6 +204,17 @@ jobs:
           app=$(ls dist/*.AppImage)
           ls -la dist
           xvfb-run -a node scripts/tauri-smoke.ts "$app"
+      - name: Update itself
+        run: xvfb-run -a node scripts/tauri-update-check.ts "$(ls dist/*.AppImage)" dist
+      # The Electron app of the last release seals its key with the secret service, as on a desktop;
+      # the Tauri app has to take that key over.
+      - name: Take over the Electron app's key
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.3.17 -R "$GITHUB_REPOSITORY" -p 'Switchboard-0.3.17-linux-${{ matrix.appimage }}.AppImage' -D electron
+          chmod +x electron/*.AppImage
+          xvfb-run -a dbus-run-session -- sh -c 'printf pw | gnome-keyring-daemon --unlock --components=secrets >/dev/null && node scripts/tauri-key-check.ts "$0" "$1"' electron/*.AppImage "$(ls dist/*.AppImage)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ inputs.artifact || 'tauri' }}-linux-${{ matrix.arch }}
