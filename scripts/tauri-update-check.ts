@@ -12,7 +12,7 @@
 // --expect-arch: the architecture the installed executable has to have afterwards (Windows: an x64
 // build on an ARM64 PC updates to the ARM64 one).
 // The copy started again after the update runs with the system's own settings on macOS (`open`),
-// so this runs on a machine for tests only (CI). Windows: the app's data folder is %APPDATA%'s.
+// so this runs on a machine for tests only (CI).
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { generateKeyPairSync, sign } from 'node:crypto'
@@ -22,6 +22,9 @@ import { basename, join, resolve } from 'node:path'
 import { call, collectLines, stop, testHome, until } from './tauri-smoke.ts'
 
 const PLATFORM = process.platform
+
+// The app's data folder on Windows: AppData\Roaming follows USERPROFILE, which the check sets.
+const windowsData = (home: string) => join(home, 'AppData', 'Roaming', 'claude-ide')
 
 // A certificate for 127.0.0.1, which the app's Node trusts through NODE_EXTRA_CA_CERTS.
 function certificate(dir: string): { key: string; cert: string } {
@@ -177,9 +180,9 @@ async function main(): Promise<number> {
     const after = statSync(marker(app)).ino
     if (PLATFORM !== 'win32' && after === before) throw new Error(`${marker(app)} was not replaced`)
     if (PLATFORM === 'win32') {
-      const log = join(process.env.APPDATA ?? '', 'claude-ide', 'update.log')
+      const log = join(windowsData(home), 'update.log')
       const text = existsSync(log) ? readFileSync(log, 'utf8') : ''
-      console.log(text.trim().split('\n').slice(-2).join('\n'))
+      console.log(text.trim())
       if (!/the installer ended with 0\s*$/.test(text)) throw new Error('the installer did not end well')
     }
     if (expectArch && PLATFORM === 'win32' && peArch(app) !== expectArch) throw new Error(`the installed app is ${peArch(app)}, not ${expectArch}`)
@@ -199,9 +202,9 @@ async function main(): Promise<number> {
   if (failure) {
     console.log(`FAILED: ${failure}`)
     if (PLATFORM === 'win32') {
-      const log = join(process.env.APPDATA ?? '', 'claude-ide', 'update.log')
+      const log = join(windowsData(home), 'update.log')
       console.log(`--- ${log}:\n${existsSync(log) ? readFileSync(log, 'utf8') : '(none)'}`)
-      const updates = join(process.env.APPDATA ?? '', 'claude-ide', 'updates')
+      const updates = join(windowsData(home), 'updates')
       console.log(`--- ${updates}: ${existsSync(updates) ? readdirSync(updates).join(', ') : '(none)'}`)
     }
     console.log('--- the app said:')

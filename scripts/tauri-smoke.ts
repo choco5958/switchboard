@@ -10,7 +10,7 @@
 // Nothing outside the temporary folder is touched: HOME (and USERPROFILE, XDG_CONFIG_HOME), the
 // bridge's socket and database, and Claude's config folder all point into it. Only the processes
 // this script started are stopped: the app and the bridge it reports on /health. On Windows the
-// app's data folder (%APPDATA%\claude-ide) is the system's own: run it on a machine for tests.
+// app's data folder (AppData\Roaming\claude-ide) follows USERPROFILE into it as well.
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
@@ -136,7 +136,8 @@ export function stop(child: ChildProcess): void {
   else child.kill()
 }
 
-// A temporary home for a run of the app: nothing it writes goes outside (Windows: but %APPDATA%).
+// A temporary home for a run of the app: nothing it writes goes outside (Windows too: AppData\Roaming
+// follows USERPROFILE).
 export function testHome(prefix: string): { work: string; home: string; scratch: string; env: Env } {
   const work = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
   const home = join(work, 'home')
