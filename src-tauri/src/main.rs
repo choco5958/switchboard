@@ -179,7 +179,9 @@ fn layout(app: &AppHandle) -> Layout {
     if let Ok(path) = std::env::var("SWITCHBOARD_REPO") {
         return repo(path.into());
     }
-    let resources = app.path().resource_dir().ok();
+    // Windows gives the resource folder as a verbatim path (\\?\C:\...), which Node cannot start a
+    // script from (it reads "C:" as a file): the plain form of the same path.
+    let resources = app.path().resource_dir().ok().map(|dir| dunce::simplified(&dir).to_path_buf());
     let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join(if cfg!(windows) { "switchboard-node.exe" } else { "switchboard-node" })));
     match (resources, beside) {
         (Some(resources), Some(node)) if node.exists() && resources.join("node/host/main.mjs").exists() => {
@@ -193,7 +195,7 @@ fn start_host(app: &AppHandle) -> Arc<Host> {
     let place = layout(app);
     // The Electron app's data folder (its userData, named after package.json): the two share the
     // settings, the update folder and the key the Electron app kept (os::app_key).
-    let data = app.path().config_dir().map(|dir| dir.join("claude-ide")).unwrap_or_else(|_| place.root.join(".tauri-data"));
+    let data = app.path().config_dir().map(|dir| dunce::simplified(&dir).join("claude-ide")).unwrap_or_else(|_| place.root.join(".tauri-data"));
     let _ = std::fs::create_dir_all(&data);
     let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".into());
     let info = json!({

@@ -3813,6 +3813,7 @@ dependencies = [
  "cairo-rs",
  "cbc",
  "dbus-secret-service",
+ "dunce",
  "getrandom 0.3.4",
  "gio",
  "glib",

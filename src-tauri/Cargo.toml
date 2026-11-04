@@ -23,6 +23,7 @@ getrandom = "0.3"
 
 base64 = "0.22"
 open = "5"
+dunce = "1"
 
 # The in-app browser's page on macOS (src/browser.rs): scripts in a world of the app's own, and
 # snapshots, through WebKit itself. The same versions Tauri's webview (wry) uses.
