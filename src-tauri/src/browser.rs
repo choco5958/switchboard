@@ -34,9 +34,13 @@ fn page(app: &AppHandle) -> Option<Webview> {
     app.get_webview(LABEL)
 }
 
-// To the app's page only: the page shown in the browser hears none of it.
+// Called inside WebView2's navigation handlers on Windows: emit_to there kept the page from
+// loading, emit does not. The page shown in the browser has no IPC (a remote origin), so it hears
+// nothing either way.
 fn event(app: &AppHandle, value: Value) {
-    let _ = app.emit_to(tauri::EventTarget::webview("main"), "browser:event", value);
+    if let Some(main) = app.get_webview("main") {
+        let _ = main.emit("browser:event", value);
+    }
 }
 
 // Async: WebView2 deadlocks when a webview is made in a synchronous command (it runs on the main

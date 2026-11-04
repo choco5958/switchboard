@@ -104,6 +104,7 @@ jobs:
         run: node scripts/tauri-smoke.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe"
       # The Tauri app's own update: found, downloaded, installed when it quits, started again.
       - name: Update itself
+        if: success() || failure()
         shell: pwsh
         run: node scripts/tauri-update-check.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe" dist --expect-arch x64
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
