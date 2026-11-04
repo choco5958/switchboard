@@ -67,6 +67,27 @@ function appPids(app: string): number[] {
     .map(match => Number(match![1]))
 }
 
+// Folders of that name under `root`, at most `depth` levels down.
+function findDirs(root: string, name: string, depth: number): string[] {
+  const found: string[] = []
+  const walk = (dir: string, left: number) => {
+    let entries: import('node:fs').Dirent[] = []
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const path = join(dir, entry.name)
+      if (entry.name === name) found.push(path)
+      else if (left > 0) walk(path, left - 1)
+    }
+  }
+  walk(root, depth)
+  return found
+}
+
 // The machine type in a Windows executable's PE header.
 function peArch(file: string): string {
   const data = readFileSync(file)
@@ -206,6 +227,10 @@ async function main(): Promise<number> {
       console.log(`--- ${log}:\n${existsSync(log) ? readFileSync(log, 'utf8') : '(none)'}`)
       const updates = join(windowsData(home), 'updates')
       console.log(`--- ${updates}: ${existsSync(updates) ? readdirSync(updates).join(', ') : '(none)'}`)
+      // Wherever the app put its data instead.
+      for (const root of [home, process.env.APPDATA, process.env.LOCALAPPDATA]) {
+        for (const found of root ? findDirs(root, 'claude-ide', 4) : []) console.log(`--- found ${found}: ${readdirSync(found).join(', ')}`)
+      }
     }
     console.log('--- the app said:')
     for (const line of lines.slice(-60)) console.log(line)

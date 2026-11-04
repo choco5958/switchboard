@@ -34,10 +34,9 @@ fn page(app: &AppHandle) -> Option<Webview> {
     app.get_webview(LABEL)
 }
 
+// To the app's page only: the page shown in the browser hears none of it.
 fn event(app: &AppHandle, value: Value) {
-    if let Some(main) = app.get_webview("main") {
-        let _ = main.emit("browser:event", value);
-    }
+    let _ = app.emit_to(tauri::EventTarget::webview("main"), "browser:event", value);
 }
 
 // Async: WebView2 deadlocks when a webview is made in a synchronous command (it runs on the main

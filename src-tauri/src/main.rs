@@ -18,13 +18,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
-use tokio::sync::oneshot;
+use tauri::{AppHandle, Emitter, EventTarget, Manager, RunEvent, State, WindowEvent};
 
 mod browser;
 mod os;
 
-type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
+// The host's id of a page call, and the page's own id for it (its answer goes back under that).
+type Pending = Arc<Mutex<HashMap<u64, String>>>;
 
 struct Host {
     stdin: Mutex<ChildStdin>,
@@ -46,21 +46,26 @@ impl Host {
     }
 }
 
-// A page call with an answer: the host's result, or its error as a rejected promise.
+// Everything the host tells the page, on one event of the main page: its events ({channel,
+// payload}) and the answers to its calls ({reply, value | error}), in the order the host wrote them.
+// A command's return and an event take different ways to the page, so an answer returned by the
+// command could arrive after a change the host sent later, and the page would keep the older state
+// (connected() answering false after onConnection heard true).
+fn to_page(app: &AppHandle, message: Value) {
+    let _ = app.emit_to(EventTarget::webview("main"), "ide:event", message);
+}
+
+// A page call with an answer: sent to the host once it is up; the answer comes as an ide:event
+// under the page's id for the call (`call`).
 #[tauri::command]
-async fn ide_invoke(webview: tauri::Webview, host: State<'_, Arc<Host>>, channel: String, args: Vec<Value>) -> Result<Value, String> {
+async fn ide_invoke(webview: tauri::Webview, host: State<'_, Arc<Host>>, call: String, channel: String, args: Vec<Value>) -> Result<(), String> {
     browser::from_app(&webview)?;
     let mut ready = host.ready.subscribe();
     ready.wait_for(|ready| *ready).await.map_err(|_| "the app's Node host has stopped".to_string())?;
     let id = host.next.fetch_add(1, Ordering::SeqCst);
-    let (tx, rx) = oneshot::channel();
-    host.pending.lock().unwrap().insert(id, tx);
+    host.pending.lock().unwrap().insert(id, call);
     host.write(&json!({ "t": "invoke", "id": id, "channel": channel, "args": args }));
-    let reply = rx.await.map_err(|_| "the app's Node host has stopped".to_string())?;
-    match reply.get("error") {
-        Some(error) if !error.is_null() => Err(error.as_str().unwrap_or("failed").to_string()),
-        _ => Ok(reply.get("value").cloned().unwrap_or(Value::Null)),
-    }
+    Ok(())
 }
 
 // A page call without an answer (terminal input, resizes).
@@ -244,13 +249,11 @@ fn start_host(app: &AppHandle) -> Arc<Host> {
             match message["t"].as_str() {
                 Some("result") => {
                     let id = message["id"].as_u64().unwrap_or(0);
-                    if let Some(tx) = reader_host.pending.lock().unwrap().remove(&id) {
-                        let _ = tx.send(message);
+                    if let Some(call) = reader_host.pending.lock().unwrap().remove(&id) {
+                        to_page(&handle, json!({ "reply": call, "value": message["value"], "error": message["error"] }));
                     }
                 }
-                Some("emit") => {
-                    let _ = handle.emit(message["channel"].as_str().unwrap_or(""), message["payload"].clone());
-                }
+                Some("emit") => to_page(&handle, json!({ "channel": message["channel"], "payload": message["payload"] })),
                 Some("os") => on_os(&handle, &reader_host, &message),
                 Some("ready") => {
                     eprintln!("host: ready");
@@ -260,7 +263,9 @@ fn start_host(app: &AppHandle) -> Arc<Host> {
             }
         }
         // The host ended: calls still waiting get an error, and the app goes too.
-        reader_host.pending.lock().unwrap().clear();
+        for (_, call) in reader_host.pending.lock().unwrap().drain() {
+            to_page(&handle, json!({ "reply": call, "error": "the app's Node host has stopped" }));
+        }
         if !*reader_host.quitting.lock().unwrap() {
             eprintln!("the app's Node host ended; quitting");
             handle.exit(1);
