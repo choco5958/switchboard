@@ -57,8 +57,10 @@ jobs:
           - os: windows-latest
             name: win
             target: --win
-          # node-pty has no Linux prebuild, so each architecture builds on its own machine.
-          - os: ubuntu-latest
+          # node-pty has no Linux prebuild, so each architecture builds on its own machine, an old
+          # Ubuntu so the build runs on newer ones too. ubuntu-latest moved to 26.04 at 0.3.13, whose
+          # node-pty needed glibc 2.42: that app did not start on Ubuntu 24.04 or 22.04.
+          - os: ubuntu-22.04
             name: linux-x64
             target: --linux --x64
           - os: ubuntu-24.04-arm
@@ -82,6 +84,14 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: pnpm exec electron-builder ${{ matrix.target }} --publish never
+      # The newest glibc node-pty's build needs: no more than Ubuntu 22.04 has (2.35).
+      - name: node-pty runs on Ubuntu 22.04
+        if: runner.os == 'Linux'
+        run: |
+          pty=$(ls dist/*-unpacked/resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node)
+          need=$(strings "$pty" | grep -oE 'GLIBC_2\.[0-9]+' | sort -t. -k2 -n -u | tail -1)
+          echo "$pty needs $need"
+          [ "${need#GLIBC_2.}" -le 35 ]
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist-${{ matrix.name }}
