@@ -67,6 +67,13 @@ function firstDelivery(sessionId: string): Promise<{ id: string; text: string }>
   })
 }
 
+// The bridge hears a stream open or close a moment after the client acts, later on a busy
+// machine: ask again for up to two seconds instead of one fixed wait.
+async function eventually(check: () => Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 100 && !(await check()); i++) await new Promise(resolve => setTimeout(resolve, 20))
+  assert.ok(await check())
+}
+
 before(() => listen(bridge.server, socketPath))
 after(() => {
   bridge.close()
@@ -87,8 +94,7 @@ test('a session is live while its delivery stream is open', async () => {
   await new Promise(resolve => req.on('response', resolve))
   assert.ok((await call('GET', '/state')).json.live.includes('live-1'))
   req.destroy()
-  await new Promise(resolve => setTimeout(resolve, 50))
-  assert.ok(!(await call('GET', '/state')).json.live.includes('live-1'))
+  await eventually(async () => !(await call('GET', '/state')).json.live.includes('live-1'))
 })
 
 test('the same question is posted once: by its call id, or while the first still waits', async () => {
@@ -596,11 +602,9 @@ describe('dynamic debugging', () => {
     const req = request({ socketPath, path: '/deliveries?session=live-1' })
     req.on('error', () => undefined)
     req.end()
-    await new Promise(resolve => setTimeout(resolve, 50))
-    assert.ok((await call('GET', '/sessions/live')).json.ids.includes('live-1'))
+    await eventually(async () => (await call('GET', '/sessions/live')).json.ids.includes('live-1'))
     req.destroy()
-    await new Promise(resolve => setTimeout(resolve, 50))
-    assert.ok(!(await call('GET', '/sessions/live')).json.ids.includes('live-1'))
+    await eventually(async () => !(await call('GET', '/sessions/live')).json.ids.includes('live-1'))
   })
 })
 
