@@ -40,9 +40,11 @@ fn event(app: &AppHandle, value: Value) {
     }
 }
 
+// Async: WebView2 deadlocks when a webview is made in a synchronous command (it runs on the main
+// thread, where the new webview's setup has to finish).
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
-pub fn browser_place(app: AppHandle, webview: Webview, url: String, x: f64, y: f64, width: f64, height: f64, visible: bool) -> Result<(), String> {
+pub async fn browser_place(app: AppHandle, webview: Webview, url: String, x: f64, y: f64, width: f64, height: f64, visible: bool) -> Result<(), String> {
     from_app(&webview)?;
     if let Some(page) = page(&app) {
         let _ = page.set_position(LogicalPosition::new(x, y));
