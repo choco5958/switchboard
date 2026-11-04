@@ -29,6 +29,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -66,15 +67,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
+          # Start-Process -Wait waits for every process the installer started too, and the updated
+          # app keeps running: wait for the installer alone.
+          function Install($file, $arguments) {
+            $run = Start-Process -FilePath $file -ArgumentList $arguments -PassThru
+            $null = $run.Handle  # keeps the exit code readable after the process ends
+            if (-not $run.WaitForExit(300000)) { throw "$file did not finish in 5 minutes" }
+            if ($run.ExitCode -ne 0) { throw "$file ended with $($run.ExitCode)" }
+          }
           gh release download v0.3.17 -R $env:GITHUB_REPOSITORY -p 'Switchboard-0.3.17-win-x64.exe' -D electron
-          Start-Process -Wait -FilePath electron\Switchboard-0.3.17-win-x64.exe -ArgumentList '/S', '/currentuser'
+          Install (Resolve-Path electron\Switchboard-0.3.17-win-x64.exe).Path @('/S', '/currentuser')
           $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ea94edae-7cd8-5e0c-9fa2-3791d8ac7a6b'
           if (-not (Test-Path $key)) { throw 'the Electron app did not install' }
           $electron = Split-Path ((Get-ItemProperty $key).QuietUninstallString -replace '^"([^"]+)".*$', '$1')
           Write-Output "Electron app in $electron"
           $setup = Get-ChildItem dist\Switchboard-*-win-x64.exe | Select-Object -First 1
           $setup | Format-List Name, Length
-          Start-Process -Wait -FilePath $setup.FullName -ArgumentList '--updated', '/S', '--force-run'
+          Install $setup.FullName @('--updated', '/S', '--force-run')
           if (Test-Path $key) { throw 'the Electron app is still registered' }
           if (Test-Path (Join-Path $electron 'Switchboard.exe')) { throw "the Electron app is still in $electron" }
           $app = Join-Path $env:LOCALAPPDATA 'Switchboard\switchboard.exe'
@@ -115,6 +124,7 @@ jobs:
             triple: aarch64-unknown-linux-gnu
             arch: arm64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
