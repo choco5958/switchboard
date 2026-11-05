@@ -41,7 +41,7 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
    - 서명: Electron판처럼 ad hoc으로 서명하고 hardened runtime은 끈다(tauri.conf.json). 켜면 앱 안의 Node가 ad hoc 서명된 node-pty를 불러오지 못한다. 교체 전에 앱이 하는 `codesign --verify --deep --strict`를 두 칩의 번들이 통과한다.
    - 릴리스 파일: `.github/workflows/tauri-mac.yml`이 두 칩의 앱을 만들고 scripts/pack-tauri-mac.ts가 zip, dmg(hdiutil로 만든다), latest-mac.yml을 Electron판과 같은 이름으로 만든다. 서명은 지금처럼 release 잡이 한다.
    - macOS를 넘기는 릴리스에서는 release.yml의 build 행렬에서 mac을 빼고 tauri-mac.yml을 `artifact: dist-mac`으로 부르는 잡을 넣는다. release 잡은 그 잡도 기다린다.
-8. [x] **Windows와 Linux 확인, 전환.** 만들기, Electron판에서 넘어오기, 숨긴 확인이 세 OS에서 통과했다(tauri-check.yml 41786436608). 0.3.18 다음 릴리스부터 세 OS 모두 Tauri판을 낸다. Windows의 스스로 하는 업데이트는 아직 확인되지 않은 채로 넘겼다(아래).
+8. [x] **Windows와 Linux 확인, 전환.** 만들기, Electron판에서 넘어오기, 숨긴 확인이 세 OS에서 통과했다(tauri-check.yml 41786436608). 0.3.18 다음 릴리스부터 세 OS 모두 Tauri판을 낸다.
    - Rust 셸: Windows에서 콘솔 창을 띄우지 않고(앱과 Node 호스트 모두), 파일과 링크는 셸을 거치지 않고 연다(open 크레이트, Windows는 ShellExecute). Dock 배지는 macOS만 쓴다(Electron판도 다른 OS에서는 배지가 없다).
    - 내장 브라우저: Linux는 WebKitGTK의 이름 붙은 세계에서 스크립트를 돌리고(call_async_javascript_function, WebKitGTK 2.40 이상) get_snapshot으로 화면을 찍는다. Windows는 WebView2의 DevTools 채널을 쓴다(Page.createIsolatedWorld로 앱 전용 세계, Runtime.evaluate, Page.captureScreenshot). macOS도 앱 전용 세계(WKContentWorld)를 앱이 붙잡고 있어야 그 안의 값이 남는다는 것을 이번에 알았다. 붙잡지 않으면 호출마다 새 세계가 생겨 화면 코멘트의 상태가 사라질 수 있었다.
    - Node 실행 파일: Windows와 Linux의 Tauri판은 시작할 때 switchboard-node를 runtime 복사본 옆(`~/.claude-ide/runtime/<빌드>/bin`)에 복사해 브리지, 터미널 호스트, 실행 스크립트가 그것을 쓴다(src/main/appRoot.ts nodeExecutable). Windows는 실행 중인 파일을 잠가서 설치 폴더의 Node를 쓰면 업데이트가 덮어쓰지 못하고, AppImage는 앱이 끝나면 마운트가 사라진다. Electron판처럼 `$APPIMAGE`를 실행하면 Tauri판에서는 Node 대신 앱이 하나 더 뜨므로 이것도 함께 고쳤다.
@@ -54,9 +54,9 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
    - 크기: Windows x64 설치 파일 약 32MB. Linux x64는 AppImage 126MB, deb 52.7MB.
    - 스스로 하는 업데이트 확인: scripts/tauri-update-check.ts가 버전을 0.0.1로 낮춘 앱을 띄우고, 같은 컴퓨터의 HTTPS 서버가 시험 키로 서명한 릴리스를 내준다(`CLAUDE_IDE_UPDATE_TEST`, 캡처 모드에서만 받는다). 앱이 받고, 끝나고, 새 앱이 다시 뜨는지 본다. macOS(CI에서만 돈다. 교체 뒤 `open`이 진짜 HOME으로 앱을 연다)와 Linux x64, arm64의 AppImage는 통과했다.
    - Linux의 Electron판 키 이어받기: 가상 화면과 gnome-keyring에서 실제 Electron판(x64 0.3.12, arm64 0.3.17)을 띄워 키를 봉인하게 한 뒤, Tauri판이 같은 키를 읽는지 본다(scripts/tauri-key-check.ts). 두 아키텍처 모두 통과했다.
-   - 아직 확인하지 못한 것: Windows에서 스스로 하는 업데이트(받기와 설치 예약까지는 된다), ARM64 Windows에서 x64판을 거쳐 ARM64판으로 바뀌기(Windows 업데이트 확인 뒤에 돈다), macOS 보이는 창의 나머지(앱을 다시 켠 뒤 터미널 유지, 확인 대화상자, 폴더 고르기, 알림 누르기, Dock으로 다시 열기, 서명이 바뀐 뒤 키체인이 묻는지). 보이는 창에서 창, 세션, 질문, 키체인 저장과 다시 읽기, 터미널 호스트, 한 번만 실행은 확인했다.
-   - 전환: release.yml에서 Electron판 build 잡을 빼고 tauri-mac.yml(`artifact: dist-mac`)과 tauri-check.yml(`artifact: dist`)을 부른다. release 잡은 두 잡을 기다린다. 태그로 돌 때는 Windows의 "Update itself"와 ARM64 Windows의 업데이트 단계가 실패해도 경고만 남기고 릴리스를 계속한다. 이 문제를 고치면 그 `continue-on-error`를 지운다.
-   - Windows 업데이트: 설치를 PowerShell에 넘기던 때는 CI에서 설치가 한 번도 시작되지 않았다(위의 콘솔 문제). 앱이 끝난 뒤 설치를 넘기는 부분만 Windows 러너에서 따로 돌려 원인을 찾았고, Node로 바꾼 뒤 그 부분은 통과했다.
+   - 아직 확인하지 못한 것: macOS 보이는 창의 나머지(앱을 다시 켠 뒤 터미널 유지, 확인 대화상자, 폴더 고르기, 알림 누르기, Dock으로 다시 열기, 서명이 바뀐 뒤 키체인이 묻는지). 보이는 창에서 창, 세션, 질문, 키체인 저장과 다시 읽기, 터미널 호스트, 한 번만 실행은 확인했다.
+   - 전환: release.yml에서 Electron판 build 잡을 빼고 tauri-mac.yml(`artifact: dist-mac`)과 tauri-check.yml(`artifact: dist`)을 부른다. release 잡은 두 잡을 기다린다.
+   - Windows 업데이트: 설치를 PowerShell에 넘기던 때는 CI에서 설치가 한 번도 시작되지 않았다(위의 콘솔 문제). 앱이 끝난 뒤 설치를 넘기는 부분만 Windows 러너에서 따로 돌려 원인을 찾았고, Node로 바꾼 뒤 Windows x64의 스스로 하는 업데이트와 ARM64 Windows에서 x64판을 거쳐 ARM64판으로 바뀌기가 통과했다(tauri-check.yml 41953459264). 설치 프로그램이 끝난 직후에는 설치 파일이 잠깐 잠겨 있을 수 있어(ARM64에서 EPERM), 앱을 먼저 다시 띄우고 지우기는 여러 번 시도한다.
 
 ## 패키지 만들기 (macOS)
 

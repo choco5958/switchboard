@@ -105,11 +105,8 @@ jobs:
         shell: pwsh
         run: node scripts/tauri-smoke.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe"
       # The Tauri app's own update: found, downloaded, installed when it quits, started again.
-      # Known not to start again yet on Windows (docs/tauri-이전.md, step 8): a release goes on
-      # without it, and shows the failure as a warning.
       - name: Update itself
         if: success() || failure()
-        continue-on-error: ${{ github.ref_type == 'tag' }}
         shell: pwsh
         run: node scripts/tauri-update-check.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe" dist --expect-arch x64
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -149,11 +146,9 @@ jobs:
         shell: pwsh
         run: node scripts/tauri-smoke.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe"
       - name: Update to the ARM64 build
-        continue-on-error: ${{ github.ref_type == 'tag' }}
         shell: pwsh
         run: node scripts/tauri-update-check.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe" dist --expect-arch arm64
       - name: Run the ARM64 build hidden
-        continue-on-error: ${{ github.ref_type == 'tag' }}
         shell: pwsh
         run: node scripts/tauri-smoke.ts "$env:LOCALAPPDATA\Switchboard\switchboard.exe"
 
