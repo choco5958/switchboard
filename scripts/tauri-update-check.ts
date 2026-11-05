@@ -237,6 +237,16 @@ async function main(): Promise<number> {
       // What still runs of the install: PowerShell, the installer, the app.
       const running = spawnSync('powershell.exe', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(powershell|pwsh|switchboard|Switchboard)' } | ForEach-Object { '{0} (parent {1}) {2}' -f $_.ProcessId, $_.ParentProcessId, $_.ExecutablePath }"], { encoding: 'utf8' }).stdout
       console.log(`--- running:\n${running.trim()}`)
+    } else {
+      // The swap's own log (macOS: macUpdate.ts SWAP_SCRIPT) and what is left of the downloads.
+      const data = PLATFORM === 'darwin' ? join(home, 'Library', 'Application Support', 'claude-ide') : join(home, '.config', 'claude-ide')
+      for (const found of findDirs(home, 'claude-ide', 5)) {
+        const log = join(found, 'update.log')
+        if (existsSync(log)) console.log(`--- ${log}:\n${readFileSync(log, 'utf8')}`)
+        const updates = join(found, 'updates')
+        if (existsSync(updates)) console.log(`--- ${updates}: ${readdirSync(updates, { recursive: true }).join(', ')}`)
+      }
+      if (!existsSync(data)) console.log(`--- no ${data}`)
     }
     console.log('--- the app said:')
     for (const line of lines.slice(-60)) console.log(line)
