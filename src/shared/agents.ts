@@ -25,6 +25,9 @@ export type AgentPreset = {
   docs: string
   how: Key // how the MCP server goes in, for the settings list
   mcp: ((server: McpServer, configFile: string) => Injection) | null // null: no per-run way, a plain terminal
+  // The CLI's permission hook for one run (mcp/hook.ts), which sends an ask to the person while
+  // they are away. Absent: the CLI asks in its terminal only.
+  permissionHook?: (hook: McpServer) => Injection
 }
 
 const json = (value: unknown) => JSON.stringify(value)
@@ -56,6 +59,19 @@ export function commandWord(bin: string, platform: string = process.platform): s
 // or a line break falls back to a basic string.
 const tomlString = (value: string) => (/['\r\n]/.test(value) ? json(value) : `'${value}'`)
 
+// Codex's PermissionRequest hook for one run, as a -c value. Codex runs a hook only once its exact
+// definition is trusted (~/.codex/config.toml hooks.state), which the app records when the person
+// turned the relay on (src/main/codexHook.ts): so the command never holds anything of one run, and
+// the hook finds its run by the terminal's key in its environment. The timeout lets the hook's own
+// wait (mcp/permission.ts HOOK_WAIT_MS) end first.
+export const CODEX_HOOK_TIMEOUT_S = 6 * 3600 + 120
+export function codexHookCommand(hook: McpServer): string {
+  return [hook.command, ...hook.args].map(word => shellWord(word, 'linux')).join(' ')
+}
+export function codexHookOverride(hook: McpServer): string {
+  return `hooks.PermissionRequest=[{matcher="*",hooks=[{type="command",command=${tomlString(codexHookCommand(hook))},timeout=${CODEX_HOOK_TIMEOUT_S}}]}]`
+}
+
 export const PRESETS: AgentPreset[] = [
   {
     id: 'codex',
@@ -68,6 +84,7 @@ export const PRESETS: AgentPreset[] = [
     mcp: server => ({
       args: ['-c', `mcp_servers.${MCP_NAME}.command=${tomlString(server.command)}`, '-c', `mcp_servers.${MCP_NAME}.args=[${server.args.map(tomlString).join(',')}]`],
     }),
+    permissionHook: hook => ({ args: ['-c', codexHookOverride(hook)] }),
   },
   {
     id: 'gemini',
@@ -196,6 +213,10 @@ export const showOtherAgents = (value: unknown): boolean => value !== false
 // Off unless turned on: a trusted folder's own agent config runs (its MCP servers, its hooks), and
 // a folder just cloned is not the person's to vouch for yet.
 export const TRUST_FOLDERS_KEY = 'trustFolders'
+
+// Settings: send Codex's permission asks to the person while they are away (mcp/hook.ts). Off unless
+// turned on: it records Switchboard's hook as trusted in the person's Codex config.
+export const CODEX_APPROVALS_KEY = 'codexApprovals'
 export const trustFolders = (value: unknown): boolean => value === true
 
 export const PLACEHOLDERS = ['server', 'command', 'args', 'args_json', 'config_file', 'config_json', 'name'] as const
@@ -224,9 +245,11 @@ export function customConfig(server: McpServer): string {
   return json({ mcpServers: { [MCP_NAME]: { command: server.command, args: server.args } } })
 }
 
-export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform): Launch {
+// `hook`: the permission hook's command, when this run sends asks away (src/main/agentTerms.ts).
+export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform, hook?: McpServer): Launch {
   const got = preset.mcp?.(server, configFile) ?? {}
-  const words = [commandWord(preset.bin, platform), ...(got.args ?? []).map(word => shellWord(word, platform))]
+  const hooked = hook && preset.permissionHook ? preset.permissionHook(hook) : {}
+  const words = [commandWord(preset.bin, platform), ...[...(got.args ?? []), ...(hooked.args ?? [])].map(word => shellWord(word, platform))]
   return {
     line: words.join(' '),
     env: got.env ?? {},

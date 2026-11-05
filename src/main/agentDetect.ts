@@ -48,6 +48,7 @@ export function mcpNode(packaged: boolean, platform: string, found: string | nul
 
 // The server command for one terminal. --socket only when the app runs on a socket of its
 // own; flags rather than env vars, because Codex and Copilot pass MCP servers few of them.
-export function serverFor(node: string, serverPath: string, agent: string, key: string, socket?: string): McpServer {
-  return { command: node, args: [serverPath, '--agent', agent, '--terminal', key, ...(socket ? ['--socket', socket] : [])] }
+// --cli: the CLI's own program, which the server asks for Codex's usage (mcp/codexUsage.ts).
+export function serverFor(node: string, serverPath: string, agent: string, key: string, socket?: string, cli?: string): McpServer {
+  return { command: node, args: [serverPath, '--agent', agent, '--terminal', key, ...(socket ? ['--socket', socket] : []), ...(cli ? ['--cli', cli] : [])] }
 }

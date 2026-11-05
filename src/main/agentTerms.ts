@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { chmodSync, closeSync, mkdirSync, openSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { CUSTOM_AGENTS_KEY, PRESETS, TRUST_FOLDERS_KEY, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
+import { CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PRESETS, TRUST_FOLDERS_KEY, codexHookCommand, codexHookOverride, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
@@ -13,6 +13,7 @@ import { nodeRoot } from './appRoot'
 import { nodeEntry, nodeLauncher } from './runtime'
 import { loginShell } from './shell'
 import { trustFolder } from './agentTrust'
+import { trustCodexHook } from './codexHook'
 
 // Terminals for agent CLIs other than Claude Code: which ones are installed (on the
 // login-shell PATH the terminals get) and opening one with the Switchboard MCP server.
@@ -46,6 +47,8 @@ function detect(force = false): Promise<AgentDetect> {
 function pruneFiles(): void {
   try {
     for (const name of readdirSync(DIR)) {
+      // A hook socket lives as long as its MCP server, which removes it (mcp/server.ts).
+      if (name.endsWith('.sock')) continue
       const file = join(DIR, name)
       if (Date.now() - statSync(file).mtimeMs > STALE_MS) rmSync(file, { force: true })
     }
@@ -100,6 +103,20 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   const id = preset?.id ?? custom!.id
   // A trust menu on screen would hold back what the app types in (agentTrust.ts).
   if (preset && TRUSTED_AHEAD.includes(preset.id) && trustFolders(settings?.[TRUST_FOLDERS_KEY])) trustFolder(preset.id, cwd.startsWith('~/') ? homedir() + cwd.slice(1) : cwd, homedir())
+  const cliPath = preset ? found.found[preset.bin] : undefined
+  // Codex's permission asks go to the person while away once the relay is on and Codex trusts the
+  // hook (codexHook.ts); if it does not, the terminal opens without it and Codex asks there.
+  const hook = preset?.permissionHook && node && process.platform !== 'win32' ? { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), preset.id] } : undefined
+  const hooked =
+    hook && preset?.id === 'codex' && settings?.[CODEX_APPROVALS_KEY] === true && cliPath
+      ? await trustCodexHook(
+          cliBins(cliPath, headOf(cliPath)).includes('node') && found.node ? [found.node, cliPath] : [cliPath],
+          codexHookOverride(hook),
+          codexHookCommand(hook),
+          cwd.startsWith('~/') ? homedir() + cwd.slice(1) : cwd,
+          terminalEnv(process.env),
+        )
+      : false
   return openTerminal({
     cwd,
     cols,
@@ -109,9 +126,12 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
     // npm-installed CLIs run as node (cliBins).
     bins: preset ? cliBins(preset.bin, headOf(found.found[preset.bin])) : cliBins(custom!.command.trim().split(/\s+/)[0] ?? '', null),
     prepare: key => {
-      const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET)
+      // Codex's usage comes from the codex the app found (mcp/codexUsage.ts); not on Windows, where
+      // what is found is a shim the server cannot start.
+      const cli = preset?.id === 'codex' && process.platform !== 'win32' ? cliPath : undefined
+      const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli)
       const configFile = join(DIR, `${key}-${id}.json`)
-      const launch = preset ? presetLaunch(preset, server, configFile) : customLaunch(custom!, server, configFile)
+      const launch = preset ? presetLaunch(preset, server, configFile, process.platform, hooked ? hook : undefined) : customLaunch(custom!, server, configFile)
       writeFiles(launch)
       return { env: launch.env, line: launch.line }
     },

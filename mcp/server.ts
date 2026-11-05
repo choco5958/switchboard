@@ -7,10 +7,15 @@ import { randomUUID } from 'node:crypto'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { mkdirSync, rmSync } from 'node:fs'
+import { createServer, type Server } from 'node:net'
 import { createInterface } from 'node:readline'
 import { SESSION_HEADER, requestTarget, resolveEndpoint, startCommand, usesTcp } from '../bridge/endpoint.ts'
 import { takenText } from '../mod/hooks/batch.ts'
 import { langFromLocale, langOfState, osLocale, t, type Key, type Lang, type Vars } from '../mod/hooks/i18n.ts'
+import { waitApproval } from '../mod/hooks/approval.ts'
+import { codexArgv, watchCodexUsage } from './codexUsage.ts'
+import { HOOK_WAIT_MS, PASS, hookSocket, sameTerminal, type HookAnswer, type HookAsk, type HookRequest } from './permission.ts'
 import { BROWSER_TOOLS, cancelText, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, worktreeRoot, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
 
 export { takenText }
@@ -22,7 +27,8 @@ const PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
 const SEEN_MS = 20_000
 const ORCA = '/Applications/Orca.app/Contents/Resources/bin/orca'
 
-export type Options = { agent: string; terminal: string; cwd: string; socket: string; home: string }
+// `cli`: the agent CLI's own program, for what the server asks it (Codex's usage, codexUsage.ts).
+export type Options = { agent: string; terminal: string; cwd: string; socket: string; home: string; cli: string }
 
 // Flags first, since some CLIs pass MCP servers only a few env vars; env vars second.
 export function parseOptions(argv: readonly string[], env: Record<string, string | undefined>, cwd: string): Options {
@@ -35,6 +41,7 @@ export function parseOptions(argv: readonly string[], env: Record<string, string
     agent: (flag('agent') || env.SWITCHBOARD_AGENT || 'mcp').toLowerCase(),
     terminal: flag('terminal') || env.SWITCHBOARD_TERMINAL || '',
     cwd: flag('cwd') || cwd,
+    cli: flag('cli') || '',
     // Empty: Windows, where the bridge is on TCP and each call reads where (bridge/endpoint.ts).
     socket: flag('socket') || env.CLAUDE_IDE_SOCKET || (usesTcp(env) ? '' : join(home, '.claude-ide', 'bridge.sock')),
     home,
@@ -350,10 +357,44 @@ export function createSession(options: Options, deps: Deps) {
     return error(-32601, say('mcp.unknownMethod', { method }))
   }
 
+  // A permission ask from the CLI's hook (mcp/hook.ts), handled as the mod's tool.check hook
+  // handles Claude Code's: only while the person is away and only what they can see in full;
+  // anything else, or no answer in time, leaves the CLI to ask in its terminal.
+  async function approve(ask: HookAsk, aborted: () => boolean, waitMs = HOOK_WAIT_MS): Promise<HookAnswer> {
+    if (!ask.complete || !ask.summary) return PASS
+    const presence = await deps.call('GET', '/presence').catch(() => undefined)
+    if (presence?.json.away !== true) return PASS
+    const posted = await call('POST', '/approvals', {
+      sessionId,
+      tool: ask.tool,
+      summary: ask.summary,
+      cwd: ask.cwd || options.cwd,
+      reason: ask.reason,
+      requestKey: ask.requestKey,
+    }).catch(() => undefined)
+    if (!posted?.ok) return PASS
+    const id = String(posted.json.id)
+    const { answer, note } = await waitApproval({
+      until: Date.now() + waitMs,
+      now: async () => Date.now(),
+      poll: waitMs => call('GET', `/approvals/${id}?wait=${waitMs}`),
+      aborted,
+      reconnect: async () => (await ready()) || ((await deps.startBridge()) && (await ready())),
+      sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
+      abandon: () => call('POST', `/approvals/${id}/abandon`, { sessionId }),
+    })
+    if (answer === 'allow') return { answer, message: say('mod.allowedRemote', { id }) }
+    if (answer === 'deny') return { answer, message: note ? say('mod.deniedRemoteNote', { id, note }) : say('mod.deniedRemote', { id }) }
+    return PASS
+  }
+
   return {
     sessionId,
     handle,
     ready,
+    approve,
+    // The plan usage the CLI reports (codexUsage.ts), for the usage bar and the limit hold.
+    reportUsage: (usage: Record<string, unknown>) => void call('POST', '/sessions/usage', { sessionId, usage }).catch(() => undefined),
     lang: () => lang,
     start: () => {
       void ready()
@@ -364,6 +405,57 @@ export function createSession(options: Options, deps: Deps) {
       if (timer) clearInterval(timer)
     },
   }
+}
+
+// The socket the CLI's permission hook asks on (mcp/permission.ts): one request line and one
+// answer line per connection, from a hook that knows the terminal's key. A hook that goes away
+// (the CLI gave up on it, the person answered in the terminal) withdraws its ask.
+export function listenForHooks(path: string, terminal: string, approve: (ask: HookAsk, aborted: () => boolean) => Promise<HookAnswer>): Server {
+  const server = createServer(socket => {
+    let data = ''
+    let gone = false
+    socket.setEncoding('utf8')
+    socket.on('close', () => (gone = true))
+    socket.on('error', () => (gone = true))
+    socket.on('data', chunk => {
+      if (data.includes('\n')) return
+      data += chunk
+      if (data.length > 1024 * 1024) return void socket.destroy()
+      const end = data.indexOf('\n')
+      if (end < 0) return
+      let request: HookRequest | null = null
+      try {
+        request = JSON.parse(data.slice(0, end)) as HookRequest
+      } catch {
+        request = null
+      }
+      const ask = request?.ask
+      if (!request || typeof request.terminal !== 'string' || !sameTerminal(request.terminal, terminal) || !ask || typeof ask.tool !== 'string' || typeof ask.summary !== 'string') {
+        return void socket.end(`${JSON.stringify(PASS)}\n`)
+      }
+      const clean: HookAsk = {
+        tool: ask.tool.slice(0, 200),
+        summary: ask.summary,
+        complete: ask.complete === true,
+        cwd: typeof ask.cwd === 'string' ? ask.cwd : '',
+        reason: typeof ask.reason === 'string' ? ask.reason : '',
+        requestKey: typeof ask.requestKey === 'string' ? ask.requestKey.slice(0, 200) : '',
+      }
+      void approve(clean, () => gone)
+        .catch(() => PASS)
+        .then(answer => {
+          if (!gone) socket.end(`${JSON.stringify(answer)}\n`)
+        })
+    })
+  })
+  if (!path.startsWith('\\\\')) {
+    mkdirSync(join(path, '..'), { recursive: true, mode: 0o700 })
+    rmSync(path, { force: true })
+  }
+  server.on('error', () => undefined)
+  server.listen(path)
+  server.unref()
+  return server
 }
 
 // One line of stdin: a request, a notification or a batch of them. Replies for the lines
@@ -400,6 +492,12 @@ if (import.meta.main) {
     log: line => process.stderr.write(`${line}\n`),
   })
   session.start()
+  // A run the app opened has a terminal key, and its CLI's permission hook may ask here.
+  const hooks = options.terminal ? listenForHooks(hookSocket(options.home, options.terminal), options.terminal, session.approve) : null
+  const stopUsage =
+    options.agent === 'codex' && options.cli
+      ? watchCodexUsage(codexArgv(options.cli), { ...process.env, HOME: options.home }, rateLimits => session.reportUsage({ rateLimits }))
+      : () => undefined
   const write = (reply: unknown) => {
     if (reply !== undefined) process.stdout.write(`${JSON.stringify(reply)}\n`)
   }
@@ -409,6 +507,9 @@ if (import.meta.main) {
   const finish = () => {
     if (!closed || running > 0) return
     session.stop()
+    hooks?.close()
+    stopUsage()
+    if (hooks && process.platform !== 'win32') rmSync(hookSocket(options.home, options.terminal), { force: true })
     process.exit(0)
   }
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })

@@ -24,7 +24,8 @@ extraResources:
     filter:
       - bridge/*.ts
       - bridge/mobile/**
-      - mcp/server.ts
+      - mcp/*.ts
+      - "!mcp/*.test.ts"
       - scripts/switchboard.ts
       - mod/.claude-plugin/plugin.json
       - mod/hooks/**

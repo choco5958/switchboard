@@ -9,7 +9,7 @@ const ROOT = resolve(import.meta.dirname, '..')
 
 test('the Tauri app ships the same Node files as the Electron app, read from electron-builder.yml', () => {
   const { include, exclude } = nodeFilter(readFileSync(join(ROOT, 'electron-builder.yml'), 'utf8'))
-  for (const one of ['bridge/*.ts', 'mcp/server.ts', 'scripts/switchboard.ts', 'mod/hooks/**', 'src/main/termHost.ts']) assert.ok(include.includes(one), one)
+  for (const one of ['bridge/*.ts', 'mcp/*.ts', 'scripts/switchboard.ts', 'mod/hooks/**', 'src/main/termHost.ts']) assert.ok(include.includes(one), one)
   assert.deepEqual(exclude, ['**/*.test.ts', '**/*.unit.ts'])
 })
 

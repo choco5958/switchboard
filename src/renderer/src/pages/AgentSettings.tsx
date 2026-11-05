@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AgentDetect } from '../../../shared/types'
-import { CLOSE_TERMINALS_KEY, CUSTOM_AGENTS_KEY, PLACEHOLDERS, PRESETS, SHOW_OTHER_AGENTS_KEY, TRUST_FOLDERS_KEY, customAgents, showOtherAgents, trustFolders, validateCustom } from '../../../shared/agents'
+import { CLOSE_TERMINALS_KEY, CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PLACEHOLDERS, PRESETS, SHOW_OTHER_AGENTS_KEY, TRUST_FOLDERS_KEY, customAgents, showOtherAgents, trustFolders, validateCustom } from '../../../shared/agents'
 import { AGENTS_FOUND } from '../Dock'
 import { agentTone, useToast } from '../parts'
 import { Badge, Button, EmptyState, Input, More } from '../ui'
@@ -18,6 +18,7 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
   const showOthers = showOtherAgents(settings[SHOW_OTHER_AGENTS_KEY])
   const trusting = trustFolders(settings[TRUST_FOLDERS_KEY])
   const closeOnQuit = settings[CLOSE_TERMINALS_KEY] === true
+  const codexApprovals = settings[CODEX_APPROVALS_KEY] === true
   const browserLan = settings[BROWSER_LAN_KEY] === true
   // null until known: where no terminal host runs (Windows), terminals always close with the app.
   const [keeps, setKeeps] = useState<boolean | null>(null)
@@ -62,6 +63,11 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
   const toggleBrowserLan = async (confirmed = false) => {
     if (!browserLan && !confirmed) return setConfirming('lan')
     const reply = await saveSetting(BROWSER_LAN_KEY, browserLan ? null : true)
+    if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
+  }
+
+  const toggleCodexApprovals = async () => {
+    const reply = await saveSetting(CODEX_APPROVALS_KEY, codexApprovals ? null : true)
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 
@@ -125,6 +131,14 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
         <span className="quiet small">
           {t('agents.trustFoldersHint')}
           <More>{t('agents.trustFoldersHintMore')}</More>
+        </span>
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={codexApprovals} onChange={() => void toggleCodexApprovals()} />
+        {t('agents.codexApprovals')}
+        <span className="quiet small">
+          {t('agents.codexApprovalsHint')}
+          <More>{t('agents.codexApprovalsHintMore')}</More>
         </span>
       </label>
       <label className="check-row">

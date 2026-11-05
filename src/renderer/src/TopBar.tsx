@@ -9,7 +9,8 @@ import { saveSetting } from './settings'
 import { Badge, Chip, IconButton } from './ui'
 import { UpdateChip } from './flows'
 
-// Usage meters are Claude Code's own; other agent CLIs report none.
+// The usage meters: Claude Code's from the mod; Codex's from its MCP server (mcp/codexUsage.ts),
+// shown on their own. Other agent CLIs report none.
 export function usageOf(state: BridgeState): SessionUsage {
   for (const session of state.sessions.filter(s => isClaude(s.agent))) {
     try {
@@ -20,6 +21,24 @@ export function usageOf(state: BridgeState): SessionUsage {
     }
   }
   return {}
+}
+
+// Codex's plan usage, from the Codex session that reported last; {} when none did lately.
+export function codexUsageOf(state: BridgeState, now = Date.now()): SessionUsage {
+  let best: SessionUsage = {}
+  let at = 0
+  for (const session of state.sessions) {
+    if (session.agent !== 'codex' || now - session.last_seen > LIVE_MS || session.last_seen <= at) continue
+    try {
+      const usage = JSON.parse(session.usage || '{}') as SessionUsage
+      if (!usage.rateLimits?.length) continue
+      best = usage
+      at = session.last_seen
+    } catch {
+      // a session that never reported usage
+    }
+  }
+  return best
 }
 
 const ACCOUNT_POLL_MS = 60_000
@@ -219,6 +238,9 @@ export function StatusFooter({
   const five = usage.rateLimits?.find(r => r.kind === 'five_hour')
   const week = usage.rateLimits?.find(r => r.kind === 'seven_day')
   const cost = usage.cost?.totalUsd
+  const codex = codexUsageOf(state).rateLimits ?? []
+  const codexFive = codex.find(r => r.kind === 'five_hour')
+  const codexWeek = codex.find(r => r.kind === 'seven_day')
   const theme = themeOf(state.settings.theme)
   const light = isLight(theme)
   const flip = async () => {
@@ -252,6 +274,9 @@ export function StatusFooter({
           {!ccr && <Meter label={t('top.fiveHour')} percent={five?.percentUsed} reset={resetText(five?.resetsAt)} />}
           {!ccr && <Meter label={t('top.week')} percent={week?.percentUsed} reset={resetText(week?.resetsAt)} />}
           <Meter label={t('top.context')} percent={usage.contextPercent} />
+          {(codexFive || codexWeek) && <span className="quiet small">Codex</span>}
+          {codexFive && <Meter label={t('top.fiveHour')} percent={codexFive.percentUsed} reset={resetText(codexFive.resetsAt)} />}
+          {codexWeek && <Meter label={t('top.week')} percent={codexWeek.percentUsed} reset={resetText(codexWeek.resetsAt)} />}
           {cost !== undefined && <span className="quiet small">{t('top.cost', { cost: `$${cost.toFixed(2)}` })}</span>}
           <Chip onClick={onReport} title={t('top.reportTitle')}>
             {t('top.report')}

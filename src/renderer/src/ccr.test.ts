@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { ccrFree, slotTitle, slotToken, slotUsage } from './TopBar'
+import { ccrFree, codexUsageOf, slotTitle, slotToken, slotUsage, usageOf } from './TopBar'
+import type { BridgeState } from '../../shared/types'
 import type { CcrSlot, Session } from '../../shared/types'
 
 const NOW = 1_793_000_000_000
@@ -58,5 +59,21 @@ describe('ccr slot token', () => {
   test('the tooltip gains one line for the token state', () => {
     expect(slotTitle(slot({ token: true }), false, { live: false }, NOW).split('\n').length).toBe(4)
     expect(slotTitle(slot({ refreshExpiresAt: NOW + 2 * day }), false, { live: false }, NOW)).toContain('2')
+  })
+})
+
+describe('Codex usage', () => {
+  const week = [{ kind: 'seven_day', percentUsed: 40 }]
+  const state = (sessions: Session[]) => ({ sessions }) as unknown as BridgeState
+
+  test('the Codex session that reported last, and never in the Claude meters', () => {
+    const older = session({ rateLimits: [{ kind: 'seven_day', percentUsed: 10 }] }, NOW - 120_000, 'codex')
+    const newer = session({ rateLimits: week }, NOW - 60_000, 'codex')
+    expect(codexUsageOf(state([older, newer]), NOW).rateLimits).toEqual(week)
+    expect(usageOf(state([older, newer]))).toEqual({})
+  })
+
+  test('a Codex session gone quiet for 15 minutes shows nothing', () => {
+    expect(codexUsageOf(state([session({ rateLimits: week }, NOW - 16 * 60_000, 'codex')]), NOW)).toEqual({})
   })
 })

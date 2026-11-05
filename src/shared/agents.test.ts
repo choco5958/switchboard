@@ -9,6 +9,9 @@ import {
   customLaunch,
   fillTemplate,
   presetLaunch,
+  CODEX_HOOK_TIMEOUT_S,
+  codexHookCommand,
+  codexHookOverride,
   presetOf,
   psQuote,
   shellWord,
@@ -38,6 +41,21 @@ describe('preset launch lines', () => {
       "mcp_servers.switchboard.args=['/app/mcp/server.ts','--agent','codex','--terminal','a1b2c3-t1']",
     ])
     expect([launch.env, launch.files]).toEqual([{}, []])
+  })
+
+  it('codex with the relay on also gets its PermissionRequest hook, the same command for every run', () => {
+    const hook = { command: '/home/p/.claude-ide/bin/switchboard-node', args: ['/r/mcp/hook.mjs', 'codex'] }
+    const launch = presetLaunch(presetOf('codex')!, server, file, 'darwin', hook)
+    const got = words(launch.line)
+    expect(got.slice(-2)).toEqual([
+      '-c',
+      `hooks.PermissionRequest=[{matcher="*",hooks=[{type="command",command='/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs codex',timeout=${CODEX_HOOK_TIMEOUT_S}}]}]`,
+    ])
+    expect(codexHookCommand(hook)).toBe('/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs codex')
+    // A quote in the path: a TOML basic string, which holds the shell's own quoting.
+    expect(codexHookOverride({ command: "/o'dd/node", args: ['/r/hook.mjs', 'codex'] })).toContain(`command=${JSON.stringify("'/o'\\''dd/node' /r/hook.mjs codex")}`)
+    // Gemini has no hook: the same line as without one.
+    expect(presetLaunch(presetOf('gemini')!, server, file, 'darwin', hook).line).toBe('gemini')
   })
 
   it('gemini reads a defaults file named by an env var; the file holds mcpServers.switchboard', () => {

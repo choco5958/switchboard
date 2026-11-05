@@ -157,5 +157,7 @@ export function approvalSummary(tool: string, input: unknown): { summary: string
   if (tool === 'MultiEdit' || tool === 'NotebookEdit') return whole(text(v.file_path) || text(v.notebook_path), false)
   if (tool === 'Read') return whole(text(v.file_path) || JSON.stringify(v))
   if (tool === 'WebFetch') return whole(text(v.url))
+  // Codex's file change: the patch itself, as Codex shows it (mcp/hookAdapters.ts).
+  if (tool === 'apply_patch') return whole(text(v.command))
   return whole(JSON.stringify(v, null, 1))
 }
