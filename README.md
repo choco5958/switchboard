@@ -84,7 +84,7 @@ Jump to any session, task or decision question. Gather projects into groups and 
 #### Decisions and tasks
 - **Decision queue**: a session posts a question with `ask_decision` and goes on working without waiting. The same question is never posted twice.
 - **Pick a session, watch, answer**: each project in the sidebar lists its sessions. Pick one and its terminal opens in the middle; when it asks something, the answer area sits under the terminal. Each row shows `Question`, `Permission`, `Stalled`, `At limit`, `Dropped` or `Working`.
-- **Home**: decisions and permission asks gather here to answer on the spot, with the sessions stalled mid-reply for over 5 minutes, at a usage limit or dropped, the ones working, and what finished today. Stalled sessions and lifted limits also come as notifications.
+- **Home**: decisions and permission asks gather here to answer on the spot, with the sessions stalled mid-reply for over 5 minutes, at a usage limit or dropped, the ones working, and what finished today. Stalled sessions and lifted limits also come as notifications. A decision or permission notification leaves the notification center once you answer it anywhere: the phone, Telegram or the terminal.
 - **New question window**: when a question comes in while you look at another session, a small window in the bottom right answers it or opens its session. After answering, `Next` goes to the next question.
 - **Reopen a dropped session**: a Claude Code session that dropped because its terminal closed or the computer restarted opens again from `Resume in a terminal` on the session or task view. A new terminal continues the conversation with `claude --resume`, and the answers kept for it go in once it connects.
 - **Past sessions**: find earlier Claude Code conversations on this computer by title, text, folder or branch, and resume one in a terminal.
@@ -182,7 +182,7 @@ Instead of step 4 you can run `xattr -dr com.apple.quarantine /Applications/Swit
 
 </details>
 
-**Updates**: the app checks for new versions, downloads them and installs when you quit. Settings > Updates shows your version and checks right away. An update never closes the app by itself, and an update with a missing or wrong signature is not installed. On macOS and Linux the app terminals keep running through an update. From macOS 0.3.4 or earlier, download and install once by hand.
+**Updates**: the app checks for new versions, downloads them and installs when you quit. Settings > Updates shows your version and checks right away. An update never closes the app by itself, and an update with a missing or wrong signature is not installed. On macOS and Linux the app terminals keep running through an update. From macOS 0.3.4 or earlier, download and install once by hand. Linux x64 versions 0.3.13 to 0.3.17 do not start on Ubuntu 24.04 or 22.04; if you have one of them, download and install the new version once by hand.
 
 <details>
 <summary><b>Connecting Claude Code from other terminals</b></summary>
