@@ -1,8 +1,9 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
-import { appImageTarget, installerName, replaceAppImage, windowsInstallScript } from './installUpdate'
+import { appImageTarget, installerName, replaceAppImage, startWindowsInstall } from './installUpdate'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -46,17 +47,34 @@ test('the new AppImage takes the place of the running one, runnable', () => {
   expect(statSync(target).mode & 0o111).not.toBe(0)
 })
 
-test('the Windows install waits for the app, runs the installer quietly and keeps paths literal', () => {
-  const app = 'C:\\Users\\me\\AppData\\Local\\Switchboard\\switchboard.exe'
-  const script = windowsInstallScript({ pid: 4242, installer: "C:\\Users\\O'Brien\\updates\\Switchboard-0.4.0-win-x64.exe", relaunch: true, app, log: 'C:\\Users\\me\\update.log', failedMark: 'C:\\Users\\me\\updates\\0.4.0.failed' })
-  const lines = script.split('\n')
-  expect(lines).toContain('Wait-Process -Id 4242 -Timeout 120 -ErrorAction SilentlyContinue')
-  expect(script).not.toContain('Add-Content')
-  expect(script).toContain("Start-Process -FilePath 'C:\\Users\\O''Brien\\updates\\Switchboard-0.4.0-win-x64.exe' -ArgumentList @('/S') -PassThru")
-  expect(script).toContain("Set-Content -LiteralPath 'C:\\Users\\me\\updates\\0.4.0.failed'")
-  // Started again by the script, once the installer is done.
-  expect(lines.at(-1)).toBe(`Start-Process -FilePath '${app}'`)
-  // Nothing of a path is read as PowerShell: no double-quoted strings that expand $ or `.
-  expect(script).not.toMatch(/"[^"]*\\[^"]*"/)
-  expect(windowsInstallScript({ pid: 1, installer: 'C:\\a.exe', relaunch: false, app, log: 'C:\\l', failedMark: 'C:\\f' })).not.toContain(app)
+// The hand-over runs as it does on Windows, with shell scripts for the installer and the app.
+async function windowsInstall(installerExit: number) {
+  const dir = mkdtempSync(join(tmpdir(), 'sb-wininstall-'))
+  dirs.push(dir)
+  const installer = join(dir, 'Switchboard-0.4.0-win-x64.exe')
+  const app = join(dir, 'switchboard.exe')
+  writeFileSync(installer, `#!/bin/sh\n[ -e "${join(dir, 'app-gone')}" ] && echo "$@" > "${join(dir, 'installer-args')}"\nexit ${installerExit}\n`, { mode: 0o755 })
+  writeFileSync(app, `#!/bin/sh\necho started > "${join(dir, 'started')}"\n`, { mode: 0o755 })
+  // The app: still running when the install is handed over, gone a moment later.
+  const running = spawn('/bin/sh', ['-c', `sleep 0.5; touch "${join(dir, 'app-gone')}"`])
+  const log = join(dir, 'update.log')
+  startWindowsInstall({ pid: running.pid!, installer, relaunch: true, app, log, failedMark: join(dir, '0.4.0.failed'), node: process.execPath })
+  for (let i = 0; i < 100 && !existsSync(join(dir, 'started')); i++) await new Promise(r => setTimeout(r, 100))
+  return { dir, installer, log: readFileSync(log, 'utf8') }
+}
+
+test('the Windows install waits for the app to end, runs the installer with /S, then starts the app', async () => {
+  const { dir, installer, log } = await windowsInstall(0)
+  expect(readFileSync(join(dir, 'installer-args'), 'utf8').trim()).toBe('/S')
+  expect(existsSync(join(dir, 'started'))).toBe(true)
+  expect(existsSync(installer)).toBe(false)
+  expect(existsSync(join(dir, '0.4.0.failed'))).toBe(false)
+  expect(log).toMatch(/the installer ended with 0\n.*starting the app\n$/)
+})
+
+test('a failed Windows install marks its version and starts the app there was', async () => {
+  const { dir, log } = await windowsInstall(3)
+  expect(readFileSync(join(dir, '0.4.0.failed'), 'utf8')).toBe('installer exit 3')
+  expect(existsSync(join(dir, 'started'))).toBe(true)
+  expect(log).toContain('the installer ended with 3')
 })

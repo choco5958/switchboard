@@ -11,6 +11,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { t } from '../shared/i18n'
 import type { UpdateStatus } from '../shared/types'
+import { nodeExecutable } from './appRoot'
 import { appImageTarget, installerName, replaceAppImage, startWindowsInstall } from './installUpdate'
 import { bundleOf, canReplace, cleanUpdates, download, isNewer, NeedsNewerSystem, releaseFile, releaseUrl, startSwap, unpack, zipFor, type ZipFile } from './macUpdate'
 import { platform, type Ipc } from './platform'
@@ -232,7 +233,7 @@ export function installerUpdates(terminals: () => readonly { alive: boolean }[],
         return { installer, version }
       },
       discard: ({ installer }) => rmSync(installer, { force: true }),
-      install: ({ installer, version }, relaunch) => startWindowsInstall({ pid: place.pid, installer, relaunch, app: place.exe, log, failedMark: join(dir, `${version}.failed`) }),
+      install: ({ installer, version }, relaunch) => startWindowsInstall({ pid: place.pid, installer, relaunch, app: place.exe, log, failedMark: join(dir, `${version}.failed`), node: nodeExecutable().path }),
     })
   }
   const target = process.platform === 'linux' ? appImageTarget(env) : null

@@ -207,7 +207,7 @@ async function main(): Promise<number> {
       if (!log.toLowerCase().startsWith(home.toLowerCase())) throw new Error(`the app kept its data outside the check's home: ${log}`)
       const text = existsSync(log) ? readFileSync(log, 'utf8') : ''
       console.log(text.trim())
-      if (!/the installer ended with 0\s*$/.test(text)) throw new Error('the installer did not end well')
+      if (!/the installer ended with 0$/m.test(text)) throw new Error('the installer did not end well')
     }
     if (expectArch && PLATFORM === 'win32' && peArch(app) !== expectArch) throw new Error(`the installed app is ${peArch(app)}, not ${expectArch}`)
     if (expectArch) console.log(`the installed app is ${expectArch}`)
