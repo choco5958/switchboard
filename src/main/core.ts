@@ -23,7 +23,7 @@ import { buildId, copyNode, copyRuntime, nodeEntry, oldBridgePid, pruneRuntimes,
 import { requestTarget, resolveEndpoint } from '../../bridge/endpoint.ts'
 import { bridgeClient } from './bridgeClient'
 import { ROUTINE_FAIL_LIMIT } from '../../bridge/schedule.ts'
-import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled, switchedOff } from './notify'
+import { badgeText, firstLine, planNotification, retireShown, scanPending, scanReleased, scanRuns, scanStalled, switchedOff, type Shown } from './notify'
 import { STALL_MS, stalledSessions } from '../shared/stall'
 import { limitedUntil } from '../shared/limit'
 import { resolveLang, setLang, t } from '../shared/i18n'
@@ -156,6 +156,8 @@ let seenStalled = new Set<string>()
 let seenLimited = new Set<string>()
 let seenRuns: Set<number> | null = null
 let seenApprovals: Set<number> | null = null
+// Question and permission notifications still on the screen or in the notification center.
+let shownNotices: Shown[] = []
 let scanTimer: ReturnType<typeof setTimeout> | null = null
 
 
@@ -173,6 +175,7 @@ async function scanQueue(): Promise<void> {
   notifyStalled(reply.json as unknown as BridgeState)
   notifyReleased(reply.json as unknown as BridgeState)
   notifyRuns(reply.json as unknown as BridgeState)
+  retireNotices(reply.json as unknown as BridgeState)
   notifyApprovals(reply.json as unknown as BridgeState)
   const scan = scanPending((reply.json as unknown as BridgeState).questions ?? [], seenPending)
   seenPending = scan.ids
@@ -180,8 +183,24 @@ async function scanQueue(): Promise<void> {
   // A focused window already shows the queue; only the badge is kept current.
   const plan = platform().windowFocused() ? null : planNotification(scan.fresh)
   if (!plan) return
-  if ('many' in plan) notify('Switchboard', t('notify.many', { count: plan.many }))
-  else notify(plan.title, plan.body, () => platform().focusWindow(() => send('notify:open', plan.questionId)))
+  const notice =
+    'many' in plan
+      ? notify('Switchboard', t('notify.many', { count: plan.many }))
+      : notify(plan.title, plan.body, () => platform().focusWindow(() => send('notify:open', plan.questionId)))
+  track(notice, scan.fresh.map(q => `q${q.id}`))
+}
+
+// Closes the notifications whose questions and permission asks were all answered or went away.
+function retireNotices(state: BridgeState): void {
+  const waiting = [
+    ...(state.questions ?? []).filter(q => q.status === 'pending').map(q => `q${q.id}`),
+    ...(state.approvals ?? []).filter(a => a.status === 'pending').map(a => `a${a.id}`),
+  ]
+  shownNotices = retireShown(shownNotices, new Set(waiting))
+}
+
+function track(notice: { close(): void } | undefined, keys: string[]): void {
+  if (notice) shownNotices.push({ keys, close: () => notice.close() })
 }
 
 // A session whose turn stopped moving (src/shared/stall.ts): one notification per stall,
@@ -218,7 +237,7 @@ function notifyApprovals(state: BridgeState): void {
   const fresh = seenApprovals === null ? [] : pending.filter(a => !seenApprovals!.has(a.id))
   seenApprovals = new Set(pending.map(a => a.id))
   for (const a of fresh) {
-    notify(a.project, t('notify.approval', { tool: a.tool, what: firstLine(a.summary) }))
+    track(notify(a.project, t('notify.approval', { tool: a.tool, what: firstLine(a.summary) })), [`a${a.id}`])
   }
 }
 
@@ -452,8 +471,8 @@ onTerminalsChange(() => void agentDelivery?.refresh())
 const send = (channel: string, payload: unknown) => platform().send(channel, payload)
 
 // A clicked notification brings the window forward unless it says otherwise.
-function notify(title: string, body: string, onClick: () => void = () => platform().focusWindow()): void {
-  if (platform().notificationsSupported()) platform().notify(title, body, onClick)
+function notify(title: string, body: string, onClick: () => void = () => platform().focusWindow()): { close(): void } | undefined {
+  return platform().notificationsSupported() ? platform().notify(title, body, onClick) : undefined
 }
 
 let agentDelivery: ReturnType<typeof startAgentDelivery> | null = null

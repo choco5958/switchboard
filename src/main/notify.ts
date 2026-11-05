@@ -36,6 +36,20 @@ export function planNotification(fresh: Question[]): NotifyPlan | null {
   return { title: q.project, body: firstLine(q.question), questionId: q.id }
 }
 
+// A notification shown for questions or permission asks ('q<id>', 'a<id>'). Once none of them
+// waits any more (answered in the app, on the phone, in Telegram or in the terminal), it is closed:
+// left in the notification center it would open a question that is already over.
+export type Shown = { keys: string[]; close: () => void }
+
+// The notifications still worth showing; the others are closed on the way.
+export function retireShown(shown: readonly Shown[], waiting: ReadonlySet<string>): Shown[] {
+  return shown.filter(notice => {
+    if (notice.keys.some(key => waiting.has(key))) return true
+    notice.close()
+    return false
+  })
+}
+
 // Sessions that stalled since the last pass (src/shared/stall.ts). Once per stall: a session
 // leaves the set when it moves again, so a later stall notifies again.
 export function scanStalled(stalled: readonly string[], previous: Set<string>): { ids: Set<string>; fresh: string[] } {

@@ -44,7 +44,9 @@ export type Platform = {
   // The key the app proves itself to the bridge with, kept by the system's keychain (appKey.ts).
   appKey(): AppKey
   notificationsSupported(): boolean
-  notify(title: string, body: string, onClick?: () => void): void
+  // A handle that takes the notification off the screen and out of the notification center, where
+  // the shell can; undefined where it cannot.
+  notify(title: string, body: string, onClick?: () => void): { close(): void } | undefined
   // The index of the button pressed.
   messageBox(box: MessageBox): Promise<number>
   pickFolder(title: string): Promise<string | null>

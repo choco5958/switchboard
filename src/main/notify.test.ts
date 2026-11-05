@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Question } from '../shared/types'
-import { badgeText, firstLine, planNotification, scanPending, scanReleased, scanRuns, scanStalled, switchedOff } from './notify'
+import { badgeText, firstLine, planNotification, retireShown, scanPending, scanReleased, scanRuns, scanStalled, switchedOff } from './notify'
 
 const q = (id: number, status: Question['status'] = 'pending', question = `q${id}`): Question =>
   ({ id, status, question, project: 'proj', session_id: 's' }) as Question
@@ -75,4 +75,17 @@ test('only the newest failed run of a routine that switched itself off says so',
   const runs = [run(1, 1, 'failed'), run(2, 2, 'failed'), run(3, 1, 'failed')]
   expect(runs.map(r => switchedOff(r, routines, runs))).toEqual([false, false, true])
   expect(switchedOff(run(4, 1, 'done'), routines, [run(4, 1, 'done')])).toBe(false)
+})
+
+describe('retireShown', () => {
+  const notice = (keys: string[], closed: string[]) => ({ keys, close: () => void closed.push(keys.join(',')) })
+  test('closes a notice once none of its questions or asks waits, and keeps the rest', () => {
+    const closed: string[] = []
+    const shown = [notice(['q1'], closed), notice(['a2'], closed), notice(['q3', 'q4'], closed)]
+    const kept = retireShown(shown, new Set(['a2', 'q4']))
+    expect(closed).toEqual(['q1'])
+    expect(kept.map(n => n.keys)).toEqual([['a2'], ['q3', 'q4']])
+    expect(retireShown(kept, new Set())).toEqual([])
+    expect(closed).toEqual(['q1', 'a2', 'q3,q4'])
+  })
 })

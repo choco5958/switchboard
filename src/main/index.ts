@@ -78,6 +78,7 @@ const electronPlatform: Platform = {
     })
     notification.on('close', () => liveNotifications.delete(notification))
     notification.show()
+    return { close: () => notification.close() }
   },
   messageBox: async box => {
     const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
