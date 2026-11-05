@@ -403,7 +403,8 @@ mod win {
             let done = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |result, reply: String| {
                 let _ = tx.send(match result {
                     Ok(()) => serde_json::from_str(&reply).map_err(|e| e.to_string()),
-                    Err(error) => Err(error.message()),
+                    Err(error) if reply.is_empty() => Err(format!("{method}: {}", error.message())),
+                    Err(error) => Err(format!("{method}: {} {reply}", error.message())),
                 });
                 Ok(())
             }));
@@ -425,7 +426,9 @@ mod win {
         Ok(id)
     }
 
-    async fn evaluate(page: &Webview, code: &str, context: Option<i64>) -> Result<Value, String> {
+    // The outer error: the DevTools call failed (a world gone with its document, say). The inner
+    // one: the script threw.
+    async fn evaluate(page: &Webview, code: &str, context: Option<i64>) -> Result<Result<Value, String>, String> {
         let expression = format!("(async () => {{ const value = await (0, eval)({}); return value === undefined ? null : JSON.stringify(value) }})()", serde_json::to_string(code).unwrap_or_default());
         let mut params = json!({ "expression": expression, "awaitPromise": true, "returnByValue": true });
         if let Some(id) = context {
@@ -433,24 +436,26 @@ mod win {
         }
         let reply = cdp(page, "Runtime.evaluate", params).await?;
         if let Some(details) = reply.get("exceptionDetails") {
-            return Err(details["exception"]["description"].as_str().or(details["text"].as_str()).unwrap_or("the script failed").to_string());
+            return Ok(Err(details["exception"]["description"].as_str().or(details["text"].as_str()).unwrap_or("the script failed").to_string()));
         }
-        Ok(reply["result"]["value"].as_str().and_then(|text| serde_json::from_str(text).ok()).unwrap_or(Value::Null))
+        Ok(Ok(reply["result"]["value"].as_str().and_then(|text| serde_json::from_str(text).ok()).unwrap_or(Value::Null)))
     }
 
     pub async fn run(page: &Webview, code: String, world: World) -> Result<Value, String> {
         match world {
-            World::Page => evaluate(page, &code, None).await,
+            World::Page => evaluate(page, &code, None).await?,
             World::App => {
                 let id = app_context(page).await?;
                 match evaluate(page, &code, Some(id)).await {
-                    // A new document: its world is made again.
-                    Err(error) if error.contains("context") => {
+                    // The world went with its document (WebView2 may say only "E_FAIL" then): the
+                    // page's present document gets its world made again.
+                    Err(error) => {
+                        eprintln!("browser: the app's world is made again ({error})");
                         *APP_CONTEXT.lock().unwrap() = None;
                         let id = app_context(page).await?;
-                        evaluate(page, &code, Some(id)).await
+                        evaluate(page, &code, Some(id)).await?
                     }
-                    other => other,
+                    Ok(answer) => answer,
                 }
             }
         }
