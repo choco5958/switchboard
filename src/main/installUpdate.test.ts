@@ -50,7 +50,8 @@ test('the Windows install waits for the app, runs the installer quietly and keep
   const app = 'C:\\Users\\me\\AppData\\Local\\Switchboard\\switchboard.exe'
   const script = windowsInstallScript({ pid: 4242, installer: "C:\\Users\\O'Brien\\updates\\Switchboard-0.4.0-win-x64.exe", relaunch: true, app, log: 'C:\\Users\\me\\update.log', failedMark: 'C:\\Users\\me\\updates\\0.4.0.failed' })
   const lines = script.split('\n')
-  expect(lines[1]).toBe('Wait-Process -Id 4242 -Timeout 120')
+  expect(lines).toContain('Wait-Process -Id 4242 -Timeout 120 -ErrorAction SilentlyContinue')
+  expect(script).not.toContain('Add-Content')
   expect(script).toContain("Start-Process -FilePath 'C:\\Users\\O''Brien\\updates\\Switchboard-0.4.0-win-x64.exe' -ArgumentList @('/S') -PassThru")
   expect(script).toContain("Set-Content -LiteralPath 'C:\\Users\\me\\updates\\0.4.0.failed'")
   // Started again by the script, once the installer is done.

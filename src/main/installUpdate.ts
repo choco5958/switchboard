@@ -43,17 +43,21 @@ type WindowsInstall = { pid: number; installer: string; relaunch: boolean; app: 
 
 export function windowsInstallScript(input: WindowsInstall): string {
   return [
-    "$ErrorActionPreference = 'SilentlyContinue'",
-    `Wait-Process -Id ${input.pid} -Timeout 120`,
-    `Add-Content -LiteralPath ${psQuote(input.log)} -Value ((Get-Date -Format o) + ' installing ' + ${psQuote(input.installer)})`,
+    // PowerShell's output is already the update log (startWindowsInstall): its lines go there as
+    // output. Add-Content on the same file fails, as the file is open for writing.
+    "$ErrorActionPreference = 'Continue'",
+    "function Say($text) { Write-Output ((Get-Date -Format o) + ' ' + $text) }",
+    `Wait-Process -Id ${input.pid} -Timeout 120 -ErrorAction SilentlyContinue`,
+    `Say ('installing ' + ${psQuote(input.installer)})`,
     `$run = Start-Process -FilePath ${psQuote(input.installer)} -ArgumentList @('/S') -PassThru`,
     '$null = $run.Handle',
-    '$run.WaitForExit()',
-    `Add-Content -LiteralPath ${psQuote(input.log)} -Value ((Get-Date -Format o) + ' the installer ended with ' + $run.ExitCode)`,
+    "Say ('the installer runs as process ' + $run.Id)",
+    "if (-not $run.WaitForExit(600000)) { Say 'the installer did not end in 10 minutes'; Stop-Process -Id $run.Id -Force; $run.WaitForExit() }",
+    "Say ('the installer ended with ' + $run.ExitCode)",
     `if ($run.ExitCode -ne 0) { Set-Content -LiteralPath ${psQuote(input.failedMark)} -Value ('installer exit ' + $run.ExitCode) }`,
     `Remove-Item -LiteralPath ${psQuote(input.installer)} -Force`,
     // A failed install leaves the version there was: it starts again as well.
-    ...(input.relaunch ? [`Start-Process -FilePath ${psQuote(input.app)}`] : []),
+    ...(input.relaunch ? ["Say 'starting the app'", `Start-Process -FilePath ${psQuote(input.app)}`] : []),
   ].join('\n')
 }
 

@@ -234,6 +234,9 @@ async function main(): Promise<number> {
       for (const root of [home, process.env.APPDATA, process.env.LOCALAPPDATA]) {
         for (const found of root ? findDirs(root, 'claude-ide', 4) : []) console.log(`--- found ${found}: ${readdirSync(found).join(', ')}`)
       }
+      // What still runs of the install: PowerShell, the installer, the app.
+      const running = spawnSync('powershell.exe', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(powershell|pwsh|switchboard|Switchboard)' } | ForEach-Object { '{0} (parent {1}) {2}' -f $_.ProcessId, $_.ParentProcessId, $_.ExecutablePath }"], { encoding: 'utf8' }).stdout
+      console.log(`--- running:\n${running.trim()}`)
     }
     console.log('--- the app said:')
     for (const line of lines.slice(-60)) console.log(line)
