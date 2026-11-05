@@ -39,7 +39,7 @@ export function appImageTarget(env: Record<string, string | undefined>): string 
 // After the app has quit: the installer's run, as a script for the Node that outlives the app. Its
 // argument: [pid, installer, app, relaunch, log, failedMark]. An installer that fails marks its
 // version so the app offers a download instead (cleanUpdates); the app starts again either way, a
-// failed install having left the version there was.
+// failed install having left the version there was, and before the installer file goes.
 export const WINDOWS_INSTALL = `
 const { spawn } = require('node:child_process')
 const fs = require('node:fs')
@@ -59,10 +59,17 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
   })
   say('the installer ended with ' + code)
   if (code !== 0) fs.writeFileSync(failedMark, 'installer exit ' + code)
-  fs.rmSync(installer, { force: true })
   if (relaunch) {
     say('starting the app')
     spawn(app, [], { detached: true, stdio: 'ignore' }).unref()
+  }
+  // A moment after it ends the installer may still be held (a virus scan, a process of its own);
+  // what stays there the app clears at its next start (cleanUpdates).
+  for (let tries = 1; ; tries++) {
+    try { fs.rmSync(installer, { force: true }); break } catch (error) {
+      if (tries === 20) { say('the installer stays: ' + error.message); break }
+      await pause(500)
+    }
   }
 })()
 `
