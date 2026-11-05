@@ -49,14 +49,14 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
    - 패키지: Windows는 NSIS 설치 파일(사용자별 설치), Linux는 AppImage와 deb. scripts/pack-tauri.ts가 Electron판과 같은 이름과 latest.yml, latest-linux.yml, latest-linux-arm64.yml을 만든다. Linux는 Ubuntu 22.04에서 만든다(더 새 배포판에서도 돌도록).
    - Electron판에서 넘어오기(Windows): 설치된 Electron판은 새 설치 파일을 `--updated /S`로 실행한다. Tauri판 설치 파일은 먼저 Electron판을 그 제거 프로그램으로 지우고(바로가기, 설치된 앱 목록 항목, 파일. 데이터 폴더는 남는다), `--force-run`이 있으면 설치 뒤 앱을 띄운다(src-tauri/windows/hooks.nsh). 모든 사용자용으로 설치한 Electron판(HKLM)은 관리자 권한이 필요해 그대로 둔다. latest.yml의 첫 설치 파일이 x64라서 ARM64 PC의 Electron판도 x64 Tauri판을 받는다. 셸이 기계의 실제 아키텍처(IsWow64Process2)를 호스트에 알려, 그다음 업데이트에서 ARM64판으로 바뀐다.
    - Electron판에서 넘어오기(Linux): AppImage는 Electron판의 업데이터가 새 파일을 제자리에 두고 `APPIMAGE_EXIT_AFTER_INSTALL`로 한 번 실행해 끝나기를 기다린다. Tauri판은 이때 바로 끝나고, 다음에 열 때 뜬다. deb는 패키지 이름이 바뀌어서(claude-ide에서 switchboard로) Conflicts와 Replaces를 적어, apt로 설치하면 Electron판 패키지가 빠진다.
-   - Tauri판의 업데이트: Windows는 설치 파일을 받아 앱이 끝난 뒤 PowerShell이 `/S`로 실행하고, 다시 띄울 때는 PowerShell이 앱을 직접 연다. NSIS의 `/R`은 사용자 권한으로 앱을 띄우는 방식이 셸 없이 돌 때 실패해서 쓰지 않는다. 설치 과정은 데이터 폴더의 update.log에 남는다. AppImage는 받은 파일이 앱이 끝날 때 `$APPIMAGE` 자리에 들어간다. deb는 지금처럼 다운로드 페이지를 알린다(src/main/installUpdate.ts).
+   - Tauri판의 업데이트: Windows는 설치 파일을 받아 두었다가, 앱이 끝나면 브리지가 쓰는 Node 복사본이 `/S`로 실행하고 앱을 다시 연다. NSIS의 `/R`은 사용자 권한으로 앱을 띄우는 방식이 셸 없이 돌 때 실패해서 쓰지 않는다. PowerShell도 쓰지 않는다. detached로 띄우면 콘솔이 없어서 Windows PowerShell이 한 줄도 돌리지 않고 종료 코드 0으로 끝나고, detached 없이 띄우면 호스트가 끝날 때 함께 끝난다. 설치 과정은 데이터 폴더의 update.log에 남는다. AppImage는 받은 파일이 앱이 끝날 때 `$APPIMAGE` 자리에 들어간다. deb는 지금처럼 다운로드 페이지를 알린다(src/main/installUpdate.ts).
    - 확인: `.github/workflows/tauri-check.yml`이 Windows(x64, arm64)와 Linux(x64, arm64)에서 만들고, Windows에서는 Electron판 0.3.17을 설치한 뒤 Tauri판으로 넘어가는지 보고, 설치된 앱을 scripts/tauri-smoke.ts로 숨겨서 돌린다(브리지, 세션 목록, 질문, 터미널, 내장 브라우저). 이 스크립트는 macOS에서도 같게 돈다.
    - 크기: Windows x64 설치 파일 약 32MB. Linux x64는 AppImage 126MB, deb 52.7MB.
    - 스스로 하는 업데이트 확인: scripts/tauri-update-check.ts가 버전을 0.0.1로 낮춘 앱을 띄우고, 같은 컴퓨터의 HTTPS 서버가 시험 키로 서명한 릴리스를 내준다(`CLAUDE_IDE_UPDATE_TEST`, 캡처 모드에서만 받는다). 앱이 받고, 끝나고, 새 앱이 다시 뜨는지 본다. macOS(CI에서만 돈다. 교체 뒤 `open`이 진짜 HOME으로 앱을 연다)와 Linux x64, arm64의 AppImage는 통과했다.
    - Linux의 Electron판 키 이어받기: 가상 화면과 gnome-keyring에서 실제 Electron판(x64 0.3.12, arm64 0.3.17)을 띄워 키를 봉인하게 한 뒤, Tauri판이 같은 키를 읽는지 본다(scripts/tauri-key-check.ts). 두 아키텍처 모두 통과했다.
    - 아직 확인하지 못한 것: Windows에서 스스로 하는 업데이트(받기와 설치 예약까지는 된다), ARM64 Windows에서 x64판을 거쳐 ARM64판으로 바뀌기(Windows 업데이트 확인 뒤에 돈다), macOS 보이는 창의 나머지(앱을 다시 켠 뒤 터미널 유지, 확인 대화상자, 폴더 고르기, 알림 누르기, Dock으로 다시 열기, 서명이 바뀐 뒤 키체인이 묻는지). 보이는 창에서 창, 세션, 질문, 키체인 저장과 다시 읽기, 터미널 호스트, 한 번만 실행은 확인했다.
    - 전환: release.yml에서 Electron판 build 잡을 빼고 tauri-mac.yml(`artifact: dist-mac`)과 tauri-check.yml(`artifact: dist`)을 부른다. release 잡은 두 잡을 기다린다. 태그로 돌 때는 Windows의 "Update itself"와 ARM64 Windows의 업데이트 단계가 실패해도 경고만 남기고 릴리스를 계속한다. 이 문제를 고치면 그 `continue-on-error`를 지운다.
-   - Windows 업데이트에서 남은 문제: CI에서 앱이 업데이트를 받고 끝난 뒤, 설치를 맡은 PowerShell이 로그에 아무것도 남기지 않았고 설치 파일도 그대로 남았다. 로그를 PowerShell의 출력으로 남기도록 고쳤다(로그 파일이 이미 출력으로 열려 있어 Add-Content가 실패했다). 설치 프로그램이 끝나지 않는지는 다음 확인에서 본다. 고치기 전까지 Tauri판 Windows 사용자는 업데이트를 직접 내려받아 설치해야 할 수 있다.
+   - Windows 업데이트: 설치를 PowerShell에 넘기던 때는 CI에서 설치가 한 번도 시작되지 않았다(위의 콘솔 문제). 앱이 끝난 뒤 설치를 넘기는 부분만 Windows 러너에서 따로 돌려 원인을 찾았고, Node로 바꾼 뒤 그 부분은 통과했다.
 
 ## 패키지 만들기 (macOS)
 
@@ -102,6 +102,8 @@ cd src-tauri && cargo build --release
 - **Windows 확인용 HOME:** AppData\Roaming은 USERPROFILE을 따르지만 그 폴더가 있을 때만이다. 없으면 셸이 데이터 폴더를 찾지 못해 설치 폴더 안(`.tauri-data`)을 썼고, 업데이트 설치 파일도 거기 들어갔다. 확인 스크립트가 AppData 폴더를 미리 만든다.
 - **Electron판 Linux x64의 glibc:** ubuntu-latest가 26.04로 바뀐 0.3.13부터 Electron판 x64의 node-pty가 glibc 2.42를 요구해 Ubuntu 24.04와 22.04에서 앱이 뜨지 않았다. 0.3.18부터 release.yml이 22.04에서 만들고 glibc 2.35 이하인지 확인한다.
 - **macOS 임시 HOME:** 임시 HOME에는 기본 키체인이 없고, 긴 경로는 유닉스 소켓 길이 제한(104바이트)을 넘어 터미널 호스트가 뜨지 않는다. 보이는 창 확인은 Keychains를 연결하고 TMPDIR을 /tmp로 둔다.
+- **WebView2의 DevTools 오류:** CDP 호출이 실패하면 WebView2는 "Class not registered", "The parameter is incorrect" 같은 HRESULT 메시지를 주고, CDP의 오류("Cannot find context with specified id")는 답 본문에만 있다. 앱 전용 세계를 다시 만들지 판단할 때 메시지 문구에 기대지 않는다.
+- **알림 거두기:** 0.3.18부터 Electron판은 답한 질문의 알림을 알림 센터에서 거둔다. Tauri판은 notify-rust가 보낸 알림을 닫을 손잡이를 주지 않아서 아직 거두지 못한다.
 - **사람이 봐야 확인되는 것:** 키체인(처음 저장, 다시 읽기, 거절, Electron판 키 이어받기), 확인 대화상자, 폴더 고르기, 알림 누르기, 한 번만 실행, 창을 닫았다가 Dock으로 다시 열기. 잠자기 막기와 자리 비움은 Rust 단위 테스트로 확인했다.
 
 ## 주의
