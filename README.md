@@ -103,13 +103,14 @@ Jump to any session, task or decision question. Gather projects into groups and 
 
 #### Fix what you see
 - Register a dev server, start it and open it in the in-app browser. Local addresses a CLI opens in an app terminal open there too.
-- Sessions read, click and type in local pages with the `browser_*` tools. By default they reach only this computer's addresses; allow private network addresses in Settings > Agent CLIs.
+- Sessions read, click and type in local pages with the `browser_*` tools. By default they reach only this computer's addresses; allow private network addresses in Settings > Permissions and access.
+- The page takes the full width; open comments and dev servers on the right with `Comments` and `Dev servers` in the toolbar. Turning on comment mode or leaving a comment opens the comments by itself.
 
 #### Terminals
 - `+` beside a project in the sidebar opens an installed agent or a plain shell there. The terminal shows up as a session under that project.
 - Your Mac does not sleep while an agent is working.
 - To close the terminals when the app quits, turn on `Close terminals when the app quits` in Settings > Agent CLIs. On Windows the terminals close with the app.
-- When turned on in Settings, the app answers yes ahead of time to the folder trust question of Codex, Copilot and Cursor for a folder they open for the first time. It is off by default and skips folders with agent config of their own (.codex, .cursor, .mcp.json and so on).
+- When turned on in Settings > Permissions and access, the app answers yes ahead of time to the folder trust question of Codex, Copilot and Cursor for a folder they open for the first time. It is off by default and skips folders with agent config of their own (.codex, .cursor, .mcp.json and so on).
 - Type `/switchboard` in Claude Code to see that session's flow and decisions in a side pane.
 
 #### Display
@@ -129,8 +130,12 @@ Claude Code connects through a mod; other CLIs connect through a server (MCP) th
 | Task reports, decisions, asking other sessions, browser tools | ✅ | ✅ | Terminal only |
 | Receiving answers and messages | ✅ | ✅ typed into the app terminal | |
 | Scheduled prompts | ✅ | ✅ | |
-| Permission asks relayed while away | ✅ | Not yet | |
-| Usage bars, `/switchboard` pane | ✅ | | |
+| Permission asks relayed while away | ✅ | Codex (turn on in Settings), not yet for the rest | |
+| Usage bars | ✅ | Codex | |
+| `/switchboard` pane | ✅ | | |
+
+- Turn on the Codex relay in Settings > Permissions and access. Opening a Codex terminal then records Switchboard's one permission hook as trusted in your Codex config, and while you are away Codex's asks to change files or use MCP tools go to the app and your phone. Commands that would run outside the sandbox are still asked in the terminal only. macOS and Linux.
+- While a Codex session is open, the account panel also shows Codex usage (5 hours, week), and a Codex session at its limit gets answers and messages after the reset.
 
 Add any other CLI in Settings > Agent CLIs with its command and how it connects. Only installed CLIs show in the `+` menu.
 

@@ -1036,3 +1036,93 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
 .incoming .quiet.small { margin: 0; }
 .incoming-options { display: flex; flex-wrap: wrap; gap: 6px; }
 .incoming-foot { display: flex; align-items: center; }
+
+/* ---------- Settings (Orca's layout) ---------- */
+
+/* The menu takes the sidebar's place: back, a search, the sections in groups. */
+.sidebar[hidden] { display: none; }
+.settings-nav { grid-area: side; }
+.settings-nav-head { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) var(--sp-3); border-bottom: var(--bw) solid var(--line); }
+.settings-back { align-self: flex-start; gap: 6px; }
+.settings-search {
+  display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2); border: var(--bw) solid var(--line); border-radius: var(--r-md);
+  background: var(--bg); color: var(--quiet);
+}
+.settings-search:focus-within { border-color: var(--accent); }
+.settings-search input { flex: 1; min-width: 0; height: 30px; border: 0; outline: none; background: none; color: var(--text); font: inherit; font-size: var(--fs-sm); }
+.settings-nav-list { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-2); }
+.settings-nav-group + .settings-nav-group { margin-top: var(--sp-3); }
+.settings-nav-title { margin: 0; padding: var(--sp-1) var(--sp-2); color: var(--quiet); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.02em; }
+.settings-nav-empty { padding: var(--sp-2); }
+
+/* One section: its title and what it is for, then its rows in bands. */
+.settings-screen { max-width: 860px; margin: 0 auto; padding: var(--sp-4) var(--sp-2) var(--sp-6); }
+.settings-pane-head { margin-bottom: var(--sp-5); padding-bottom: var(--sp-4); border-bottom: var(--bw) solid var(--line); }
+.settings-pane-head h1 { margin: 0 0 var(--sp-2); font-size: 24px; font-weight: 650; line-height: var(--lh-tight); }
+.settings-pane-head p { max-width: 70ch; margin: 0; color: var(--quiet); font-size: var(--fs-md); line-height: var(--lh); }
+.setting-group + .setting-group { margin-top: var(--sp-6); }
+.setting-group-title { margin: 0 0 var(--sp-2); font-size: var(--fs-md); font-weight: 600; }
+.setting-band {
+  padding: var(--sp-2) var(--sp-5); border: var(--bw-surface) solid var(--line); border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--panel) 70%, transparent); box-shadow: var(--shadow-surface);
+}
+.setting-band > :first-child { margin-top: var(--sp-2); }
+.setting-band > :last-child { margin-bottom: var(--sp-2); }
+.setting-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); padding: var(--sp-3) 0; }
+.setting-band > .setting-row:first-child, .setting-band > .agent-card:first-child { margin-top: 0; }
+.setting-band > .setting-row:last-child { margin-bottom: 0; }
+.setting-row + .setting-row, .agent-card + .setting-row, .setting-row + .agent-add, .setting-row + .agent-card, .agent-card + .agent-card { border-top: var(--bw) solid var(--line); }
+.setting-text { flex: 1; min-width: 0; }
+.setting-title { font-size: var(--fs-md); font-weight: 550; color: var(--text); }
+.setting-hint { max-width: 68ch; margin: 3px 0 0; color: var(--quiet); font-size: var(--fs-sm); line-height: var(--lh); }
+.setting-control { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding-top: 1px; }
+.setting-switch { padding: 0; border: 0; background: none; cursor: pointer; }
+.setting-switch:disabled { cursor: default; opacity: 0.5; }
+.setting-switch .switch-track { width: 34px; height: 20px; }
+.setting-switch .switch-knob { top: 3px; left: 3px; width: 14px; height: 14px; }
+.setting-switch.switch-on .switch-track { background: var(--accent); }
+.setting-switch.switch-on .switch-knob { left: 17px; background: var(--on-accent, #fff); }
+.setting-switch:focus-visible { outline: var(--focus-ring); outline-offset: 3px; border-radius: var(--r-pill); }
+
+/* The CLIs: one line each, how it connects and how to install it folded under it. */
+.agent-card, .agent-add { padding: 0; }
+.agent-card > summary, .agent-add > summary {
+  display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) 0; list-style: none; cursor: pointer;
+}
+.agent-card > summary::-webkit-details-marker, .agent-add > summary::-webkit-details-marker { display: none; }
+.agent-card-tags { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.agent-card-open { display: inline-flex; color: var(--quiet); transition: transform var(--dur) var(--ease); }
+.agent-add > summary .agent-card-open { margin-left: auto; }
+details[open] > summary .agent-card-open { transform: rotate(180deg); }
+.agent-card-body { display: grid; gap: 6px; padding: 0 0 var(--sp-3) 2px; }
+.agent-card-body p { margin: 0; }
+.agent-card-body code { user-select: all; }
+.agent-card-body a { color: var(--accent); }
+.agent-add { border-top: var(--bw) solid var(--line); }
+.agent-add .agent-form { padding-bottom: var(--sp-3); }
+.setting-band .telegram-steps { margin: var(--sp-2) 0; padding-left: 20px; }
+.setting-band .settings-sub { margin: 0; padding-top: var(--sp-3); border-top: var(--bw) solid var(--line); font-size: var(--fs-md); }
+
+/* ---------- The debugging screen (Orca's browser pane) ---------- */
+
+/* The page takes the whole width; comments and dev servers open in a drawer beside it. */
+.main.browser-mode { --browser-side: 0px; }
+.browser-bar { gap: var(--sp-1); padding: 6px var(--sp-2); }
+.browser-bar .address { margin: 0 var(--sp-1); }
+.browser-bar-split { width: var(--bw); height: 18px; margin: 0 var(--sp-1); background: var(--line); }
+.browser-bar .chip-button { display: inline-flex; align-items: center; gap: 6px; }
+.browser-drawer {
+  display: flex; flex-direction: column; width: 320px; min-height: 0; border-left: var(--bw) solid var(--line); background: var(--panel);
+}
+.drawer-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-bottom: var(--bw) solid var(--line); }
+.drawer-head h2 { margin: 0; font-size: var(--fs-md); }
+.drawer-body { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-3); }
+.drawer-body.comment-panel { width: auto; border-left: 0; }
+.drawer-foot { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border-top: var(--bw) solid var(--line); }
+.drawer-foot .comment-target { margin: 0; }
+.drawer-foot p { margin: 0; }
+.drawer-foot .direct { margin: 0; padding-top: var(--sp-2); border-top: var(--bw) solid var(--line); }
+.drawer-foot .direct-input { min-height: 64px; }
+.drawer-head .comment-filter { margin-left: auto; }
+.drawer-head .comment-filter + .icon-btn { margin-left: 0; }
+.debug-panel .dev-head { display: flex; justify-content: flex-end; margin-bottom: var(--sp-2); }

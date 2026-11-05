@@ -48,8 +48,7 @@ export function TelegramSection() {
 
   if (!status)
     return (
-      <section id="settings-telegram" className="settings-row telegram">
-        <h2>{t('telegram.title')}</h2>
+      <div className="telegram">
         {loadError ? (
           <Notice
             tone="error"
@@ -64,15 +63,10 @@ export function TelegramSection() {
         ) : (
           <p className="quiet small">{t('common.loading')}</p>
         )}
-      </section>
+      </div>
     )
   return (
-    <section id="settings-telegram" className="settings-row telegram">
-      <h2>{t('telegram.title')}</h2>
-      <p className="quiet small">
-        {t('telegram.hint')}
-        <More>{t('telegram.hintMore')}</More>
-      </p>
+    <div className="telegram">
       {!status.configured && (
         <>
           <ol className="small telegram-steps">
@@ -142,6 +136,6 @@ export function TelegramSection() {
           </div>
         </div>
       )}
-    </section>
+    </div>
   )
 }

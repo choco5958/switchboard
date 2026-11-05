@@ -53,6 +53,7 @@ export function Sidebar({
   waiting,
   nav,
   footer,
+  hiddenForSettings = false,
   onHome,
   onSearch,
   onOpenRow,
@@ -71,6 +72,8 @@ export function Sidebar({
   waiting: number // everything that waits for the person (waiting.ts)
   nav: NavItem[]
   footer: ReactNode
+  // The settings screen puts its own menu here (SettingsNav); the sidebar stays mounted, folds and all.
+  hiddenForSettings?: boolean
   onHome: () => void
   onSearch: () => void
   onOpenRow: (row: SessionRow) => void
@@ -104,7 +107,7 @@ export function Sidebar({
   )
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" hidden={hiddenForSettings}>
       <div className="side-brand">
         <BrandMark />
         <span>Switchboard</span>

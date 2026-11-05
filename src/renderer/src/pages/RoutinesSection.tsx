@@ -140,12 +140,7 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
   }
 
   return (
-    <section id="settings-routines" className="settings-row routines">
-      <h2>{t('routines.title')}</h2>
-      <p className="quiet small">
-        {t('routines.hint')}
-        <More>{t('routines.hintMore')}</More>
-      </p>
+    <div className="routines">
       {!connected && (
         <Notice tone="warn">
           <span className="small">{t('routines.offline')}</span>
@@ -268,6 +263,6 @@ export function RoutinesSection({ routines, runs, projects, customs }: { routine
           )}
         </div>
       )}
-    </section>
+    </div>
   )
 }

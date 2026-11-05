@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '../../shared/types'
 import { portOf, targetsOf, type DevTarget } from '../../shared/devtargets'
 import {
@@ -69,12 +69,17 @@ export function BrowserView({
   scope,
   lan = false,
   onShow,
+  servers,
+  direct,
 }: {
   sessions: Session[]
   visible: boolean
   scope?: string | null
   lan?: boolean // sessions may drive private network pages too (BROWSER_LAN_KEY)
   onShow?: () => void
+  // The drawer's other parts (pages/DebugPanel.tsx): the dev servers, and a prompt typed to the session.
+  servers?: ReactNode
+  direct?: ReactNode
 }) {
   // The page itself, once its shell has drawn it (PageView.tsx).
   const [surface, setSurface] = useState<PageSurface | null>(null)
@@ -97,6 +102,9 @@ export function BrowserView({
   const [failedTarget, setFailedTarget] = useState<DevTarget | null>(null)
   const [starting, setStarting] = useState(false)
   const [commenting, setCommenting] = useState(false)
+  // The drawer beside the page, or none: the page takes the whole width. It is a column, never a
+  // popover, because the shell draws the page above the app (the Tauri build's child webview).
+  const [drawer, setDrawer] = useState<'comments' | 'servers' | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [filter, setFilter] = useState<CommentFilter>('열림')
   const [status, setStatus] = useState('')
@@ -110,6 +118,18 @@ export function BrowserView({
   const commentingRef = useRef(commenting)
   commentingRef.current = commenting
   const openComments = comments.filter(c => c.status === '열림')
+  // The drawer opens by itself where something needs it: comment mode on, the first open comment,
+  // the error page asking for a dev server.
+  useEffect(() => {
+    if (commenting) setDrawer('comments')
+  }, [commenting])
+  const hasOpen = openComments.length > 0
+  useEffect(() => {
+    if (hasOpen) setDrawer(d => d ?? 'comments')
+  }, [hasOpen])
+  useEffect(() => {
+    if (debug.addTarget) setDrawer('servers')
+  }, [debug.addTarget?.seq])
   const openRef = useRef(openComments)
   openRef.current = openComments
   const pageRef = useRef(page)
@@ -448,14 +468,13 @@ export function BrowserView({
       <div className="browser-bar">
         <IconButton icon="collapse" label={t('browser.back')} onClick={() => ready.current && view.current?.back()} />
         <IconButton icon="expand" label={t('browser.forward')} onClick={() => ready.current && view.current?.forward()} />
-        <Button size="sm" onClick={() => ready.current && view.current?.reload()}>
-          {t('browser.reload')}
-        </Button>
+        <IconButton icon="reload" label={t('browser.reload')} onClick={() => ready.current && view.current?.reload()} />
         <Input
           compact
           mono
           className="address"
           aria-label={t('browser.address')}
+          title={title || undefined}
           value={address}
           onChange={event => setAddress(event.target.value)}
           onKeyDown={event => event.key === 'Enter' && !composing(event) && load(address)}
@@ -473,10 +492,14 @@ export function BrowserView({
           </span>
           {t('browser.commentMode')} <kbd>⌥M</kbd>
         </Button>
-        <Button variant="primary" size="sm" disabled={openComments.length === 0 || !targetId} onClick={() => void sendAll()}>
-          {t('browser.sendToClaude')}
-          {openComments.length > 0 ? ` (${openComments.length})` : ''}
-        </Button>
+        <span className="browser-bar-split" />
+        <Chip on={drawer === 'comments'} aria-pressed={drawer === 'comments'} onClick={() => setDrawer(d => (d === 'comments' ? null : 'comments'))}>
+          {t('browser.drawerComments')}
+          {openComments.length > 0 && <Badge shape="count" tone="warn">{openComments.length}</Badge>}
+        </Chip>
+        <Chip on={drawer === 'servers'} aria-pressed={drawer === 'servers'} onClick={() => setDrawer(d => (d === 'servers' ? null : 'servers'))}>
+          {t('dev.servers')}
+        </Chip>
       </div>
       <div className="browser-body">
         <div className="webview-wrap">
@@ -516,25 +539,34 @@ export function BrowserView({
             </div>
           )}
         </div>
-        <aside className="comment-panel">
-          <div className="comment-head">
-            <h2>{t(HEADINGS[filter])}</h2>
-            <Select
-              compact
-              mono
-              className="comment-filter"
-              value={filter}
-              title={t('browser.filterTitle')}
-              aria-label={t('browser.filterTitle')}
-              onChange={event => setFilter(event.target.value as CommentFilter)}
-            >
-              {(['열림', '보냄', '해결', '전체'] as CommentFilter[]).map(f => (
-                <option key={f} value={f}>
-                  {commentStatusLabel(f)} {counts[f]}
-                </option>
-              ))}
-            </Select>
-          </div>
+        {drawer && (
+          <aside className="browser-drawer" aria-label={t(drawer === 'comments' ? 'browser.drawerComments' : 'dev.servers')}>
+            <div className="drawer-head">
+              <h2>{drawer === 'comments' ? t(HEADINGS[filter]) : t('dev.servers')}</h2>
+              {drawer === 'comments' && (
+                <Select
+                  compact
+                  mono
+                  className="comment-filter"
+                  value={filter}
+                  title={t('browser.filterTitle')}
+                  aria-label={t('browser.filterTitle')}
+                  onChange={event => setFilter(event.target.value as CommentFilter)}
+                >
+                  {(['열림', '보냄', '해결', '전체'] as CommentFilter[]).map(f => (
+                    <option key={f} value={f}>
+                      {commentStatusLabel(f)} {counts[f]}
+                    </option>
+                  ))}
+                </Select>
+              )}
+              <IconButton icon="close" size="sm" label={t('common.close')} onClick={() => setDrawer(null)} />
+            </div>
+            {drawer === 'servers' ? (
+              <div className="drawer-body">{servers}</div>
+            ) : (
+              <>
+                <div className="drawer-body comment-panel">
           {shown.length === 0 && (
             <EmptyState className="small">
               {filter !== '열림' ? t(EMPTY[filter]) : commenting ? t('browser.emptyCommenting') : t('browser.emptyOpen')}
@@ -579,23 +611,19 @@ export function BrowserView({
             )
           })}
 
-          <p className="small comment-target">
-            <span className="quiet">{t('browser.sendTo')} </span>
-            {target ? whereTo(target) : t('dev.noLiveSession')}
-          </p>
-          <p className="quiet small">{t('browser.sendHint')}</p>
-          {status && <p className="small">{status}</p>}
-        </aside>
-      </div>
-      <div className="browser-status">
-        <span className="status-part">
-          <span className="quiet">{t('browser.address')}</span> <span className="mono-inline">{page}</span>
-        </span>
-        {title && !failure && <span className="status-part status-title">{title}</span>}
-        {failure && <span className="status-part error">{t('browser.failedShort')}</span>}
-        <Chip on={commenting} className="status-mode" title={t('browser.toggleTitle')} onClick={() => setCommenting(on => !on)}>
-          {commenting ? t('browser.modeOn') : t('browser.modeOff')}
-        </Chip>
+                </div>
+                <div className="drawer-foot">
+                  <Button variant="primary" className="wide" disabled={openComments.length === 0 || !targetId} onClick={() => void sendAll()}>
+                    {t('browser.sendToClaude')}
+                    {openComments.length > 0 ? ` (${openComments.length})` : ''}
+                  </Button>
+                  {status && <p className="small">{status}</p>}
+                  {direct}
+                </div>
+              </>
+            )}
+          </aside>
+        )}
       </div>
     </div>
   )

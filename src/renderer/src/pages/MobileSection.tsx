@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import qrcode from 'qrcode-generator'
 import { agoText, t } from '../../../shared/i18n'
 import { useToast } from '../parts'
-import { Button, Input, More, Notice, Select } from '../ui'
+import { Button, Input, More, Notice, Select, SettingRow, Switch } from '../ui'
 
 // Settings: phones that open the bridge's phone page (bridge/mobile.ts). Each phone is paired
 // with a QR code that carries its own key; the bridge never hands the key out again, so the
@@ -111,12 +111,11 @@ export function MobileSection() {
   if (!status) {
     if (!loadError) return null
     return (
-      <section id="settings-mobile" className="settings-row mobile">
-        <h2>{t('mobile.title')}</h2>
+      <div className="mobile">
         <Notice tone="error">
           <span className="small">{t('mobile.loadFailed', { error: loadError })}</span>
         </Notice>
-      </section>
+      </div>
     )
   }
   const showing = shown && chosen && shown.url === chosen.url ? shown : null
@@ -142,25 +141,20 @@ export function MobileSection() {
   }
 
   return (
-    <section id="settings-mobile" className="settings-row mobile">
-      <h2>{t('mobile.title')}</h2>
-      <p className="quiet small">
-        {t('mobile.hint')}
-        <More>{t('mobile.hintMore')}</More>
-      </p>
-      <label className="check-row">
-        <input
-          type="checkbox"
+    <div className="mobile">
+      <SettingRow title={t('mobile.enable')}>
+        <Switch
           checked={status.enabled}
           disabled={busy}
-          onChange={async e => {
-            const reply = await post('/mobile', { enabled: e.target.checked })
+          label={t('mobile.enable')}
+          onChange={async () => {
+            const on = !status.enabled
+            const reply = await post('/mobile', { enabled: on })
             if (reply.ok) setStatus(s => (s ? { ...s, ...(reply.json as unknown as Status) } : s))
-            if (!e.target.checked) setShown(null)
+            if (!on) setShown(null)
           }}
         />
-        {t('mobile.enable')}
-      </label>
+      </SettingRow>
       {status.enabled && (
         <p className="small">
           {status.listening ? t('mobile.listening', { port: status.port }) : status.error ? <span className="error">{t('mobile.error', { error: status.error })}</span> : t('mobile.off')}
@@ -329,6 +323,6 @@ export function MobileSection() {
           ))}
         </ul>
       )}
-    </section>
+    </div>
   )
 }

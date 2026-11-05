@@ -37,8 +37,7 @@ export function UpdateSection() {
   }, [load])
   if (!status)
     return (
-      <section id="settings-update" className="settings-row settings-update">
-        <h2>{t('updates.title')}</h2>
+      <div className="settings-update">
         {loadError ? (
           <Notice
             tone="error"
@@ -53,14 +52,13 @@ export function UpdateSection() {
         ) : (
           <p className="quiet small">{t('common.loading')}</p>
         )}
-      </section>
+      </div>
     )
   const { state } = status
   const busy = state === 'checking' || state === 'downloading'
   const checkedAt = status.checkedAt ? new Date(status.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
   return (
-    <section id="settings-update" className="settings-row settings-update">
-      <h2>{t('updates.title')}</h2>
+    <div className="settings-update">
       <p className="small">{t('updates.current', { version: status.version })}</p>
       <p className="quiet small" role="status">
         {t(SAYS[state], { version: status.latest ?? '', time: checkedAt, error: status.error ?? '' })}
@@ -84,6 +82,6 @@ export function UpdateSection() {
         )}
       </div>
       {state !== 'off' && <p className="quiet small">{t('updates.auto')}</p>}
-    </section>
+    </div>
   )
 }

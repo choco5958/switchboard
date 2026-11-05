@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import type { Session } from '../../../shared/types'
 import { BrowserView } from '../BrowserView'
 import { debugStore, openAction, waitUntilAnswering, type OpenEvent } from '../debugStore'
@@ -25,12 +25,16 @@ export function DebugPage({
   scope,
   lan,
   onShow,
+  servers,
+  direct,
 }: {
   sessions: Session[]
   visible: boolean
   scope?: string | null
   lan?: boolean
   onShow?: () => void
+  servers?: ReactNode
+  direct?: ReactNode
 }) {
   const showRef = useRef(onShow)
   showRef.current = onShow
@@ -83,5 +87,5 @@ export function DebugPage({
     }
   }, [])
 
-  return <BrowserView sessions={sessions} visible={visible} scope={scope} lan={lan} onShow={onShow} />
+  return <BrowserView sessions={sessions} visible={visible} scope={scope} lan={lan} onShow={onShow} servers={servers} direct={direct} />
 }

@@ -9,13 +9,13 @@ import { queueOf, reachOf, resumable, taskFacts, type Attention } from './model'
 import { ArchivePage } from './pages/ArchivePage'
 import { DebugPage } from './pages/DebugPage'
 import { BROWSER_LAN_KEY } from './agentBrowser'
-import { DebugPanel } from './pages/DebugPanel'
+import { DebugPanel, DirectInput } from './pages/DebugPanel'
 import { GalleryPage } from './pages/GalleryPage'
 import { HomePage } from './pages/HomePage'
 import { LinearPage } from './pages/LinearPage'
 import { LogPage } from './pages/LogPage'
 import { SessionsPage } from './pages/SessionsPage'
-import { SettingsPage } from './pages/SettingsPage'
+import { FIRST_SECTION, SettingsNav, SettingsPage, sectionOf } from './pages/SettingsPage'
 import { HIDDEN_KEY, REMOVED_KEY, hiddenProjects, isRunning, removedProjects, stillRemoved, nameForFolder, pickSession, projectFolders, projectOfCwd, projectsOf, savedProjects } from '../../shared/projects'
 import { SHOW_TERMINAL, TerminalStage, agentChoices, useTerminals } from './Dock'
 import { History, Toast, ToastProvider, useToastList } from './parts'
@@ -30,7 +30,7 @@ import { installSettingSaver, postSetting, saveSetting, settle, withPending, typ
 import { LOCALE_TAG, resolveLang, setLang, stageLabel, t } from '../../shared/i18n'
 import { waitCount, waitParts } from './waiting'
 import { isHelpKey, isPaletteKey } from './shortcuts'
-import { OPEN_SETTINGS, ShortcutHelp, scrollToSection } from './flows'
+import { OPEN_SETTINGS, ShortcutHelp } from './flows'
 import { sessionRows, termKey, type SessionRow } from './sessions'
 import { Sidebar, rowStateText, type NavItem } from './Sidebar'
 import { SessionView, type NextUp } from './SessionView'
@@ -226,11 +226,17 @@ export function App() {
   }, [])
 
   const open = useCallback((tab: Route) => setRoute(tab), [])
-  // The settings screen, scrolled to one of its sections (the update chip, the first run's steps).
+  // The settings screen shows one section at a time (SettingsPage); its menu takes the sidebar's
+  // place, and going back returns to the screen settings were opened from.
+  const [settingsAt, setSettingsAt] = useState(FIRST_SECTION)
+  const beforeSettings = useRef<Route>(HOME)
+  useEffect(() => {
+    if (route.kind !== 'settings') beforeSettings.current = route
+  }, [route])
   const openSettingsAt = useCallback(
     (id: string) => {
+      setSettingsAt(sectionOf(id))
       open({ kind: 'settings' })
-      scrollToSection(id)
     },
     [open],
   )
@@ -556,7 +562,7 @@ export function App() {
     if (page.kind === 'log') return <LogPage events={state.events} tasks={logTasks} agents={tags} />
     if (page.kind === 'sessions') return <SessionsPage running={state.live ?? []} />
     if (page.kind === 'linear') return <LinearPage sessions={state.sessions} />
-    if (page.kind === 'settings') return <SettingsPage settings={state.settings} routines={state.routines} runs={state.routineRuns} projects={allProjects} />
+    if (page.kind === 'settings') return <SettingsPage section={settingsAt} settings={state.settings} routines={state.routines} runs={state.routineRuns} projects={allProjects} />
     if (page.kind === 'gallery') return showDev ? <GalleryPage /> : null
     return null
   }
@@ -572,7 +578,9 @@ export function App() {
   return (
     <ToastProvider value={toast}>
       <div className="shell">
+        {route.kind === 'settings' && <SettingsNav current={settingsAt} onPick={setSettingsAt} onBack={() => open(beforeSettings.current)} />}
         <Sidebar
+          hiddenForSettings={route.kind === 'settings'}
           rows={rows}
           projects={projects}
           hidden={hidden}
@@ -628,13 +636,15 @@ export function App() {
               </Notice>
             )}
           </div>
-          {route.kind === 'debug' && (
-            <aside className="browser-side">
-              <DebugPanel sessions={state.sessions} settings={state.settings} />
-            </aside>
-          )}
           {/* The browser stays mounted so its page and comments survive switching screens. */}
-          <DebugPage sessions={state.sessions} visible={route.kind === 'debug'} lan={state.settings[BROWSER_LAN_KEY] === true} onShow={() => open({ kind: 'debug' })} />
+          <DebugPage
+            sessions={state.sessions}
+            visible={route.kind === 'debug'}
+            lan={state.settings[BROWSER_LAN_KEY] === true}
+            onShow={() => open({ kind: 'debug' })}
+            servers={<DebugPanel sessions={state.sessions} settings={state.settings} />}
+            direct={<DirectInput sessions={state.sessions} settings={state.settings} />}
+          />
           {/* Every terminal stays mounted too; the session view shows its own between its header and answers. */}
           <TerminalStage terms={terminals.terms} shown={sessionMode && viewRow?.term ? viewRow.term.id : null} themeKey={String(state.settings.theme ?? '')} />
           {route.kind !== 'debug' && (loaded || connected !== false) && (offline && route.kind === 'home' ? null : renderPage(sessionMode || route.kind !== 'session' ? route : HOME))}

@@ -8,6 +8,7 @@ import { saveSetting } from '../settings'
 import { Badge, Button, Card, EmptyState, Input, Notice, Select, TextArea, surfaceClass } from '../ui'
 
 const POLL_MS = 3000
+let answeredRequest = 0
 const EMPTY_DRAFT: DevDraft = { name: '', description: '', repo: '', command: '', url: '' }
 
 function hostPort(url: string): string {
@@ -18,8 +19,7 @@ function hostPort(url: string): string {
   }
 }
 
-// Sidebar of the debugging page: direct input to a session, and the dev servers
-// to run, restart, update and stop. The list lives in bridge settings ('devTargets').
+// The dev servers of the debugging page, in its drawer (BrowserView): run, restart, update and stop. The list lives in bridge settings ('devTargets').
 // The session picked here is the one screen comments go to as well.
 export function DebugPanel({ sessions, settings, scope }: { sessions: Session[]; settings: Record<string, unknown>; scope?: string | null }) {
   const debug = useDebugStore()
@@ -29,8 +29,6 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
   const choices = sendable(sessions, scope, debug.live)
   const session = sessionFor(debug.session, sessions, scope, debug.live)
 
-  const [text, setText] = useState('')
-  const [sent, setSent] = useState('')
   const [statuses, setStatuses] = useState<Record<string, DevStatus>>({})
   const [gits, setGits] = useState<Record<string, DevGit>>({})
   const [form, setForm] = useState<{ id: string; draft: DevDraft } | null>(null)
@@ -75,9 +73,11 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
     setMessage('')
   }, [debug.targetId])
 
-  // The browser's error page asks for a target with its address filled in.
+  // The browser's error page asks for a target with its address filled in. The panel mounts each
+  // time the drawer opens, so a request it already answered is not answered again.
   useEffect(() => {
-    if (!debug.addTarget) return
+    if (!debug.addTarget || debug.addTarget.seq === answeredRequest) return
+    answeredRequest = debug.addTarget.seq
     setErrors({})
     setSaveError('')
     setForm({ id: '', draft: { ...EMPTY_DRAFT, url: debug.addTarget.url } })
@@ -102,15 +102,6 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
     debugStore.setTarget(target.id)
     debugStore.openUrl(target.url)
     void checkGit(target)
-  }
-
-  const sendDirect = async () => {
-    const body = text.trim()
-    if (!body || !session) return
-    const reply = await window.ide.send(session.id, body, '직접 입력', '')
-    if (!reply.ok) return setSent(t('linear.sendFailed', { error: String(reply.json.error ?? '') }))
-    setText('')
-    setSent(t('dev.sent', { id: session.id.slice(0, 8) }))
   }
 
   const submitForm = async () => {
@@ -186,49 +177,8 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
 
   return (
     <section className="debug-panel">
-      <h2>{t('rail.debug')}</h2>
-
-      <div className="direct">
-        <TextArea
-          className="direct-input"
-          aria-label={t('dev.directPlaceholder')}
-          placeholder={t('dev.directPlaceholder')}
-          value={text}
-          onChange={event => setText(event.target.value)}
-          onKeyDown={event => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !composing(event)) void sendDirect()
-          }}
-        />
-        <div className="direct-row">
-          <span className="small quiet direct-where">{t('dev.sendTo', { where: session ? whereTo(session, selected) : t('dev.noLiveSession') })}</span>
-          <Button variant="primary" size="sm" disabled={!text.trim() || !session} onClick={() => void sendDirect()}>
-            {t('dev.send')}
-          </Button>
-        </div>
-        {choices.length > 1 && (
-          <Select
-            compact
-            className="wide"
-            title={t('dev.sessionTitle')}
-            aria-label={t('dev.sessionTitle')}
-            value={session?.id ?? ''}
-            onChange={event => debugStore.setSession(event.target.value)}
-          >
-            {choices.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.project} ({s.id.slice(0, 8)})
-              </option>
-            ))}
-          </Select>
-        )}
-        {!session && <p className="small quiet">{scope ? t('dev.noSessionIn', { project: scope }) : t('dev.noSessionNow')}</p>}
-        {sent && <p className="small quiet">{sent}</p>}
-      </div>
-
-      <div className="sidebar-meta dev-head">
-        <h3>{t('dev.servers')}</h3>
+      <div className="dev-head">
         <Button
-          variant="link"
           size="sm"
           onClick={() => {
             setErrors({})
@@ -398,5 +348,64 @@ export function DebugPanel({ sessions, settings, scope }: { sessions: Session[];
         </Card>
       )}
     </section>
+  )
+}
+
+// Direct input to a session from the debugging page, under its comments (BrowserView's drawer).
+// The session picked here is the one screen comments go to as well.
+export function DirectInput({ sessions, settings, scope }: { sessions: Session[]; settings: Record<string, unknown>; scope?: string | null }) {
+  const debug = useDebugStore()
+  const selected = targetsOf(settings.devTargets).find(t => t.id === debug.targetId)
+  const choices = sendable(sessions, scope, debug.live)
+  const session = sessionFor(debug.session, sessions, scope, debug.live)
+  const [text, setText] = useState('')
+  const [sent, setSent] = useState('')
+
+  const sendDirect = async () => {
+    const body = text.trim()
+    if (!body || !session) return
+    const reply = await window.ide.send(session.id, body, '직접 입력', '')
+    if (!reply.ok) return setSent(t('linear.sendFailed', { error: String(reply.json.error ?? '') }))
+    setText('')
+    setSent(t('dev.sent', { id: session.id.slice(0, 8) }))
+  }
+
+  return (
+    <div className="direct">
+        <TextArea
+          className="direct-input"
+          aria-label={t('dev.directPlaceholder')}
+          placeholder={t('dev.directPlaceholder')}
+          value={text}
+          onChange={event => setText(event.target.value)}
+          onKeyDown={event => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !composing(event)) void sendDirect()
+          }}
+        />
+        <div className="direct-row">
+          <span className="small quiet direct-where">{t('dev.sendTo', { where: session ? whereTo(session, selected) : t('dev.noLiveSession') })}</span>
+          <Button variant="primary" size="sm" disabled={!text.trim() || !session} onClick={() => void sendDirect()}>
+            {t('dev.send')}
+          </Button>
+        </div>
+        {choices.length > 1 && (
+          <Select
+            compact
+            className="wide"
+            title={t('dev.sessionTitle')}
+            aria-label={t('dev.sessionTitle')}
+            value={session?.id ?? ''}
+            onChange={event => debugStore.setSession(event.target.value)}
+          >
+            {choices.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.project} ({s.id.slice(0, 8)})
+              </option>
+            ))}
+          </Select>
+        )}
+        {!session && <p className="small quiet">{scope ? t('dev.noSessionIn', { project: scope }) : t('dev.noSessionNow')}</p>}
+        {sent && <p className="small quiet">{sent}</p>}
+      </div>
   )
 }

@@ -437,3 +437,44 @@ export function More({ children, className }: { children: ReactNode; className?:
 export function VisuallyHidden({ children }: { children: ReactNode }) {
   return <span className="sr-only">{children}</span>
 }
+
+// An on and off setting: a switch at the end of its row (SettingRow). `label` names it for screen
+// readers when the row's title is not its label.
+export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: () => void; label: string; disabled?: boolean }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} className={cx('switch', 'setting-switch', checked && 'switch-on')} onClick={onChange}>
+      <span className="switch-track">
+        <span className="switch-knob" />
+      </span>
+    </button>
+  )
+}
+
+// One setting: its name and a line on what it does on the left, its control on the right; the rest
+// of the explanation folds under "자세히" (More).
+export function SettingRow({ title, hint, more, children, className }: { title: ReactNode; hint?: ReactNode; more?: ReactNode; children?: ReactNode; className?: string }) {
+  return (
+    <div className={cx('setting-row', className)}>
+      <div className="setting-text">
+        <div className="setting-title">{title}</div>
+        {(hint || more) && (
+          <p className="setting-hint">
+            {hint}
+            {more && <More>{more}</More>}
+          </p>
+        )}
+      </div>
+      {children !== undefined && <div className="setting-control">{children}</div>}
+    </div>
+  )
+}
+
+// A band of rows in a settings section, with a small heading when the section has several.
+export function SettingGroup({ title, children, className }: { title?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <div className={cx('setting-group', className)}>
+      {title && <h3 className="setting-group-title">{title}</h3>}
+      <div className="setting-band">{children}</div>
+    </div>
+  )
+}

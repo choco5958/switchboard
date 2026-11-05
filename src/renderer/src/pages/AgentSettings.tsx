@@ -3,7 +3,8 @@ import type { AgentDetect } from '../../../shared/types'
 import { CLOSE_TERMINALS_KEY, CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PLACEHOLDERS, PRESETS, SHOW_OTHER_AGENTS_KEY, TRUST_FOLDERS_KEY, customAgents, showOtherAgents, trustFolders, validateCustom } from '../../../shared/agents'
 import { AGENTS_FOUND } from '../Dock'
 import { agentTone, useToast } from '../parts'
-import { Badge, Button, EmptyState, Input, More } from '../ui'
+import { Badge, Button, Input, More, SettingGroup, SettingRow, Switch } from '../ui'
+import { Icon } from '../Icons'
 import { t } from '../../../shared/i18n'
 import { tx } from '../tx'
 import { saveSetting } from '../settings'
@@ -12,7 +13,8 @@ import { RiskyConfirm } from '../flows'
 
 // Settings for agent CLIs other than Claude Code: which presets are installed, and
 // the person's own entries. Saving an entry runs nothing; its dock button does.
-export function AgentSettings({ settings }: { settings: Record<string, unknown> }) {
+// `part`: the CLIs (the dock, the list, the person's own) or what lets sessions reach further.
+export function AgentSettings({ settings, part = 'cli' }: { settings: Record<string, unknown>; part?: 'cli' | 'safety' }) {
   const toast = useToast()
   const customs = customAgents(settings[CUSTOM_AGENTS_KEY])
   const showOthers = showOtherAgents(settings[SHOW_OTHER_AGENTS_KEY])
@@ -86,169 +88,142 @@ export function AgentSettings({ settings }: { settings: Record<string, unknown> 
     }
   }
 
+  if (part === 'safety')
+    return (
+      <>
+        {confirming && (
+          <RiskyConfirm
+            title={t(confirming === 'trust' ? 'agents.trustFolders' : 'agents.browserLan')}
+            onClose={() => setConfirming(null)}
+            onConfirm={() => void (confirming === 'trust' ? toggleTrust(true) : toggleBrowserLan(true))}
+          >
+            <p>{t(confirming === 'trust' ? 'risky.trustWhat' : 'risky.lanWhat')}</p>
+            <p className="warn-text">{t(confirming === 'trust' ? 'risky.trustRisk' : 'risky.lanRisk')}</p>
+            <p className="quiet small">{t('risky.undo')}</p>
+          </RiskyConfirm>
+        )}
+        <SettingGroup>
+          <SettingRow title={t('agents.trustFolders')} hint={t('agents.trustFoldersHint')} more={t('agents.trustFoldersHintMore')}>
+            <Switch checked={trusting} onChange={() => void toggleTrust()} label={t('agents.trustFolders')} />
+          </SettingRow>
+          <SettingRow title={t('agents.codexApprovals')} hint={t('agents.codexApprovalsHint')} more={t('agents.codexApprovalsHintMore')}>
+            <Switch checked={codexApprovals} onChange={() => void toggleCodexApprovals()} label={t('agents.codexApprovals')} />
+          </SettingRow>
+          <SettingRow title={t('agents.browserLan')} hint={t('agents.browserLanHint')} more={t('agents.browserLanHintMore')}>
+            <Switch checked={browserLan} onChange={() => void toggleBrowserLan()} label={t('agents.browserLan')} />
+          </SettingRow>
+        </SettingGroup>
+      </>
+    )
+
   return (
-    <section id="settings-agents" className="settings-row agent-settings">
-      <h2>{t('agents.title')}</h2>
-      <p className="quiet small">
-        {t('agents.intro')}
-        <More>{t('agents.introMore')}</More>
-      </p>
+    <>
+      <SettingGroup title={t('agents.secDock')}>
+        <SettingRow title={t('agents.showOthers')} hint={t('agents.showOthersHint')}>
+          <Switch checked={showOthers} onChange={() => void toggleOthers()} label={t('agents.showOthers')} />
+        </SettingRow>
+        {keeps === true && (
+          <SettingRow title={t('agents.closeOnQuit')} hint={t('agents.closeOnQuitHint')} more={t('agents.closeOnQuitHintMore')}>
+            <Switch checked={closeOnQuit} onChange={() => void toggleCloseOnQuit()} label={t('agents.closeOnQuit')} />
+          </SettingRow>
+        )}
+        {keeps === false && <SettingRow title={t('agents.closeOnQuit')} hint={t('agents.closeOnQuitOff')} />}
+      </SettingGroup>
 
-      {/* A long section: four parts with their own headings, the switches first. */}
-      <h3 className="settings-sub">{t('agents.secDock')}</h3>
-      <label className="check-row">
-        <input type="checkbox" checked={showOthers} onChange={() => void toggleOthers()} />
-        {t('agents.showOthers')}
-        <span className="quiet small">{t('agents.showOthersHint')}</span>
-      </label>
-      {confirming && (
-        <RiskyConfirm
-          title={t(confirming === 'trust' ? 'agents.trustFolders' : 'agents.browserLan')}
-          onClose={() => setConfirming(null)}
-          onConfirm={() => void (confirming === 'trust' ? toggleTrust(true) : toggleBrowserLan(true))}
-        >
-          <p>{t(confirming === 'trust' ? 'risky.trustWhat' : 'risky.lanWhat')}</p>
-          <p className="warn-text">{t(confirming === 'trust' ? 'risky.trustRisk' : 'risky.lanRisk')}</p>
-          <p className="quiet small">{t('risky.undo')}</p>
-        </RiskyConfirm>
-      )}
-      {keeps === true && (
-        <label className="check-row">
-          <input type="checkbox" checked={closeOnQuit} onChange={() => void toggleCloseOnQuit()} />
-          {t('agents.closeOnQuit')}
-          <span className="quiet small">
-            {t('agents.closeOnQuitHint')}
-            <More>{t('agents.closeOnQuitHintMore')}</More>
-          </span>
-        </label>
-      )}
-      {keeps === false && <p className="quiet small">{t('agents.closeOnQuitOff')}</p>}
-
-      <h3 className="settings-sub">{t('agents.secSafety')}</h3>
-      <label className="check-row">
-        <input type="checkbox" checked={trusting} onChange={() => void toggleTrust()} />
-        {t('agents.trustFolders')}
-        <span className="quiet small">
-          {t('agents.trustFoldersHint')}
-          <More>{t('agents.trustFoldersHintMore')}</More>
-        </span>
-      </label>
-      <label className="check-row">
-        <input type="checkbox" checked={codexApprovals} onChange={() => void toggleCodexApprovals()} />
-        {t('agents.codexApprovals')}
-        <span className="quiet small">
-          {t('agents.codexApprovalsHint')}
-          <More>{t('agents.codexApprovalsHintMore')}</More>
-        </span>
-      </label>
-      <label className="check-row">
-        <input type="checkbox" checked={browserLan} onChange={() => void toggleBrowserLan()} />
-        {t('agents.browserLan')}
-        <span className="quiet small">
-          {t('agents.browserLanHint')}
-          <More>{t('agents.browserLanHintMore')}</More>
-        </span>
-      </label>
-
-      <h3 className="settings-sub">{t('agents.secCli')}</h3>
-      <ul className="agent-list">
+      <SettingGroup title={t('agents.secCli')} className="agent-cards">
         {PRESETS.map(p => {
           const path = found?.found[p.bin]
           return (
-            <li key={p.id} className="agent-row">
-              <span className="agent-row-name">
+            <details key={p.id} className="agent-card">
+              <summary>
                 <Badge tone={agentTone(p.id)} className="agent-badge">
                   {p.label}
-                </Badge>{' '}
-                <span className="mono-inline small">{p.bin}</span>
-              </span>
-              {found === null ? (
-                <span className="quiet small">{t('agents.looking')}</span>
-              ) : path ? (
-                <Badge shape="pill" tone="good" title={path}>
-                  {t('agents.installed')}
                 </Badge>
-              ) : (
-                <Badge shape="pill">{t('agents.missing')}</Badge>
-              )}
-              {p.mcp === null && (
-                <Badge shape="pill" title={t(p.how)}>
-                  {t('agents.terminalOnly')}
-                </Badge>
-              )}
-              <span className="quiet small agent-row-how">{p.mcp ? t('agents.via', { how: t(p.how) }) : t(p.how)}</span>
-              {found !== null && !path && (
-                <span className="small agent-row-install">{tx('agents.installHint', { command: <code>{p.install}</code> })}</span>
-              )}
-              <a className="small" href={p.docs} target="_blank" rel="noreferrer">
-                {t('agents.docs')}
-              </a>
-            </li>
+                <span className="mono-inline small quiet">{p.bin}</span>
+                <span className="agent-card-tags">
+                  {p.mcp === null && <Badge shape="pill">{t('agents.terminalOnly')}</Badge>}
+                  {found === null ? (
+                    <span className="quiet small">{t('agents.looking')}</span>
+                  ) : path ? (
+                    <Badge shape="pill" tone="good" title={path}>
+                      {t('agents.installed')}
+                    </Badge>
+                  ) : (
+                    <Badge shape="pill">{t('agents.missing')}</Badge>
+                  )}
+                </span>
+                <span className="agent-card-open"><Icon name="chevronDown" size="sm" /></span>
+              </summary>
+              <div className="agent-card-body small">
+                <p className="quiet">{p.mcp ? t('agents.via', { how: t(p.how) }) : t(p.how)}</p>
+                {found !== null && !path && <p>{tx('agents.installHint', { command: <code>{p.install}</code> })}</p>}
+                <a href={p.docs} target="_blank" rel="noreferrer">
+                  {t('agents.docs')}
+                </a>
+              </div>
+            </details>
           )
         })}
-      </ul>
-      <p className="quiet small">
-        <Button variant="link" size="sm" className="inline-link" disabled={looking} onClick={() => void look(true)}>
-          {looking ? t('agents.looking') : t('agents.lookAgain')}
-        </Button>{' '}
-        {t('agents.lookNote')}
-      </p>
+        <SettingRow title={t('agents.lookAgain')} hint={t('agents.lookNote')}>
+          <Button size="sm" disabled={looking} onClick={() => void look(true)}>
+            {looking ? t('agents.looking') : t('agents.lookAgain')}
+          </Button>
+        </SettingRow>
+      </SettingGroup>
 
-      <h3 className="settings-sub">{t('agents.customTitle')}</h3>
-      {customs.length === 0 && <EmptyState className="small">{t('agents.customNone')}</EmptyState>}
-      <ul className="agent-list">
+      <SettingGroup title={t('agents.customTitle')}>
+        {customs.length === 0 && <SettingRow title={t('agents.customNone')} />}
         {customs.map(c => (
-          <li key={c.id} className="agent-row">
-            <span className="agent-row-name">
-              <Badge className="agent-badge">{c.name}</Badge> <span className="mono-inline small">{c.command}</span>
-            </span>
-            <span className="quiet small agent-row-how">{c.mcp === 'none' ? t('agents.customPlain') : t('agents.via', { how: c.mcp })}</span>
-            <Button variant="link" size="sm" onClick={() => void save(customs.filter(o => o.id !== c.id))}>
+          <SettingRow
+            key={c.id}
+            title={
+              <>
+                <Badge className="agent-badge">{c.name}</Badge> <span className="mono-inline small">{c.command}</span>
+              </>
+            }
+            hint={c.mcp === 'none' ? t('agents.customPlain') : t('agents.via', { how: c.mcp })}
+          >
+            <Button size="sm" variant="ghost" onClick={() => void save(customs.filter(o => o.id !== c.id))}>
               {t('agents.remove')}
             </Button>
-          </li>
+          </SettingRow>
         ))}
-      </ul>
-      <h4 className="settings-sub-small">{t('agents.secAdd')}</h4>
-      <div className="agent-form">
-        <label>
-          <span className="small">{t('agents.name')}</span>
-          <Input placeholder={t('agents.namePlaceholder')} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-        </label>
-        <label>
-          <span className="small">{t('agents.command')}</span>
-          <Input
-            mono
-            placeholder={t('agents.commandPlaceholder')}
-            value={form.command}
-            onChange={e => setForm({ ...form, command: e.target.value })}
-          />
-        </label>
-        <label>
-          <span className="small">{t('agents.mcp')}</span>
-          <Input
-            mono
-            placeholder={t('agents.mcpPlaceholder', { example: '{server}' })}
-            value={form.mcp}
-            onChange={e => setForm({ ...form, mcp: e.target.value })}
-          />
-        </label>
-        <p className="quiet small">
-          {t('agents.mcpHelp', { list: PLACEHOLDERS.map(p => `{${p}}`).join(', ') })}
-          <More>{t('agents.mcpHelpMore', { file: '{config_file}' })}</More>
-        </p>
-        <p className="quiet small">
-          {t('agents.llama')}
-          <More>{t('agents.llamaMore', { example: '{server}' })}</More>
-        </p>
-        {error && <p className="error small">{error}</p>}
-        <div className="actions">
-          <Button disabled={!form.name.trim() || !form.command.trim()} onClick={() => void add()}>
-            {t('agents.add')}
-          </Button>
-          <span className="quiet small">{t('agents.addNote')}</span>
-        </div>
-      </div>
-    </section>
+        <details className="agent-add">
+          <summary>
+            <span className="setting-title">{t('agents.secAdd')}</span>
+            <span className="agent-card-open"><Icon name="chevronDown" size="sm" /></span>
+          </summary>
+          <div className="agent-form">
+            <label>
+              <span className="small">{t('agents.name')}</span>
+              <Input placeholder={t('agents.namePlaceholder')} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            </label>
+            <label>
+              <span className="small">{t('agents.command')}</span>
+              <Input mono placeholder={t('agents.commandPlaceholder')} value={form.command} onChange={e => setForm({ ...form, command: e.target.value })} />
+            </label>
+            <label>
+              <span className="small">{t('agents.mcp')}</span>
+              <Input mono placeholder={t('agents.mcpPlaceholder', { example: '{server}' })} value={form.mcp} onChange={e => setForm({ ...form, mcp: e.target.value })} />
+            </label>
+            <p className="quiet small">
+              {t('agents.mcpHelp', { list: PLACEHOLDERS.map(p => `{${p}}`).join(', ') })}
+              <More>{t('agents.mcpHelpMore', { file: '{config_file}' })}</More>
+            </p>
+            <p className="quiet small">
+              {t('agents.llama')}
+              <More>{t('agents.llamaMore', { example: '{server}' })}</More>
+            </p>
+            {error && <p className="error small">{error}</p>}
+            <div className="actions">
+              <Button disabled={!form.name.trim() || !form.command.trim()} onClick={() => void add()}>
+                {t('agents.add')}
+              </Button>
+              <span className="quiet small">{t('agents.addNote')}</span>
+            </div>
+          </div>
+        </details>
+      </SettingGroup>
+    </>
   )
 }

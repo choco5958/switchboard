@@ -1,21 +1,20 @@
 import { expect, test } from 'vitest'
-import { currentSection } from './SettingsPage'
+import { FIRST_SECTION, SETTINGS_GROUPS, sectionMatches, sectionOf } from './SettingsPage'
 
-const tops: [string, number][] = [
-  ['settings-telegram', 100],
-  ['settings-mobile', 400],
-  ['settings-agents', 900],
-]
+const find = (id: string) => SETTINGS_GROUPS.flatMap(g => g.sections).find(s => s.id === id)!
 
-test('the section being read is the last one whose top has passed the line under the contents', () => {
-  expect(currentSection(tops, 120, null)).toBe('settings-telegram')
-  expect(currentSection(tops, 450, null)).toBe('settings-mobile')
-  // Above the first section the first one is marked, not none.
-  expect(currentSection(tops, 50, null)).toBe('settings-telegram')
+test('a search finds a section by its title, its line or a row in it, every word', () => {
+  expect(sectionMatches(find('settings-safety'), '')).toBe(true)
+  expect(sectionMatches(find('settings-safety'), 'Codex')).toBe(true)
+  expect(sectionMatches(find('settings-theme'), 'Codex')).toBe(false)
+  expect(sectionMatches(find('settings-telegram'), 'telegram')).toBe(true)
 })
 
-test('not scrolled yet the first section is marked; at the bottom the last, however short', () => {
-  expect(currentSection(tops, 450, 'top')).toBe('settings-telegram')
-  expect(currentSection(tops, 450, 'bottom')).toBe('settings-agents')
-  expect(currentSection([], 450, 'bottom')).toBeNull()
+test('a link names a section, or gets the first one', () => {
+  expect(sectionOf('settings-update')).toBe('settings-update')
+  expect(sectionOf('settings-nowhere')).toBe(FIRST_SECTION)
+  expect(sectionOf(undefined)).toBe(FIRST_SECTION)
+  // Every section id is unique, since links and the menu go by it.
+  const ids = SETTINGS_GROUPS.flatMap(g => g.sections.map(s => s.id))
+  expect(new Set(ids).size).toBe(ids.length)
 })
