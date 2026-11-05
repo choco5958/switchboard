@@ -31,11 +31,12 @@ export function updateFile(version: string, files: readonly Packed[], date: Date
   return `${lines.join('\n')}\n`
 }
 
-// The one file tauri build made in that bundle folder.
-function built(root: string, triple: string, bundle: string, extension: string): string {
+// The one file tauri build made in that bundle folder for this version: the folder keeps the files
+// of earlier versions too where the build's target folder is cached (tauri names each _<v>_).
+function built(root: string, version: string, triple: string, bundle: string, extension: string): string {
   const dir = join(root, 'src-tauri', 'target', triple, 'release', 'bundle', bundle)
-  const found = existsSync(dir) ? globSync(`*.${extension}`, { cwd: dir }) : []
-  if (found.length !== 1) throw new Error(`${dir}: ${found.length} .${extension} files, run tauri build --target ${triple} --bundles ${bundle}`)
+  const found = existsSync(dir) ? globSync(`*_${version}_*.${extension}`, { cwd: dir }) : []
+  if (found.length !== 1) throw new Error(`${dir}: ${found.length} .${extension} files of ${version}, run tauri build --target ${triple} --bundles ${bundle}`)
   return join(dir, found[0]!)
 }
 
@@ -47,7 +48,7 @@ function copyAs(from: string, out: string, name: string): Packed {
 export function packWindows(out: string, root = ROOT): string[] {
   const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version as string
   mkdirSync(out, { recursive: true })
-  const packed = (['x64', 'arm64'] as const).map(arch => copyAs(built(root, TRIPLES.win32[arch], 'nsis', 'exe'), out, `Switchboard-${version}-win-${arch}.exe`))
+  const packed = (['x64', 'arm64'] as const).map(arch => copyAs(built(root, version, TRIPLES.win32[arch], 'nsis', 'exe'), out, `Switchboard-${version}-win-${arch}.exe`))
   writeFileSync(join(out, 'latest.yml'), updateFile(version, packed, new Date()))
   return [...packed.map(one => one.url), 'latest.yml']
 }
@@ -57,8 +58,8 @@ export function packLinux(arch: 'x64' | 'arm64', out: string, root = ROOT): stri
   mkdirSync(out, { recursive: true })
   const triple = TRIPLES.linux[arch]
   const packed = [
-    copyAs(built(root, triple, 'appimage', 'AppImage'), out, `Switchboard-${version}-linux-${arch === 'x64' ? 'x86_64' : 'arm64'}.AppImage`),
-    copyAs(built(root, triple, 'deb', 'deb'), out, `Switchboard-${version}-linux-${arch === 'x64' ? 'amd64' : 'arm64'}.deb`),
+    copyAs(built(root, version, triple, 'appimage', 'AppImage'), out, `Switchboard-${version}-linux-${arch === 'x64' ? 'x86_64' : 'arm64'}.AppImage`),
+    copyAs(built(root, version, triple, 'deb', 'deb'), out, `Switchboard-${version}-linux-${arch === 'x64' ? 'amd64' : 'arm64'}.deb`),
   ]
   const file = arch === 'x64' ? 'latest-linux.yml' : 'latest-linux-arm64.yml'
   writeFileSync(join(out, file), updateFile(version, packed, new Date()))
