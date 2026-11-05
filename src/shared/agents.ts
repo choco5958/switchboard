@@ -26,8 +26,14 @@ export type AgentPreset = {
   how: Key // how the MCP server goes in, for the settings list
   mcp: ((server: McpServer, configFile: string) => Injection) | null // null: no per-run way, a plain terminal
   // The CLI's permission hook for one run (mcp/hook.ts), which sends an ask to the person while
-  // they are away. Absent: the CLI asks in its terminal only.
-  permissionHook?: (hook: McpServer) => Injection
+  // they are away; `file` goes to hookFile, and an env var it sets replaces the one `mcp` set
+  // (`injected`). Absent: the CLI asks in its terminal only.
+  permissionHook?: (hook: McpServer, at: { hookFile: string; injected: Injection; version: string | null }) => Injection
+  // The config file sits in a folder the app keeps for the project (the CLI's data folder, which also
+  // holds its history), not in one written for the run (src/main/agentTerms.ts).
+  dataFolder?: boolean
+  // Args that depend on the installed version (`bin --version`, null when unknown).
+  versionArgs?: (version: string | null) => string[]
 }
 
 const json = (value: unknown) => JSON.stringify(value)
@@ -64,12 +70,46 @@ const tomlString = (value: string) => (/['\r\n]/.test(value) ? json(value) : `'$
 // turned the relay on (src/main/codexHook.ts): so the command never holds anything of one run, and
 // the hook finds its run by the terminal's key in its environment. The timeout lets the hook's own
 // wait (mcp/permission.ts HOOK_WAIT_MS) end first.
-export const CODEX_HOOK_TIMEOUT_S = 6 * 3600 + 120
-export function codexHookCommand(hook: McpServer): string {
+export const HOOK_TIMEOUT_S = 6 * 3600 + 120
+export function hookCommand(hook: McpServer): string {
   return [hook.command, ...hook.args].map(word => shellWord(word, 'linux')).join(' ')
 }
 export function codexHookOverride(hook: McpServer): string {
-  return `hooks.PermissionRequest=[{matcher="*",hooks=[{type="command",command=${tomlString(codexHookCommand(hook))},timeout=${CODEX_HOOK_TIMEOUT_S}}]}]`
+  return `hooks.PermissionRequest=[{matcher="*",hooks=[{type="command",command=${tomlString(hookCommand(hook))},timeout=${HOOK_TIMEOUT_S}}]}]`
+}
+
+// The Switchboard server's tools (mcp/server.ts mcpTools, kept the same by a test), for a CLI that
+// lists the tools it runs without a prompt.
+export const SWITCHBOARD_TOOLS = [
+  'ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'list_sessions', 'send_to_session', 'cancel_request',
+  'routine_no_update', 'routine_report_failure', 'await_event', 'close_wait', 'browser_snapshot', 'browser_click',
+  'browser_type', 'browser_navigate', 'browser_console', 'browser_screenshot', 'update_node', 'open_in_ide', 'check_answers',
+]
+
+// The server's args without --terminal and its key: for a config file every run shares, whose
+// server reads the key from SWITCHBOARD_TERMINAL instead (mcp/server.ts).
+function withoutTerminal(args: string[]): string[] {
+  const at = args.indexOf('--terminal')
+  return at < 0 ? args : [...args.slice(0, at), ...args.slice(at + 2)]
+}
+
+// Qwen Code's hook for one run, in a system defaults file (the lowest layer, under the person's own
+// settings, and its hooks run with no approval or folder trust: docs/users/features/hooks.md). A
+// command hook timeout of 1000 or more is read as milliseconds. Qwen expands $VAR in every string
+// of a settings file, so a command holding a $ gets no hook.
+export const QWEN_DEFAULTS_ENV = 'QWEN_CODE_SYSTEM_DEFAULTS_PATH'
+export function qwenHookSettings(hook: McpServer): unknown | null {
+  const command = hookCommand(hook)
+  if (command.includes('$')) return null
+  return { hooks: { PermissionRequest: [{ matcher: '*', hooks: [{ type: 'command', command, name: 'switchboard', timeout: HOOK_TIMEOUT_S * 1000 }] }] } }
+}
+
+// Where Qwen Code reads its system defaults when the env var does not say. A run that names its own
+// file would hide this one, so a machine that has one (or an env var already set) gets no hook.
+export function qwenDefaultsFile(platform: string): string {
+  if (platform === 'darwin') return '/Library/Application Support/QwenCode/system-defaults.json'
+  if (platform === 'win32') return 'C:\\ProgramData\\qwen-code\\system-defaults.json'
+  return '/etc/qwen-code/system-defaults.json'
 }
 
 export const PRESETS: AgentPreset[] = [
@@ -112,6 +152,10 @@ export const PRESETS: AgentPreset[] = [
       args: ['--mcp-config', configFile],
       file: { mcpServers: { [MCP_NAME]: { command: server.command, args: server.args, trust: true } } },
     }),
+    permissionHook: (hook, { hookFile }) => {
+      const settings = qwenHookSettings(hook)
+      return settings ? { env: { [QWEN_DEFAULTS_ENV]: hookFile }, file: settings } : {}
+    },
   },
   {
     id: 'copilot',
@@ -132,9 +176,21 @@ export const PRESETS: AgentPreset[] = [
     install: 'npm i -g opencode-ai',
     docs: 'https://opencode.ai/docs/mcp-servers/',
     how: 'agents.how.opencode',
+    // OpenCode 2 runs every TUI on one background service, started by the first: a second terminal's
+    // env never reached it, so it had no server of its own. --standalone gives the run a private
+    // server with this env (OpenCode 2.2.5, tested); OpenCode 1 has no such flag and no service.
+    versionArgs: version => (version && !olderThan(version, '2.0.0') ? ['--standalone'] : []),
     mcp: server => ({
       env: { OPENCODE_CONFIG_CONTENT: json({ mcp: { [MCP_NAME]: { type: 'local', command: [server.command, ...server.args], enabled: true } } }) },
     }),
+    // OpenCode 2 takes the plugins of every config it reads, so this one adds to the person's
+    // (packages/core/src/plugin/supervisor.ts). The plugin (mcp/opencode) sits beside the hook command.
+    permissionHook: (hook, { injected, version }) => {
+      const content = injected.env?.OPENCODE_CONFIG_CONTENT
+      const plugin = hook.args[0]?.replace(/hook\.m?[jt]s$/, 'opencode')
+      if (!content || !plugin || plugin === hook.args[0] || !version || olderThan(version, '2.0.0')) return {}
+      return { env: { OPENCODE_CONFIG_CONTENT: json({ ...(JSON.parse(content) as object), plugins: [plugin] }) } }
+    },
   },
   {
     id: 'goose',
@@ -189,7 +245,26 @@ export const PRESETS: AgentPreset[] = [
     install: 'brew install charmbracelet/tap/crush',
     docs: 'https://github.com/charmbracelet/crush',
     how: 'agents.how.crush',
-    mcp: null,
+    dataFolder: true,
+    // -D names Crush's data folder, whose crush.json Crush merges over the person's own config (an
+    // array adds to theirs, so allowed_tools does not replace their list); the login stays in Crush's
+    // global data (internal/config/load.go). The history of these runs stays in that folder, one per
+    // project. Every run in the project writes the same file, so two Crush terminals there do not
+    // change each other's server: its key comes from SWITCHBOARD_TERMINAL, which Crush passes on to
+    // the server. Crush runs these values through its shell expansion (internal/shell/expand.go); one
+    // holding a character that expansion reads (a Windows path's backslash among them) gets a plain
+    // terminal.
+    mcp: (server, configFile) => {
+      const args = withoutTerminal(server.args)
+      if ([server.command, ...args, configFile].some(value => /[$`\\'"]/.test(value))) return {}
+      return {
+        args: ['-D', configFile.slice(0, configFile.lastIndexOf('/'))],
+        file: {
+          mcp: { [MCP_NAME]: { type: 'stdio', command: server.command, args } },
+          permissions: { allowed_tools: SWITCHBOARD_TOOLS.map(name => `mcp_${MCP_NAME}_${name}`) },
+        },
+      }
+    },
   },
 ]
 
@@ -246,14 +321,22 @@ export function customConfig(server: McpServer): string {
 }
 
 // `hook`: the permission hook's command, when this run sends asks away (src/main/agentTerms.ts).
-export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform, hook?: McpServer): Launch {
+// The file a permission hook's settings go to, beside the run's config file.
+export const hookFileOf = (configFile: string) => configFile.replace(/(\.json)?$/, '-hook.json')
+
+export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform, hook?: McpServer, version: string | null = null): Launch {
   const got = preset.mcp?.(server, configFile) ?? {}
-  const hooked = hook && preset.permissionHook ? preset.permissionHook(hook) : {}
-  const words = [commandWord(preset.bin, platform), ...[...(got.args ?? []), ...(hooked.args ?? [])].map(word => shellWord(word, platform))]
+  const pinned = preset.versionArgs?.(version) ?? []
+  const hookFile = hookFileOf(configFile)
+  const hooked = hook && preset.permissionHook ? preset.permissionHook(hook, { hookFile, injected: got, version }) : {}
+  const words = [commandWord(preset.bin, platform), ...[...pinned, ...(got.args ?? []), ...(hooked.args ?? [])].map(word => shellWord(word, platform))]
   return {
     line: words.join(' '),
-    env: got.env ?? {},
-    files: got.file === undefined ? [] : [{ path: configFile, content: `${json(got.file)}\n` }],
+    env: { ...got.env, ...hooked.env },
+    files: [
+      ...(got.file === undefined ? [] : [{ path: configFile, content: `${json(got.file)}\n` }]),
+      ...(hooked.file === undefined ? [] : [{ path: hookFile, content: `${json(hooked.file)}\n` }]),
+    ],
   }
 }
 

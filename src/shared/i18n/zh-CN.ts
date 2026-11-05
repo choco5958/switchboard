@@ -858,7 +858,7 @@ export const zhCN: Dict = {
   'agents.how.amp': '--mcp-config JSON',
   'agents.how.undocumented': '文档中没有只为一次运行加入连接服务器 (MCP) 的方法，因此只打开终端',
   'agents.how.kimi': '唯一的方法是更换配置文件夹 (会退出登录)，因此只打开终端',
-  'agents.how.crush': '唯一的方法会替换整个全局配置文件夹，因此只打开终端',
+  'agents.how.crush': '用 -D 把应用的文件夹指定为数据文件夹 (其中的 crush.json 与你的设置合并)。对话记录按项目保存在应用的文件夹中。在 Windows 上只打开终端',
   'agents.err.name': '名称请填写 1 到 30 个字符。',
   'agents.err.nameLine': '名称中不能有换行或控制字符。',
   'agents.err.nameTaken': '已有同名项。',

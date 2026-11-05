@@ -125,17 +125,20 @@
 
 Claude Code 通过 mod 连接，其他 CLI 通过应用只为该次运行附加的连接服务器 (MCP) 连接。两者使用相同的工具，所以大部分功能与代理无关。
 
-| 功能 | Claude Code | Codex、Gemini CLI、Qwen Code、<br>Copilot CLI、OpenCode、Goose、Amp | Cursor CLI、Grok、<br>Kimi、Crush |
+| 功能 | Claude Code | Codex、Gemini CLI、Qwen Code、Copilot CLI、<br>OpenCode、Goose、Amp、Crush | Cursor CLI、Grok、<br>Kimi |
 | --- | :---: | :---: | :---: |
 | 任务汇报、决定问题、会话间提问、浏览器工具 | ✅ | ✅ | 仅终端 |
 | 接收回答和消息 | ✅ | ✅ 输入到应用终端 | |
 | 定时提示 | ✅ | ✅ | |
-| 不在电脑前时转发权限确认 | ✅ | Codex (在设置中开启)，其他尚未支持 | |
+| 不在电脑前时转发权限确认 | ✅ | Codex (在设置中开启)、Qwen Code、OpenCode 2 | |
 | 用量条 | ✅ | Codex | |
 | `/switchboard` 窗格 | ✅ | | |
 
 - Codex 的权限确认转发在 设置 > 权限与访问 中开启。开启后，打开 Codex 终端时会把 Switchboard 的一个权限钩子记录为 Codex 配置中受信任的钩子，离开时 Codex 关于修改文件和使用 MCP 工具的许可请求会发到应用和手机。要在沙箱外运行的命令仍只在终端中确认。支持 macOS 和 Linux。
 - 打开 Codex 会话时，账户面板也会显示 Codex 用量 (5 小时、每周)，达到上限的 Codex 会话会在重置后再收到回答和消息。
+- Qwen Code 和 OpenCode 2 无需设置即可转发权限确认：Qwen 通过只为该次运行生成的默认设置文件中的钩子，OpenCode 通过只为该次运行添加的插件。不会修改你自己的设置文件。OpenCode 的命令确认不包含要运行的完整脚本，因此命令只在终端中确认。Qwen 默认的 Auto 模式和 OpenCode 默认的规则很少询问，所以转发的确认也很少。支持 macOS 和 Linux。
+- OpenCode 2 终端每次运行都使用自己的服务器 (`--standalone`)，即使在应用外也开着 OpenCode，每个终端也会单独连接。
+- Crush 通过 `-D` 使用应用为每个项目保留的数据文件夹来连接服务器。在应用中打开的 Crush 的对话记录保存在该文件夹中，在应用外启动的 `crush` 看不到这些记录。支持 macOS 和 Linux。
 
 列表之外的 CLI 可以在 设置 > 代理 CLI 中填写命令和连接方式来添加。`+` 菜单只显示已安装的 CLI。
 

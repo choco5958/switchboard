@@ -132,6 +132,15 @@ export const APPROVAL_MAX = 3000
 // line separators and the other format characters).
 const HIDING = /[\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF\p{Cf}]/u
 
+// A summary as it is shown away from the terminal: cut at APPROVAL_MAX, and complete only when
+// nothing was cut or hidden and `shows` (the summary holds all the call does).
+export function approvalText(value: string, shows = true): { summary: string; complete: boolean } {
+  return {
+    summary: value.length > APPROVAL_MAX ? `${value.slice(0, APPROVAL_MAX - 1)}…` : value,
+    complete: shows && value.length <= APPROVAL_MAX && !HIDING.test(value),
+  }
+}
+
 // What a permission ask would run, for the person deciding away from the terminal: the
 // command first, with the switches that change what it does, then the model's own
 // description, short; the file and the change; the address; or the arguments of another
@@ -141,10 +150,7 @@ const HIDING = /[\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF\p{Cf}]/u
 export function approvalSummary(tool: string, input: unknown): { summary: string; complete: boolean } {
   const v = (input ?? {}) as Record<string, unknown>
   const text = (value: unknown) => (typeof value === 'string' ? value : '')
-  const whole = (value: string, shows = true) => ({
-    summary: value.length > APPROVAL_MAX ? `${value.slice(0, APPROVAL_MAX - 1)}…` : value,
-    complete: shows && value.length <= APPROVAL_MAX && !HIDING.test(value),
-  })
+  const whole = approvalText
   // A switch set to true, as its own line the description cannot push out of view.
   const flags = (...names: string[]) => names.filter(name => v[name] === true).map(name => `\n[${name}: true]`).join('')
   if (tool === 'Bash') {

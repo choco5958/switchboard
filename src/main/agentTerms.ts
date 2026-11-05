@@ -1,9 +1,10 @@
 import { platform, type Ipc } from './platform'
 import { execFile } from 'node:child_process'
-import { chmodSync, closeSync, mkdirSync, openSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PRESETS, TRUST_FOLDERS_KEY, codexHookCommand, codexHookOverride, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
+import { dirname, join } from 'node:path'
+import { CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PRESETS, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverride, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
@@ -43,14 +44,37 @@ function detect(force = false): Promise<AgentDetect> {
   })
 }
 
-// Config files a terminal pointed its CLI at; a week later nothing reads them any more.
+// The version a CLI says it is (`bin --version`), once per program file as it is now (an update
+// changes it); null when it does not say.
+const versions = new Map<string, Promise<string | null>>()
+function versionOf(path: string): Promise<string | null> {
+  let at = 0
+  try {
+    at = statSync(path).mtimeMs
+  } catch {
+    // asked anyway
+  }
+  const key = `${path}:${at}`
+  let got = versions.get(key)
+  if (!got) {
+    got = new Promise(resolve =>
+      execFile(path, ['--version'], { env: terminalEnv(process.env), timeout: 10_000 }, (_e, out) => resolve(String(out ?? '').match(/(\d+\.\d+\.\d+)/)?.[1] ?? null)),
+    )
+    versions.set(key, got)
+  }
+  return got
+}
+
+// Config files a terminal pointed its CLI at; a week later nothing reads them any more. A folder
+// is a CLI's data folder for a project (AgentPreset.dataFolder), with its history: it stays.
 function pruneFiles(): void {
   try {
     for (const name of readdirSync(DIR)) {
       // A hook socket lives as long as its MCP server, which removes it (mcp/server.ts).
       if (name.endsWith('.sock')) continue
       const file = join(DIR, name)
-      if (Date.now() - statSync(file).mtimeMs > STALE_MS) rmSync(file, { force: true })
+      const stat = statSync(file)
+      if (stat.isFile() && Date.now() - stat.mtimeMs > STALE_MS) rmSync(file, { force: true })
     }
   } catch {
     // no folder yet
@@ -61,7 +85,26 @@ function writeFiles(launch: Launch): void {
   if (launch.files.length === 0) return
   mkdirSync(DIR, { recursive: true, mode: 0o700 })
   chmodSync(DIR, 0o700)
-  for (const f of launch.files) writeFileSync(f.path, f.content, { mode: 0o600 })
+  for (const f of launch.files) {
+    if (dirname(f.path) !== DIR) mkdirSync(dirname(f.path), { recursive: true, mode: 0o700 })
+    // A file other runs share is written only when it changes: a CLI that reloads its config when
+    // the file does (Crush) keeps running as it was.
+    if (sameContent(f.path, f.content)) continue
+    writeFileSync(f.path, f.content, { mode: 0o600 })
+  }
+}
+
+function sameContent(path: string, content: string): boolean {
+  try {
+    return readFileSync(path, 'utf8') === content
+  } catch {
+    return false
+  }
+}
+
+// A CLI's data folder for a project: the same for every run there, named by a hash of the folder.
+export function dataFolderOf(dir: string, agent: string, cwd: string): string {
+  return join(dir, agent, createHash('sha256').update(cwd).digest('hex').slice(0, 16))
 }
 
 // The first bytes of a program file (through its symlinks), or null when it cannot be read.
@@ -101,22 +144,28 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   const node = mcpNode(platform().isPackaged, process.platform, found.node, nodeLauncher(homedir()))
   if (needsServer && !node) return { error: t('agents.noNode') }
   const id = preset?.id ?? custom!.id
+  const folder = cwd.startsWith('~/') ? homedir() + cwd.slice(1) : cwd
   // A trust menu on screen would hold back what the app types in (agentTrust.ts).
-  if (preset && TRUSTED_AHEAD.includes(preset.id) && trustFolders(settings?.[TRUST_FOLDERS_KEY])) trustFolder(preset.id, cwd.startsWith('~/') ? homedir() + cwd.slice(1) : cwd, homedir())
+  if (preset && TRUSTED_AHEAD.includes(preset.id) && trustFolders(settings?.[TRUST_FOLDERS_KEY])) trustFolder(preset.id, folder, homedir())
   const cliPath = preset ? found.found[preset.bin] : undefined
   // Codex's permission asks go to the person while away once the relay is on and Codex trusts the
-  // hook (codexHook.ts); if it does not, the terminal opens without it and Codex asks there.
+  // hook (codexHook.ts); if it does not, the terminal opens without it and Codex asks there. Qwen's
+  // always do, unless a system defaults file of the machine's would be hidden (qwenDefaultsFile),
+  // and OpenCode 2's (its plugin, mcp/opencode/server.ts).
   const hook = preset?.permissionHook && node && process.platform !== 'win32' ? { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), preset.id] } : undefined
   const hooked =
     hook && preset?.id === 'codex' && settings?.[CODEX_APPROVALS_KEY] === true && cliPath
       ? await trustCodexHook(
           cliBins(cliPath, headOf(cliPath)).includes('node') && found.node ? [found.node, cliPath] : [cliPath],
           codexHookOverride(hook),
-          codexHookCommand(hook),
-          cwd.startsWith('~/') ? homedir() + cwd.slice(1) : cwd,
+          hookCommand(hook),
+          folder,
           terminalEnv(process.env),
         )
-      : false
+      : preset?.id === 'qwen'
+        ? !process.env[QWEN_DEFAULTS_ENV] && !existsSync(qwenDefaultsFile(process.platform))
+        : preset?.id === 'opencode'
+  const version = preset?.versionArgs && cliPath ? await versionOf(cliPath) : null
   return openTerminal({
     cwd,
     cols,
@@ -130,8 +179,8 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
       // what is found is a shim the server cannot start.
       const cli = preset?.id === 'codex' && process.platform !== 'win32' ? cliPath : undefined
       const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli)
-      const configFile = join(DIR, `${key}-${id}.json`)
-      const launch = preset ? presetLaunch(preset, server, configFile, process.platform, hooked ? hook : undefined) : customLaunch(custom!, server, configFile)
+      const configFile = preset?.dataFolder ? join(dataFolderOf(DIR, preset.id, folder), `${preset.id}.json`) : join(DIR, `${key}-${id}.json`)
+      const launch = preset ? presetLaunch(preset, server, configFile, process.platform, hooked ? hook : undefined, version) : customLaunch(custom!, server, configFile)
       writeFiles(launch)
       return { env: launch.env, line: launch.line }
     },

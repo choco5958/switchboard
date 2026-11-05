@@ -14,7 +14,7 @@ const ROOT = resolve(import.meta.dirname, '..')
 const OUT = join(ROOT, 'out', 'node')
 
 // What the app and its launchers start; whatever these import comes along.
-export const ENTRIES = ['bridge/server.ts', 'bridge/start.ts', 'mcp/server.ts', 'mcp/hook.ts', 'scripts/switchboard.ts', 'src/main/termHost.ts']
+export const ENTRIES = ['bridge/server.ts', 'bridge/start.ts', 'mcp/server.ts', 'mcp/hook.ts', 'mcp/opencode/server.ts', 'scripts/switchboard.ts', 'src/main/termHost.ts']
 
 // import ... from './x.ts', export ... from './x.ts', import './x.ts', import('./x.ts')
 const SPECIFIER = /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"]+)\.ts\2/g

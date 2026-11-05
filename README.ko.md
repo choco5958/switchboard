@@ -125,17 +125,20 @@ Switchboard에서는 세션이 결정 질문을 큐에 올려 두고 다른 일�
 
 Claude Code는 mod로, 다른 CLI는 앱이 그 실행에만 붙이는 연결 서버(MCP)로 연결됩니다. 쓰는 도구가 같아서 대부분의 기능은 에이전트와 상관없이 됩니다.
 
-| 기능 | Claude Code | Codex, Gemini CLI, Qwen Code,<br>Copilot CLI, OpenCode, Goose, Amp | Cursor CLI, Grok,<br>Kimi, Crush |
+| 기능 | Claude Code | Codex, Gemini CLI, Qwen Code, Copilot CLI,<br>OpenCode, Goose, Amp, Crush | Cursor CLI, Grok,<br>Kimi |
 | --- | :---: | :---: | :---: |
 | 작업 보고, 결정 질문, 세션끼리 묻기, 브라우저 도구 | ✅ | ✅ | 터미널만 |
 | 답과 메시지 받기 | ✅ | ✅ 앱 터미널에 입력 | |
 | 예약 프롬프트 | ✅ | ✅ | |
-| 자리 비운 동안 권한 확인 중계 | ✅ | Codex (설정에서 켬), 나머지는 아직 | |
+| 자리 비운 동안 권한 확인 중계 | ✅ | Codex (설정에서 켬), Qwen Code, OpenCode 2 | |
 | 사용량 막대 | ✅ | Codex | |
 | `/switchboard` 패널 | ✅ | | |
 
 - Codex 권한 확인 중계는 설정 > 권한과 접근에서 켭니다. 켜면 Codex 터미널을 열 때 Switchboard의 권한 훅 하나를 Codex 설정에 신뢰한 훅으로 기록하고, 자리를 비운 동안 Codex가 묻는 파일 수정과 연결 서버 도구 허용이 앱과 휴대폰으로 갑니다. 샌드박스 밖에서 실행할 명령은 터미널에서만 묻습니다. macOS와 Linux에서 됩니다.
 - Codex 세션이 열려 있으면 계정 패널에 Codex 사용량(5시간, 주간)이 함께 보이고, 한도에 닿은 Codex 세션에는 초기화까지 답과 메시지를 미룹니다.
+- Qwen Code와 OpenCode 2는 설정 없이 권한 확인을 중계합니다. Qwen은 그 실행에만 만든 기본 설정 파일의 훅으로, OpenCode는 그 실행에만 더한 플러그인으로 묻습니다. 사용자 설정 파일은 바꾸지 않습니다. OpenCode의 명령 질문에는 실행할 스크립트 전체가 들어 있지 않아서, 명령은 터미널에서만 묻습니다. Qwen의 기본 Auto 모드와 OpenCode의 기본 규칙은 묻는 일이 적어서, 중계되는 질문도 적습니다. macOS와 Linux에서 됩니다.
+- OpenCode 2 터미널은 실행마다 자기 서버로 엽니다(`--standalone`). 앱 밖에서 OpenCode를 쓰고 있어도 터미널마다 따로 연결됩니다.
+- Crush에는 `-D`로 앱이 프로젝트마다 두는 데이터 폴더를 넘겨 연결 서버를 붙입니다. 앱에서 연 Crush의 대화 기록은 그 폴더에 남아서, 앱 밖에서 연 `crush`에는 보이지 않습니다. macOS와 Linux에서 됩니다.
 
 목록에 없는 CLI는 설정 > 에이전트 CLI에서 명령과 연결 방법을 적어 추가합니다. 설치된 CLI만 `+` 메뉴에 나옵니다.
 

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { ko } from './i18n/ko'
+import { mcpTools } from '../../mcp/server'
 import {
   PRESETS,
   agentBadges,
@@ -9,10 +10,12 @@ import {
   customLaunch,
   fillTemplate,
   presetLaunch,
-  CODEX_HOOK_TIMEOUT_S,
-  codexHookCommand,
+  HOOK_TIMEOUT_S,
+  hookCommand,
   codexHookOverride,
   presetOf,
+  QWEN_DEFAULTS_ENV,
+  SWITCHBOARD_TOOLS,
   psQuote,
   shellWord,
   showOtherAgents,
@@ -49,13 +52,39 @@ describe('preset launch lines', () => {
     const got = words(launch.line)
     expect(got.slice(-2)).toEqual([
       '-c',
-      `hooks.PermissionRequest=[{matcher="*",hooks=[{type="command",command='/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs codex',timeout=${CODEX_HOOK_TIMEOUT_S}}]}]`,
+      `hooks.PermissionRequest=[{matcher="*",hooks=[{type="command",command='/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs codex',timeout=${HOOK_TIMEOUT_S}}]}]`,
     ])
-    expect(codexHookCommand(hook)).toBe('/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs codex')
+    expect(hookCommand(hook)).toBe('/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs codex')
     // A quote in the path: a TOML basic string, which holds the shell's own quoting.
     expect(codexHookOverride({ command: "/o'dd/node", args: ['/r/hook.mjs', 'codex'] })).toContain(`command=${JSON.stringify("'/o'\\''dd/node' /r/hook.mjs codex")}`)
     // Gemini has no hook: the same line as without one.
     expect(presetLaunch(presetOf('gemini')!, server, file, 'darwin', hook).line).toBe('gemini')
+  })
+
+  it('qwen with the relay gets its hook in a system defaults file; a command holding $ gets none', () => {
+    const hook = { command: '/home/p/.claude-ide/bin/switchboard-node', args: ['/r/mcp/hook.mjs', 'qwen'] }
+    const launch = presetLaunch(presetOf('qwen')!, server, file, 'darwin', hook)
+    const hookFile = file.replace(/\.json$/, '-hook.json')
+    expect(launch.env).toEqual({ [QWEN_DEFAULTS_ENV]: hookFile })
+    expect(launch.files.map(f => f.path)).toEqual([file, hookFile])
+    const entry = JSON.parse(launch.files[1]!.content).hooks.PermissionRequest[0].hooks[0]
+    // Qwen reads a command hook timeout of 1000 or more as milliseconds.
+    expect(entry).toEqual({ type: 'command', command: '/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs qwen', name: 'switchboard', timeout: HOOK_TIMEOUT_S * 1000 })
+    const odd = presetLaunch(presetOf('qwen')!, server, file, 'darwin', { ...hook, command: '/o$x/node' })
+    expect([odd.env, odd.files.length]).toEqual([{}, 1])
+  })
+
+  it('opencode 2 runs on a private server and gets the relay plugin beside the hook; opencode 1 neither', () => {
+    const hook = { command: '/n/node', args: ['/r/mcp/hook.mjs', 'opencode'] }
+    const two = presetLaunch(presetOf('opencode')!, server, file, 'darwin', hook, '2.2.5')
+    expect(two.line).toBe('opencode --standalone')
+    const config = JSON.parse(two.env.OPENCODE_CONFIG_CONTENT!)
+    expect(config.plugins).toEqual(['/r/mcp/opencode'])
+    expect(config.mcp.switchboard.command[0]).toBe(server.command)
+    const one = presetLaunch(presetOf('opencode')!, server, file, 'darwin', hook, '1.19.5')
+    expect(one.line).toBe('opencode')
+    expect(JSON.parse(one.env.OPENCODE_CONFIG_CONTENT!).plugins).toBeUndefined()
+    expect(presetLaunch(presetOf('opencode')!, server, file, 'darwin', undefined, null).line).toBe('opencode')
   })
 
   it('gemini reads a defaults file named by an env var; the file holds mcpServers.switchboard', () => {
@@ -78,6 +107,27 @@ describe('preset launch lines', () => {
     expect(opencode.line).toBe('opencode')
     expect(JSON.parse(opencode.env.OPENCODE_CONFIG_CONTENT!).mcp.switchboard.command).toEqual([server.command, ...server.args])
     expect(words(presetLaunch(presetOf('goose')!, server, file).line)).toEqual(['goose', 'session', '--with-extension', [server.command, ...server.args].join(' ')])
+  })
+
+  it('crush gets a data folder of the project whose crush.json adds the server and allows its tools', () => {
+    const folder = '/home/u/.claude-ide/agents/crush/0123456789abcdef'
+    const launch = presetLaunch(presetOf('crush')!, server, `${folder}/crush.json`)
+    expect(words(launch.line)).toEqual(['crush', '-D', folder])
+    expect(launch.files.map(f => f.path)).toEqual([`${folder}/crush.json`])
+    const config = JSON.parse(launch.files[0]!.content)
+    // No terminal key: every run in the project writes the same file, and the server reads the key
+    // from SWITCHBOARD_TERMINAL.
+    expect(config.mcp.switchboard).toEqual({ type: 'stdio', command: server.command, args: ['/app/mcp/server.ts', '--agent', 'codex'] })
+    expect(config.permissions.allowed_tools).toContain('mcp_switchboard_ask_decision')
+    expect(presetOf('crush')!.dataFolder).toBe(true)
+    // What Crush's shell expansion would read: a plain terminal.
+    for (const odd of [{ ...server, command: '/o$x/node' }, { ...server, command: 'C:\\node\\node.exe' }]) {
+      expect(presetLaunch(presetOf('crush')!, odd, `${folder}/crush.json`)).toEqual({ line: 'crush', env: {}, files: [] })
+    }
+  })
+
+  it('the tools a CLI is told to allow are the server\'s tools', () => {
+    expect([...SWITCHBOARD_TOOLS].sort()).toEqual(mcpTools('en').map(tool => tool.name).sort())
   })
 
   it('a CLI without a per-run way gets only its command', () => {

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, listen } from '../bridge/server.ts'
 import { askServer, runHook } from './hook.ts'
-import { ADAPTERS, PASS, hookSocket, sameTerminal } from './permission.ts'
+import { ADAPTERS, PASS, hookSocket, opencodeAsk, sameTerminal } from './permission.ts'
 import { bridgeCall, createSession, listenForHooks, type Reply } from './server.ts'
 
 // Short: a socket path has a limit of about 104 bytes, and the hook socket sits under HOME.
@@ -65,6 +65,46 @@ describe('Codex adapter', () => {
     assert.deepEqual(JSON.parse(codex.reply({ answer: 'allow', message: 'ok' })), { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } })
     assert.deepEqual(JSON.parse(codex.reply({ answer: 'deny', message: 'no' })).hookSpecificOutput.decision, { behavior: 'deny', message: 'no' })
     assert.equal(codex.reply(PASS), '')
+  })
+})
+
+describe('Qwen adapter', () => {
+  const qwen = ADAPTERS.qwen!
+  const base = { hook_event_name: 'PermissionRequest', session_id: 's1', prompt_id: 'p1', cwd: '/w' }
+
+  test('a command, a new file and an edit go away with what they do as the summary', () => {
+    const run = qwen.ask({ ...base, tool_name: 'run_shell_command', tool_input: { command: 'npm test', description: 'Run the  tests' } })!
+    assert.deepEqual([run.tool, run.summary, run.complete, run.cwd], ['run_shell_command', 'npm test\n# Run the tests', true, '/w'])
+    assert.match(run.requestKey, /^p1:[0-9a-f]{24}$/)
+    const write = qwen.ask({ ...base, tool_name: 'write_file', tool_input: { file_path: '/w/a.txt', content: 'hi' } })!
+    assert.equal(write.summary, '/w/a.txt\nhi')
+    const edit = qwen.ask({ ...base, tool_name: 'edit', tool_input: { file_path: '/w/a.txt', old_string: 'a', new_string: 'b' } })!
+    assert.equal(edit.summary, '/w/a.txt\n- a\n+ b')
+  })
+
+  test('a field the summary would leave out shows the whole input; other events stay in the terminal', () => {
+    const run = qwen.ask({ ...base, tool_name: 'run_shell_command', tool_input: { command: 'make', directory: '/etc' } })!
+    assert.match(run.summary, /"directory": "\/etc"/)
+    assert.equal(qwen.ask({ ...base, hook_event_name: 'PreToolUse', tool_name: 'edit', tool_input: {} }), null)
+    assert.equal(qwen.reply({ answer: 'allow', message: '' }), JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } }))
+    assert.equal(qwen.reply(PASS), '')
+  })
+})
+
+describe('OpenCode asks', () => {
+  test('a file change carries its diff; a command stays in the terminal', () => {
+    // As OpenCode 2.2.5 sends a new file.
+    const patch = 'Index: hello.txt\n===\n--- hello.txt\n+++ hello.txt\n@@ -0,0 +1,1 @@\n+hi\n'
+    const files = [{ file: 'hello.txt', patch, status: 'added', additions: 1, deletions: 0 }]
+    const edit = opencodeAsk({ id: 'per_1', sessionID: 'ses_1', action: 'edit', resources: ['hello.txt'], metadata: { files } })!
+    assert.deepEqual([edit.tool, edit.summary, edit.complete, edit.requestKey], ['edit', patch, true, 'ses_1:per_1'])
+    const joined = opencodeAsk({ id: 'per_4', sessionID: 'ses_1', action: 'edit', resources: ['a.txt'], metadata: { filepath: 'a.txt', diff: '-a\n+b\n' } })!
+    assert.equal(joined.summary, '-a\n+b\n')
+    const shell = opencodeAsk({ id: 'per_2', sessionID: 'ses_1', action: 'shell', resources: ['rm -rf build'] })!
+    assert.equal(shell.complete, false)
+    const fetch = opencodeAsk({ id: 'per_3', sessionID: 'ses_1', action: 'webfetch', resources: ['https://x.test'], metadata: { url: 'https://x.test' } })!
+    assert.match(fetch.summary, /https:\/\/x\.test/)
+    assert.equal(opencodeAsk({ action: 'edit' }), null)
   })
 })
 

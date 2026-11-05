@@ -858,7 +858,7 @@ export const ja: Dict = {
   'agents.how.amp': '--mcp-config JSON',
   'agents.how.undocumented': '1回の実行だけに接続サーバー (MCP) を加える方法が文書にないため、ターミナルだけを開きます',
   'agents.how.kimi': '設定フォルダーを変える方法しかなく (ログインが切れる)、ターミナルだけを開きます',
-  'agents.how.crush': 'グローバル設定フォルダーを丸ごと置き換える方法しかないため、ターミナルだけを開きます',
+  'agents.how.crush': '-D でアプリのフォルダーをデータフォルダーに指定 (そこの crush.json がユーザー設定と合わさる)。会話の履歴はプロジェクトごとにアプリのフォルダーに残ります。Windows ではターミナルだけを開きます',
   'agents.err.name': '名前は1文字から30文字で入力してください。',
   'agents.err.nameLine': '名前に改行や制御文字は入れられません。',
   'agents.err.nameTaken': '同じ名前がすでにあります。',

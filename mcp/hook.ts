@@ -22,7 +22,8 @@ function readAll(input: NodeJS.ReadableStream): Promise<string> {
 }
 
 // One request and one answer line over the server's socket.
-export function askServer(path: string, terminal: string, ask: HookAsk, waitMs = HOOK_WAIT_MS): Promise<HookAnswer> {
+// `signal`: the ask was answered elsewhere; closing the socket withdraws it (mcp/server.ts).
+export function askServer(path: string, terminal: string, ask: HookAsk, waitMs = HOOK_WAIT_MS, signal?: AbortSignal): Promise<HookAnswer> {
   return new Promise(resolve => {
     let reply = ''
     let done = false
@@ -51,6 +52,8 @@ export function askServer(path: string, terminal: string, ask: HookAsk, waitMs =
     })
     socket.on('error', () => finish(PASS))
     socket.on('close', () => finish(PASS))
+    if (signal?.aborted) finish(PASS)
+    signal?.addEventListener('abort', () => finish(PASS), { once: true })
   })
 }
 

@@ -858,7 +858,7 @@ export const en: Dict = {
   'agents.how.amp': '--mcp-config JSON',
   'agents.how.undocumented': 'Its docs give no way to add the connection server (MCP) for one run, so only a terminal opens',
   'agents.how.kimi': 'The only way is to change its config folder (which signs you out), so only a terminal opens',
-  'agents.how.crush': 'The only way replaces its whole global config folder, so only a terminal opens',
+  'agents.how.crush': '-D names an app folder as its data folder (its crush.json merges with your settings). The history stays there, one folder per project. On Windows only a terminal opens',
   'agents.err.name': 'Give a name of 1 to 30 characters.',
   'agents.err.nameLine': 'The name cannot hold line breaks or control characters.',
   'agents.err.nameTaken': 'That name is already taken.',

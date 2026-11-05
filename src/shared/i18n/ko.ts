@@ -857,7 +857,7 @@ export const ko = {
   'agents.how.amp': '--mcp-config JSON',
   'agents.how.undocumented': '실행 한 번에만 연결 서버(MCP)를 넣는 방법이 문서에 없어 터미널만 엽니다',
   'agents.how.kimi': '설정 폴더를 바꾸는 방법뿐이라(로그인이 끊김) 터미널만 엽니다',
-  'agents.how.crush': '전역 설정 폴더를 통째로 바꾸는 방법뿐이라 터미널만 엽니다',
+  'agents.how.crush': '-D로 앱 폴더를 데이터 폴더로 지정 (그 폴더의 crush.json이 사용자 설정과 합쳐짐). 대화 기록은 프로젝트마다 앱 폴더에 남습니다. Windows에서는 터미널만 엽니다',
   'agents.err.name': '이름은 1자에서 30자 사이로 적으세요.',
   'agents.err.nameLine': '이름에 줄바꿈이나 제어 문자를 넣을 수 없습니다.',
   'agents.err.nameTaken': '같은 이름이 이미 있습니다.',

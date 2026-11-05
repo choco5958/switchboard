@@ -25,6 +25,7 @@ extraResources:
       - bridge/*.ts
       - bridge/mobile/**
       - mcp/*.ts
+      - mcp/opencode/*.ts
       - "!mcp/*.test.ts"
       - scripts/switchboard.ts
       - mod/.claude-plugin/plugin.json
