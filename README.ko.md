@@ -11,7 +11,7 @@ Claude Code, Codex, Gemini CLI를 여러 개 띄워 두고 일을 맡기세요.<
 
 <a href="https://github.com/choco5958/switchboard/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/choco5958/switchboard?style=flat-square&color=6366f1"></a>
 <a href="https://github.com/choco5958/switchboard/actions/workflows/test.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/choco5958/switchboard/test.yml?branch=main&style=flat-square&label=tests"></a>
-<img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0f1424?style=flat-square&logo=electron&logoColor=9feaf9">
+<img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0f1424?style=flat-square&logo=tauri&logoColor=ffc131">
 <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/github/license/choco5958/switchboard?style=flat-square&color=22c55e"></a>
 
 **[내려받기](https://github.com/choco5958/switchboard/releases/latest)** &nbsp;|&nbsp; [설치](#설치) &nbsp;|&nbsp; [기능](#기능) &nbsp;|&nbsp; [보안](#데이터와-보안)
