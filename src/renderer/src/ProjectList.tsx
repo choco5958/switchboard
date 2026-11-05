@@ -7,13 +7,17 @@ import { t } from '../../shared/i18n'
 import {
   FOLDERS_KEY,
   HIDDEN_KEY,
+  REMOVED_KEY,
   hiddenProjects,
   moveToFolder,
   projectFolders,
+  removedProjects,
   restoreFolder,
+  savedProjects,
   sidebarGroups,
   type ProjectFolder,
   type ProjectInfo,
+  type SavedProject,
 } from '../../shared/projects'
 
 // The projects in the sidebar, each with its session rows under it (renderRows) and a button to
@@ -95,6 +99,32 @@ export function ProjectList({ projects, hidden, folders, renderRows, renderAdd, 
   const hide = (name: string) => {
     update(HIDDEN_KEY, current => [...hiddenProjects(current).filter(h => h !== name), name])
     toast(t('sidebar.hiddenToast', { name }), 'info', { label: t('common.undo'), run: () => unhide(name) })
+  }
+  // A hidden project removed for good: off the saved folders and every group as well, back only
+  // when a session starts in it (projects.ts stillRemoved). Undo puts it back as it was.
+  const remove = (name: string) => {
+    let entry: SavedProject | undefined
+    let folderId: string | null = null
+    update('projects', current => {
+      entry = savedProjects(current).find(p => p.name === name)
+      return savedProjects(current).filter(p => p.name !== name)
+    })
+    changeFolders(current => {
+      folderId = current.find(f => f.projects.includes(name))?.id ?? null
+      return current.map(f => ({ ...f, projects: f.projects.filter(p => p !== name) }))
+    })
+    update(HIDDEN_KEY, current => hiddenProjects(current).filter(h => h !== name))
+    update(REMOVED_KEY, current => ({ ...removedProjects(current), [name]: Date.now() }))
+    toast(t('sidebar.removedToast', { name }), 'info', {
+      label: t('common.undo'),
+      run: () => {
+        update(REMOVED_KEY, current => Object.fromEntries(Object.entries(removedProjects(current)).filter(([n]) => n !== name)))
+        update(HIDDEN_KEY, current => [...hiddenProjects(current).filter(h => h !== name), name])
+        const back = entry
+        if (back) update('projects', current => (savedProjects(current).some(p => p.name === name) ? current : [...savedProjects(current), back]))
+        if (folderId) move(name, folderId)
+      },
+    })
   }
   const ungroup = (folder: ProjectFolder) => {
     const index = folders.findIndex(f => f.id === folder.id)
@@ -307,6 +337,9 @@ export function ProjectList({ projects, hidden, folders, renderRows, renderAdd, 
                 )}
                 <Button variant="link" size="sm" onClick={() => unhide(name)}>
                   {t('sidebar.unhide')}
+                </Button>
+                <Button variant="link" size="sm" title={t('sidebar.removeTitle')} onClick={() => remove(name)}>
+                  {t('sidebar.remove')}
                 </Button>
               </div>
             ))}

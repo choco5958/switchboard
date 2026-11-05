@@ -73,6 +73,26 @@ export function hiddenProjects(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((p): p is string => typeof p === 'string') : []
 }
 
+// Projects removed from the app (setting `removedProjects`: name, and when). Unlike a hidden one, a
+// removed project leaves the list, its folder and its saved folder entry, and stays away until a
+// session starts or a task is made in it after that time. Its sessions and decisions stay recorded.
+export const REMOVED_KEY = 'removedProjects'
+
+export function removedProjects(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).filter(([, at]) => typeof at === 'number')) as Record<string, number>
+}
+
+// The removed projects that are still away: nothing started in them since they were removed.
+export function stillRemoved(state: Pick<BridgeState, 'sessions' | 'tasks'>, removed: Record<string, number>): Set<string> {
+  const away = new Set<string>()
+  for (const [name, at] of Object.entries(removed)) {
+    const back = state.sessions.some(s => s.project === name && (s.started_at || 0) > at) || state.tasks.some(t => t.project === name && (t.created_at || 0) > at)
+    if (!back) away.add(name)
+  }
+  return away
+}
+
 export type FolderView = { folder: ProjectFolder; items: ProjectInfo[]; running: number; pending: number }
 
 // The sidebar's list: each folder with the projects in it, in the switcher's order, then the

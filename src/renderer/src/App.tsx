@@ -16,7 +16,7 @@ import { LinearPage } from './pages/LinearPage'
 import { LogPage } from './pages/LogPage'
 import { SessionsPage } from './pages/SessionsPage'
 import { SettingsPage } from './pages/SettingsPage'
-import { HIDDEN_KEY, hiddenProjects, isRunning, nameForFolder, pickSession, projectFolders, projectOfCwd, projectsOf, savedProjects } from '../../shared/projects'
+import { HIDDEN_KEY, REMOVED_KEY, hiddenProjects, isRunning, removedProjects, stillRemoved, nameForFolder, pickSession, projectFolders, projectOfCwd, projectsOf, savedProjects } from '../../shared/projects'
 import { SHOW_TERMINAL, TerminalStage, agentChoices, useTerminals } from './Dock'
 import { History, Toast, ToastProvider, useToastList } from './parts'
 import { Button, Notice } from './ui'
@@ -244,8 +244,12 @@ export function App() {
   // Every project, for names and folders; the sidebar leaves out the ones taken off the list.
   const allProjects = useMemo(() => projectsOf(state, saved), [state, saved])
   const hidden = useMemo(() => hiddenProjects(state.settings[HIDDEN_KEY]), [state.settings])
+  const removed = useMemo(() => stillRemoved(state, removedProjects(state.settings[REMOVED_KEY])), [state])
   // By name, so a project keeps its place in the sidebar however its sessions come and go.
-  const projects = useMemo(() => allProjects.filter(p => !hidden.includes(p.name)).sort((a, b) => a.name.localeCompare(b.name)), [allProjects, hidden])
+  const projects = useMemo(
+    () => allProjects.filter(p => !hidden.includes(p.name) && !removed.has(p.name)).sort((a, b) => a.name.localeCompare(b.name)),
+    [allProjects, hidden, removed],
+  )
   const hiddenPending = useMemo(() => Object.fromEntries(allProjects.filter(p => hidden.includes(p.name)).map(p => [p.name, p.pending])), [allProjects, hidden])
   const folders = useMemo(() => projectFolders(state.settings.projectFolders), [state.settings])
   // Feature area: agent CLIs other than Claude Code. Badges by session, and the person's own CLIs.
@@ -258,13 +262,14 @@ export function App() {
       // A folder taken off the list comes back when it is added again.
       const name = nameForFolder(allProjects, cwd)
       if (hidden.includes(name)) await updateSetting(HIDDEN_KEY, current => hiddenProjects(current).filter(h => h !== name))
+      if (removed.has(name)) await updateSetting(REMOVED_KEY, current => Object.fromEntries(Object.entries(removedProjects(current)).filter(([n]) => n !== name)))
       if (saved.some(p => p.cwd === cwd)) return
       await updateSetting('projects', current => {
         const list = savedProjects(current)
         return list.some(p => p.cwd === cwd) ? list : [...list, { name, cwd }]
       })
     },
-    [saved, allProjects, hidden, updateSetting],
+    [saved, allProjects, hidden, removed, updateSetting],
   )
   const pickProject = async () => {
     const cwd = await window.ide.pickFolder()

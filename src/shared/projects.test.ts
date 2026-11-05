@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BridgeState } from './types'
-import { hiddenProjects, isRunning, moveToFolder, restoreFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
+import { hiddenProjects, isRunning, removedProjects, stillRemoved, moveToFolder, restoreFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
 
 const state = {
   sessions: [
@@ -225,5 +225,25 @@ describe('project folders', () => {
     expect(restoreFolder([side], work, 5).map(f => f.id)).toEqual(['f2', 'f1'])
     // Already back: nothing changes.
     expect(restoreFolder([work, side], work, 1)).toEqual([work, side])
+  })
+})
+
+describe('removed projects', () => {
+  const at = 1000
+  const sessions = [{ id: 's1', project: 'alpha', cwd: '/w/alpha', started_at: 500, last_seen: 5000 }]
+  it('stays away while its sessions only go on, and comes back with one started after the removal', () => {
+    // A session that was running keeps reporting (last_seen moves on): still removed.
+    expect(stillRemoved({ sessions, tasks: [] } as never, { alpha: at })).toEqual(new Set(['alpha']))
+    const later = [...sessions, { id: 's2', project: 'alpha', cwd: '/w/alpha', started_at: 1500, last_seen: 1500 }]
+    expect(stillRemoved({ sessions: later, tasks: [] } as never, { alpha: at })).toEqual(new Set())
+  })
+  it('comes back with a task made after the removal', () => {
+    const tasks = [{ id: 1, project: 'alpha', created_at: 2000, updated_at: 2000 }]
+    expect(stillRemoved({ sessions, tasks } as never, { alpha: at })).toEqual(new Set())
+  })
+  it('reads only names with a time from the setting', () => {
+    expect(removedProjects({ alpha: 5, beta: 'x' })).toEqual({ alpha: 5 })
+    expect(removedProjects(['alpha'])).toEqual({})
+    expect(removedProjects(undefined)).toEqual({})
   })
 })
