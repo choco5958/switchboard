@@ -17,7 +17,6 @@ tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 user-idle = "0.6.0"
 keepawake = "0.6.1"
-notify-rust = "4.18.2"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 getrandom = "0.3"
 
@@ -30,10 +29,14 @@ dunce = "1"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 block2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSValue", "NSProcessInfo"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSValue", "NSProcessInfo", "NSUserNotification", "NSArray"] }
 objc2-app-kit = { version = "0.3", features = ["NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics", "NSView", "NSResponder"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKContentWorld", "WKFrameInfo", "WKSnapshotConfiguration", "WKNavigation", "block2", "objc2-app-kit", "objc2-core-foundation"] }
 objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
+
+# Notifications on Windows and Linux (macOS: NSUserNotificationCenter itself, src/os.rs).
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+notify-rust = "4.18.2"
 
 # The key the Electron app sealed with safeStorage (src/os.rs electron_key).
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]

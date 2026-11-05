@@ -92,8 +92,13 @@ const hostPlatform: Platform = {
     const id = nextId++
     if (onClick) clicks.set(id, onClick)
     tell('notify', { notification: id, title, body })
-    // The shell's notifications cannot be taken back yet (src-tauri/src/os.rs).
-    return undefined
+    // Taken back from the notification centre on macOS; elsewhere it stays (src-tauri/src/os.rs).
+    return {
+      close: () => {
+        clicks.delete(id)
+        tell('notifyClose', { notification: id })
+      },
+    }
   },
   messageBox: async box => Number(await os('messageBox', { box })),
   pickFolder: async title => ((await os('pickFolder', { title })) as string | null) ?? null,

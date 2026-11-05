@@ -164,31 +164,137 @@ pub fn keep_awake(on: bool) {
     }
 }
 
-// A notification; `clicked` runs when the person clicks it (waits on a thread of its own).
-pub fn notify(title: &str, body: &str, clicked: impl FnOnce() + Send + 'static) {
+// A notification, `id` the host's number for it; `clicked` runs when the person clicks it.
+pub fn notify(app: &AppHandle, id: u64, title: &str, body: &str, clicked: impl FnOnce() + Send + 'static) {
     if capturing() {
         eprintln!("capture: notification {title}: {body}");
         return;
     }
-    let shown = notify_rust::Notification::new().summary(title).body(body).show();
-    if let Ok(handle) = shown {
-        std::thread::spawn(move || {
-            handle.wait_for_action(|action| {
-                if action != "__closed" {
-                    clicked();
-                }
+    #[cfg(target_os = "macos")]
+    {
+        let (title, body, handle) = (title.to_string(), body.to_string(), app.clone());
+        let _ = app.run_on_main_thread(move || mac_notifications::deliver(&handle, id, &title, &body, Box::new(clicked)));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, id);
+        let shown = notify_rust::Notification::new().summary(title).body(body).show();
+        if let Ok(handle) = shown {
+            std::thread::spawn(move || {
+                handle.wait_for_action(|action| {
+                    if action != "__closed" {
+                        clicked();
+                    }
+                });
             });
-        });
+        }
     }
 }
 
-#[cfg(target_os = "macos")]
-pub fn prepare_notifications() {
-    let _ = notify_rust::set_application(SERVICE);
+// Takes a notification back from the notification centre (its question was answered elsewhere).
+// macOS only; elsewhere it stays until the person dismisses it.
+pub fn close_notification(app: &AppHandle, id: u64) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.run_on_main_thread(move || mac_notifications::remove(id));
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, id);
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn prepare_notifications() {}
+// macOS: NSUserNotificationCenter itself. The app is a bundle, so its notifications go out under
+// its own identifier, and the centre's delegate hears the clicks on the main thread. (notify-rust's
+// macOS side waited on a thread of its own and gave up at once, so no click came through, and it
+// could not take a notification back.)
+#[cfg(target_os = "macos")]
+#[allow(deprecated)]
+mod mac_notifications {
+    use objc2::rc::Retained;
+    use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
+    use objc2::{define_class, msg_send, AllocAnyThread};
+    use objc2_foundation::{NSString, NSUserNotification, NSUserNotificationCenter, NSUserNotificationCenterDelegate};
+    use std::collections::HashMap;
+    use std::sync::{Mutex, Once, OnceLock};
+    use tauri::AppHandle;
+
+    type Click = Box<dyn FnOnce() + Send>;
+    static CLICKS: Mutex<Option<HashMap<String, Click>>> = Mutex::new(None);
+    static APP: OnceLock<AppHandle> = OnceLock::new();
+    static DELEGATE: Once = Once::new();
+
+    // Unique to this run: the centre keeps notifications of earlier runs, whose numbers repeat.
+    fn key(id: u64) -> String {
+        format!("{}-{id}", std::process::id())
+    }
+
+    define_class!(
+        #[unsafe(super(NSObject))]
+        #[name = "SwitchboardNotificationDelegate"]
+        struct Delegate;
+
+        unsafe impl NSObjectProtocol for Delegate {}
+
+        unsafe impl NSUserNotificationCenterDelegate for Delegate {
+            #[unsafe(method(userNotificationCenter:didActivateNotification:))]
+            fn did_activate(&self, center: &NSUserNotificationCenter, notification: &NSUserNotification) {
+                let click = notification.identifier().and_then(|id| CLICKS.lock().unwrap().as_mut().and_then(|clicks| clicks.remove(&id.to_string())));
+                center.removeDeliveredNotification(notification);
+                match click {
+                    Some(click) => click(),
+                    // One an earlier run left: the window, at least.
+                    None => {
+                        if let Some(app) = APP.get() {
+                            crate::show_main(app);
+                        }
+                    }
+                }
+            }
+
+            // Shown even while the app is in front, as the Electron app's are.
+            #[unsafe(method(userNotificationCenter:shouldPresentNotification:))]
+            fn should_present(&self, _center: &NSUserNotificationCenter, _notification: &NSUserNotification) -> bool {
+                true
+            }
+        }
+    );
+
+    fn center() -> Retained<NSUserNotificationCenter> {
+        let center = NSUserNotificationCenter::defaultUserNotificationCenter();
+        DELEGATE.call_once(|| {
+            let delegate: Retained<Delegate> = unsafe { msg_send![Delegate::alloc(), init] };
+            unsafe { center.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
+            // The centre does not keep its delegate: this one lives as long as the app.
+            std::mem::forget(delegate);
+        });
+        center
+    }
+
+    pub fn deliver(app: &AppHandle, id: u64, title: &str, body: &str, clicked: Click) {
+        let _ = APP.set(app.clone());
+        let center = center();
+        CLICKS.lock().unwrap().get_or_insert_with(HashMap::new).insert(key(id), clicked);
+        let notification = NSUserNotification::new();
+        notification.setTitle(Some(&NSString::from_str(title)));
+        notification.setInformativeText(Some(&NSString::from_str(body)));
+        notification.setIdentifier(Some(&NSString::from_str(&key(id))));
+        center.deliverNotification(&notification);
+    }
+
+    pub fn remove(id: u64) {
+        let key = key(id);
+        if let Some(clicks) = CLICKS.lock().unwrap().as_mut() {
+            clicks.remove(&key);
+        }
+        let center = center();
+        let delivered = center.deliveredNotifications();
+        for index in 0..delivered.count() {
+            let notification = delivered.objectAtIndex(index);
+            if notification.identifier().is_some_and(|identifier| identifier.to_string() == key) {
+                center.removeDeliveredNotification(&notification);
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

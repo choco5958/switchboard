@@ -54,7 +54,7 @@ Switchboard를 Electron에서 Tauri 2(OS 기본 웹뷰)로 옮긴다. 2026-11-03
    - 크기: Windows x64 설치 파일 약 32MB. Linux x64는 AppImage 126MB, deb 52.7MB.
    - 스스로 하는 업데이트 확인: scripts/tauri-update-check.ts가 버전을 0.0.1로 낮춘 앱을 띄우고, 같은 컴퓨터의 HTTPS 서버가 시험 키로 서명한 릴리스를 내준다(`CLAUDE_IDE_UPDATE_TEST`, 캡처 모드에서만 받는다). 앱이 받고, 끝나고, 새 앱이 다시 뜨는지 본다. macOS(CI에서만 돈다. 교체 뒤 `open`이 진짜 HOME으로 앱을 연다)와 Linux x64, arm64의 AppImage는 통과했다.
    - Linux의 Electron판 키 이어받기: 가상 화면과 gnome-keyring에서 실제 Electron판(x64 0.3.12, arm64 0.3.17)을 띄워 키를 봉인하게 한 뒤, Tauri판이 같은 키를 읽는지 본다(scripts/tauri-key-check.ts). 두 아키텍처 모두 통과했다.
-   - 아직 확인하지 못한 것: macOS 보이는 창의 나머지(앱을 다시 켠 뒤 터미널 유지, 확인 대화상자, 폴더 고르기, 알림 누르기, Dock으로 다시 열기, 서명이 바뀐 뒤 키체인이 묻는지). 보이는 창에서 창, 세션, 질문, 키체인 저장과 다시 읽기, 터미널 호스트, 한 번만 실행은 확인했다.
+   - 보이는 창 확인(macOS): 창, 세션, 질문, 키체인 저장과 다시 읽기, 터미널 호스트, 한 번만 실행, 앱을 다시 켠 뒤 터미널 유지, 확인 대화상자(취소하면 실행하지 않는다), 폴더 고르기, 창을 닫아도 앱 유지, Dock으로 다시 열기, 알림 누르기를 확인했다. 시험 번들은 번들 id를 따로 두고(`io.github.choco5958.switchboard.check`) 버전을 9.9.9로 올려 만든다. 실제 번들 id로 만든 시험 앱은 Dock이나 업데이트가 실제 환경으로 다시 띄울 수 있다. 아직 확인하지 못한 것: 서명이 바뀐 뒤 키체인이 묻는지, 알림을 거두는 것이 알림 센터에서 실제로 사라지는지.
    - 전환: release.yml에서 Electron판 build 잡을 빼고 tauri-mac.yml(`artifact: dist-mac`)과 tauri-check.yml(`artifact: dist`)을 부른다. release 잡은 두 잡을 기다린다.
    - Windows 업데이트: 설치를 PowerShell에 넘기던 때는 CI에서 설치가 한 번도 시작되지 않았다(위의 콘솔 문제). 앱이 끝난 뒤 설치를 넘기는 부분만 Windows 러너에서 따로 돌려 원인을 찾았고, Node로 바꾼 뒤 Windows x64의 스스로 하는 업데이트와 ARM64 Windows에서 x64판을 거쳐 ARM64판으로 바뀌기가 통과했다(tauri-check.yml 41953459264). 설치 프로그램이 끝난 직후에는 설치 파일이 잠깐 잠겨 있을 수 있어(ARM64에서 EPERM), 앱을 먼저 다시 띄우고 지우기는 여러 번 시도한다.
 
@@ -103,7 +103,8 @@ cd src-tauri && cargo build --release
 - **Electron판 Linux x64의 glibc:** ubuntu-latest가 26.04로 바뀐 0.3.13부터 Electron판 x64의 node-pty가 glibc 2.42를 요구해 Ubuntu 24.04와 22.04에서 앱이 뜨지 않았다. 0.3.18부터 release.yml이 22.04에서 만들고 glibc 2.35 이하인지 확인한다.
 - **macOS 임시 HOME:** 임시 HOME에는 기본 키체인이 없고, 긴 경로는 유닉스 소켓 길이 제한(104바이트)을 넘어 터미널 호스트가 뜨지 않는다. 보이는 창 확인은 Keychains를 연결하고 TMPDIR을 /tmp로 둔다.
 - **WebView2의 DevTools 오류:** CDP 호출이 실패하면 WebView2는 "Class not registered", "The parameter is incorrect" 같은 HRESULT 메시지를 주고, CDP의 오류("Cannot find context with specified id")는 답 본문에만 있다. 앱 전용 세계를 다시 만들지 판단할 때 메시지 문구에 기대지 않는다.
-- **알림 거두기:** 0.3.18부터 Electron판은 답한 질문의 알림을 알림 센터에서 거둔다. Tauri판은 notify-rust가 보낸 알림을 닫을 손잡이를 주지 않아서 아직 거두지 못한다.
+- **macOS 알림:** notify-rust(mac-notification-sys)는 알림을 보낸 뒤 클릭을 기다리는 스레드가 0.1초 만에 "닫힘"으로 끝나서, 알림을 눌러도 앱에 아무것도 오지 않았다. 보낸 알림을 거둘 수도 없었다. 이제 macOS는 NSUserNotificationCenter를 직접 쓴다. 알림마다 식별자를 붙이고, delegate가 클릭을 받고, 답한 질문의 알림은 알림 센터에서 거둔다(Electron판 0.3.18과 같다). Windows와 Linux는 notify-rust 그대로다.
+- **주 창 찾기:** 내장 브라우저의 웹뷰가 주 창에 붙으면 그 창은 웹뷰 창이 아니게 되어 `get_webview_window("main")`이 아무것도 찾지 못한다. 그래서 Dock으로 다시 열기, 알림을 눌러 창 가져오기, 두 번째 실행 때 창 보이기, Dock 배지가 모두 조용히 동작하지 않았다. `get_window("main")`으로 찾는다.
 - **사람이 봐야 확인되는 것:** 키체인(처음 저장, 다시 읽기, 거절, Electron판 키 이어받기), 확인 대화상자, 폴더 고르기, 알림 누르기, 한 번만 실행, 창을 닫았다가 Dock으로 다시 열기. 잠자기 막기와 자리 비움은 Rust 단위 테스트로 확인했다.
 
 ## 주의

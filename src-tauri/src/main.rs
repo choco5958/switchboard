@@ -95,8 +95,14 @@ fn open_with_system(target: &str) -> String {
     }
 }
 
+// The main window. Not get_webview_window: once the in-app browser's webview joins it, the window
+// holds two webviews and is no longer a webview window, and that lookup finds nothing.
+fn main_window(app: &AppHandle) -> Option<tauri::Window> {
+    app.get_window("main")
+}
+
 fn show_main(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = main_window(app) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
@@ -142,10 +148,14 @@ fn on_os(app: &AppHandle, host: &Arc<Host>, message: &Value) {
         // The Dock's badge; the Electron app shows none on Windows and Linux either.
         "setBadge" => {
             #[cfg(target_os = "macos")]
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = main_window(app) {
                 let text = message["text"].as_str().unwrap_or("");
                 let _ = window.set_badge_label(if text.is_empty() { None } else { Some(text.to_string()) });
             }
+            Value::Null
+        }
+        "notifyClose" => {
+            os::close_notification(app, message["notification"].as_u64().unwrap_or(0));
             Value::Null
         }
         "idleState" => os::idle_state(message["seconds"].as_u64().unwrap_or(300)),
@@ -155,7 +165,7 @@ fn on_os(app: &AppHandle, host: &Arc<Host>, message: &Value) {
         }
         "notify" => {
             let (handle, host, id) = (app.clone(), host.clone(), message["notification"].clone());
-            os::notify(message["title"].as_str().unwrap_or("Switchboard"), message["body"].as_str().unwrap_or(""), move || {
+            os::notify(app, id.as_u64().unwrap_or(0), message["title"].as_str().unwrap_or("Switchboard"), message["body"].as_str().unwrap_or(""), move || {
                 show_main(&handle);
                 host.write(&json!({ "t": "event", "name": "notificationClick", "notification": id }));
             });
@@ -337,7 +347,6 @@ fn main() {
     if std::env::var("APPIMAGE_EXIT_AFTER_INSTALL").as_deref() == Ok("true") {
         return;
     }
-    os::prepare_notifications();
     #[cfg(target_os = "macos")]
     stay_awake_while_hidden();
     let app = tauri::Builder::default()
