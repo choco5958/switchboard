@@ -151,7 +151,7 @@ Claude Code 通过 mod 连接，其他 CLI 通过应用只为该次运行附加�
 
 ## 安装
 
-需要 Claude Code 2.1.309 或更高版本。应用内置 Node，无需另外安装。应用尚未获得 Apple 和 Microsoft 的代码签名，首次打开时会出现一次警告。
+需要 Claude Code 2.1.309 或更高版本，macOS 需要 13.5 或更高版本。应用内置 Node，无需另外安装。应用尚未获得 Apple 和 Microsoft 的代码签名，首次打开时会出现一次警告。
 
 <details open>
 <summary><b>macOS</b></summary>
@@ -168,7 +168,7 @@ Claude Code 通过 mod 连接，其他 CLI 通过应用只为该次运行附加�
 <details>
 <summary><b>Windows</b></summary>
 
-1. 下载 `Switchboard-<版本>-win.exe` (x64 与 ARM 通用)，或适合设备的 `-win-x64.exe` / `-win-arm64.exe`。
+1. 下载 `Switchboard-<版本>-win-x64.exe`；ARM 设备请下载 `-win-arm64.exe`。
 2. 运行后，在"Windows 已保护你的电脑"窗口点 更多信息 > 仍要运行。
 3. 选择安装文件夹并点安装，然后从开始菜单打开 Switchboard。
 
@@ -182,7 +182,7 @@ Claude Code 通过 mod 连接，其他 CLI 通过应用只为该次运行附加�
 
 </details>
 
-**更新**: 应用会检查并下载新版本，在退出应用时安装。在 设置 > 更新 中可以查看当前版本并立即检查。应用不会因为更新而自行关闭，没有签名或签名不符的更新不会安装。在 macOS 和 Linux 上，更新期间应用终端也会继续运行。从 macOS 0.3.4 或更早版本升级时，需要手动安装一次。Linux x64 的 0.3.13 到 0.3.17 在 Ubuntu 24.04 和 22.04 上无法启动；如果正在使用这些版本，请手动下载并安装一次新版本。
+**更新**: 应用会检查并下载新版本，在退出应用时安装。在 设置 > 更新 中可以查看当前版本并立即检查。应用不会因为更新而自行关闭，没有签名或签名不符的更新不会安装。在 macOS 和 Linux 上，更新期间应用终端也会继续运行。从 macOS 0.3.4 或更早版本升级时，需要手动安装一次。Linux x64 的 0.3.13 到 0.3.17 在 Ubuntu 24.04 和 22.04 上无法启动；如果正在使用这些版本，请手动下载并安装一次新版本。低于 macOS 13.5 的系统将不再收到更新。
 
 <details>
 <summary><b>连接在其他终端中打开的 Claude Code</b></summary>
@@ -334,7 +334,8 @@ flowchart LR
 | `mod/` | Claude Code mod `ide-bridge`。注册工具，把回答送进会话，绘制 `/switchboard` 窗格。 |
 | `mcp/` | 供其他编码 CLI 使用的 MCP 服务器 (stdio)。 |
 | `scripts/` | 安装脚本、`switchboard` 命令和发布签名脚本。 |
-| `src/` | Electron 应用 (React) 和终端主机。 |
+| `src/` | 应用界面 (React)、Node 端逻辑和终端主机。开发用的 Electron 外壳也在这里。 |
+| `src-tauri/` | 发布版应用的外壳 (Tauri、Rust)：窗口、内置浏览器和系统功能。 |
 
 ```sh
 pnpm test        # 桥接、mod、脚本 (node:test) 和界面逻辑 (vitest)

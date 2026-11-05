@@ -151,7 +151,7 @@ Add any other CLI in Settings > Agent CLIs with its command and how it connects.
 
 ## Install
 
-Requires Claude Code 2.1.309 or later. Node comes inside the app, so there is nothing else to install. The app is not yet code-signed by Apple or Microsoft, so a warning appears the first time you open it.
+Requires Claude Code 2.1.309 or later, and on macOS 13.5 or later. Node comes inside the app, so there is nothing else to install. The app is not yet code-signed by Apple or Microsoft, so a warning appears the first time you open it.
 
 <details open>
 <summary><b>macOS</b></summary>
@@ -168,7 +168,7 @@ Instead of step 4 you can run `xattr -dr com.apple.quarantine /Applications/Swit
 <details>
 <summary><b>Windows</b></summary>
 
-1. Get `Switchboard-<version>-win.exe` (x64 and ARM in one), or `-win-x64.exe` / `-win-arm64.exe` for your device.
+1. Get `Switchboard-<version>-win-x64.exe`, or `-win-arm64.exe` for an ARM device.
 2. Run it, and in "Windows protected your PC" click More info > Run anyway.
 3. Choose a folder, click Install and open Switchboard from the Start menu.
 
@@ -182,7 +182,7 @@ Instead of step 4 you can run `xattr -dr com.apple.quarantine /Applications/Swit
 
 </details>
 
-**Updates**: the app checks for new versions, downloads them and installs when you quit. Settings > Updates shows your version and checks right away. An update never closes the app by itself, and an update with a missing or wrong signature is not installed. On macOS and Linux the app terminals keep running through an update. From macOS 0.3.4 or earlier, download and install once by hand. Linux x64 versions 0.3.13 to 0.3.17 do not start on Ubuntu 24.04 or 22.04; if you have one of them, download and install the new version once by hand.
+**Updates**: the app checks for new versions, downloads them and installs when you quit. Settings > Updates shows your version and checks right away. An update never closes the app by itself, and an update with a missing or wrong signature is not installed. On macOS and Linux the app terminals keep running through an update. From macOS 0.3.4 or earlier, download and install once by hand. Linux x64 versions 0.3.13 to 0.3.17 do not start on Ubuntu 24.04 or 22.04; if you have one of them, download and install the new version once by hand. Before macOS 13.5 the app no longer updates.
 
 <details>
 <summary><b>Connecting Claude Code from other terminals</b></summary>
@@ -334,7 +334,8 @@ flowchart LR
 | `mod/` | The Claude Code mod `ide-bridge`: registers tools, delivers answers into sessions, draws the `/switchboard` pane. |
 | `mcp/` | MCP server (stdio) for other coding CLIs. |
 | `scripts/` | Setup, the `switchboard` command and the release signing script. |
-| `src/` | The Electron app (React) and the terminal host. |
+| `src/` | The app's screens (React), its Node side and the terminal host. The Electron shell for development is here too. |
+| `src-tauri/` | The released app's shell (Tauri, Rust): the window, the in-app browser and OS features. |
 
 ```sh
 pnpm test        # bridge, mod, scripts (node:test) and UI logic (vitest)

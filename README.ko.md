@@ -151,7 +151,7 @@ Claude Code는 mod로, 다른 CLI는 앱이 그 실행에만 붙이는 연결 �
 
 ## 설치
 
-Claude Code 2.1.309 이상이 필요합니다. 앱에 Node가 들어 있어서 따로 설치할 것은 없습니다. 아직 Apple과 Microsoft의 코드 서명을 받지 않아서 처음 열 때 한 번 경고가 뜹니다.
+Claude Code 2.1.309 이상이 필요하고, macOS는 13.5 이상이어야 합니다. 앱에 Node가 들어 있어서 따로 설치할 것은 없습니다. 아직 Apple과 Microsoft의 코드 서명을 받지 않아서 처음 열 때 한 번 경고가 뜹니다.
 
 <details open>
 <summary><b>macOS</b></summary>
@@ -168,7 +168,7 @@ Claude Code 2.1.309 이상이 필요합니다. 앱에 Node가 들어 있어서 �
 <details>
 <summary><b>Windows</b></summary>
 
-1. `Switchboard-<버전>-win.exe`를 받습니다(x64와 ARM 겸용). 기기에 맞는 `-win-x64.exe`나 `-win-arm64.exe`를 받아도 됩니다.
+1. `Switchboard-<버전>-win-x64.exe`를 받습니다. ARM 기기는 `-win-arm64.exe`를 받습니다.
 2. 실행하고 "Windows의 PC 보호" 창에서 추가 정보 > 실행을 누릅니다.
 3. 설치 폴더를 고르고 설치를 누른 뒤, 시작 메뉴에서 Switchboard를 엽니다.
 
@@ -182,7 +182,7 @@ Claude Code 2.1.309 이상이 필요합니다. 앱에 Node가 들어 있어서 �
 
 </details>
 
-**업데이트**: 앱이 새 버전을 확인해 내려받아 두었다가 앱을 닫을 때 설치합니다. 설정 > 업데이트에서 지금 버전을 보고 바로 확인할 수 있습니다. 업데이트 때문에 앱이 스스로 닫히지 않고, 서명이 없거나 맞지 않는 업데이트는 설치하지 않습니다. macOS와 Linux에서는 업데이트하는 동안에도 앱 터미널이 계속 실행됩니다. macOS 0.3.4 이하에서는 한 번 직접 내려받아 설치합니다. Linux x64의 0.3.13부터 0.3.17까지는 Ubuntu 24.04와 22.04에서 시작하지 않으므로, 그 버전을 쓰고 있다면 새 버전을 한 번 직접 내려받아 설치합니다.
+**업데이트**: 앱이 새 버전을 확인해 내려받아 두었다가 앱을 닫을 때 설치합니다. 설정 > 업데이트에서 지금 버전을 보고 바로 확인할 수 있습니다. 업데이트 때문에 앱이 스스로 닫히지 않고, 서명이 없거나 맞지 않는 업데이트는 설치하지 않습니다. macOS와 Linux에서는 업데이트하는 동안에도 앱 터미널이 계속 실행됩니다. macOS 0.3.4 이하에서는 한 번 직접 내려받아 설치합니다. Linux x64의 0.3.13부터 0.3.17까지는 Ubuntu 24.04와 22.04에서 시작하지 않으므로, 그 버전을 쓰고 있다면 새 버전을 한 번 직접 내려받아 설치합니다. macOS 13.5보다 낮은 버전에서는 더 업데이트되지 않습니다.
 
 <details>
 <summary><b>다른 터미널에서 연 Claude Code 연결</b></summary>
@@ -334,7 +334,8 @@ flowchart LR
 | `mod/` | Claude Code mod `ide-bridge`. 도구를 등록하고, 답을 세션에 넣고, `/switchboard` 패널을 그립니다. |
 | `mcp/` | 다른 코딩 CLI용 MCP 서버(stdio). |
 | `scripts/` | 설치 스크립트, `switchboard` 명령, 릴리스 서명 스크립트. |
-| `src/` | Electron 앱(React)과 터미널 호스트. |
+| `src/` | 앱 화면(React), Node 쪽 논리, 터미널 호스트. 개발용 Electron 셸도 여기 있습니다. |
+| `src-tauri/` | 릴리스 앱의 셸(Tauri, Rust): 창, 내장 브라우저, OS 기능. |
 
 ```sh
 pnpm test        # 브리지, mod, 스크립트(node:test)와 화면 로직(vitest)

@@ -1,9 +1,8 @@
 # The Tauri app's macOS release files (docs/tauri-이전.md, step 7): both chips' bundles, their zips
-# and disk images, and latest-mac.yml, under the names the Electron release uses
-# (scripts/pack-tauri-mac.ts). Run by hand to try a build; the release workflow calls it once
-# macOS ships the Tauri app (then it takes the place of the Electron mac build there, and the
-# release job signs latest-mac.yml as before). Like the Electron builds it runs the dependencies'
-# code, so it can write nothing and sees no key.
+# and disk images, and latest-mac.yml, under the names the Electron release used
+# (scripts/pack-tauri-mac.ts). Run by hand to try a build, and by the release workflow for a tag,
+# whose release job signs latest-mac.yml. It runs the dependencies' code, so it can write nothing
+# and sees no key.
 name: Tauri app (macOS)
 
 on:
