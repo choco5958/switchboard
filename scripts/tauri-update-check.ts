@@ -25,6 +25,8 @@ const PLATFORM = process.platform
 
 // The app's data folder on Windows: AppData\Roaming follows USERPROFILE, which the check sets.
 const windowsData = (home: string) => join(home, 'AppData', 'Roaming', 'claude-ide')
+// The update log the app names as it hands the install over, else where it should be.
+const updateLog = (lines: string[], home: string) => lines.map(line => /; log (.+)$/.exec(line)?.[1]).find(Boolean) ?? join(windowsData(home), 'update.log')
 
 // A certificate for 127.0.0.1, which the app's Node trusts through NODE_EXTRA_CA_CERTS.
 function certificate(dir: string): { key: string; cert: string } {
@@ -201,7 +203,8 @@ async function main(): Promise<number> {
     const after = statSync(marker(app)).ino
     if (PLATFORM !== 'win32' && after === before) throw new Error(`${marker(app)} was not replaced`)
     if (PLATFORM === 'win32') {
-      const log = join(windowsData(home), 'update.log')
+      const log = updateLog(lines, home)
+      if (!log.toLowerCase().startsWith(home.toLowerCase())) throw new Error(`the app kept its data outside the check's home: ${log}`)
       const text = existsSync(log) ? readFileSync(log, 'utf8') : ''
       console.log(text.trim())
       if (!/the installer ended with 0\s*$/.test(text)) throw new Error('the installer did not end well')
@@ -223,7 +226,7 @@ async function main(): Promise<number> {
   if (failure) {
     console.log(`FAILED: ${failure}`)
     if (PLATFORM === 'win32') {
-      const log = join(windowsData(home), 'update.log')
+      const log = updateLog(lines, home)
       console.log(`--- ${log}:\n${existsSync(log) ? readFileSync(log, 'utf8') : '(none)'}`)
       const updates = join(windowsData(home), 'updates')
       console.log(`--- ${updates}: ${existsSync(updates) ? readdirSync(updates).join(', ') : '(none)'}`)

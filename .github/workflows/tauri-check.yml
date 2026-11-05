@@ -20,6 +20,8 @@ on:
     paths:
       - src-tauri/**
       - src/host/**
+      - src/main/*Update*
+      - src/main/updat*
       - scripts/*tauri*
       - .github/workflows/tauri-check.yml
 

@@ -136,13 +136,15 @@ export function stop(child: ChildProcess): void {
   else child.kill()
 }
 
-// A temporary home for a run of the app: nothing it writes goes outside (Windows too: AppData\Roaming
-// follows USERPROFILE).
+// A temporary home for a run of the app: nothing it writes goes outside. On Windows AppData\Roaming
+// is %USERPROFILE%\AppData\Roaming only once that folder exists: without it the app found no data
+// folder and kept its data beside itself, in the folder an update's installer replaces.
 export function testHome(prefix: string): { work: string; home: string; scratch: string; env: Env } {
   const work = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
   const home = join(work, 'home')
   const scratch = join(work, 'scratch')
   for (const dir of [home, scratch, join(work, 'claude')]) mkdirSync(dir, { recursive: true })
+  if (WINDOWS) for (const dir of ['Roaming', 'Local']) mkdirSync(join(home, 'AppData', dir), { recursive: true })
   const env: Env = {
     ...process.env,
     HOME: home,
