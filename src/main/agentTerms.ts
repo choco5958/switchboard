@@ -179,10 +179,9 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   // always do, unless a system defaults file of the machine's would be hidden (qwenDefaultsFile),
   // and OpenCode 2's (its plugin, mcp/opencode/server.ts), Copilot's from 1.0.105 (its plugin folder)
   // and Crush's (the hooks of its project config).
-  // On Windows only Copilot's: its hook runs the program with no shell, and scripts/relay-check.ts
-  // checks it there (the Test workflow's relay job); the others' hooks are untried on Windows.
-  const relays = process.platform !== 'win32' || preset?.id === 'copilot'
-  const hook = preset?.permissionHook && node && relays ? { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), preset.id] } : undefined
+  // On every OS: scripts/relay-check.ts checks each CLI's hooks with the real CLI on macOS, Linux
+  // and Windows (the Test workflow's relay job), each in the shell its CLI runs them in there.
+  const hook = preset?.permissionHook && node ? { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), preset.id] } : undefined
   const hooked =
     hook && preset?.id === 'codex' && settings?.[CODEX_APPROVALS_KEY] === true && cliPath
       ? await trustCodexHook(
@@ -197,13 +196,13 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
         : ['opencode', 'copilot', 'crush'].includes(preset?.id ?? '')
   const version = (preset?.versionArgs || hooked) && cliPath ? await versionOf(cliPath) : null
   // Gemini through Switchboard's extension once the setting is on and the link holds
-  // (geminiExtension.ts): its server, and on macOS and Linux its hooks, which follow the turn.
+  // (geminiExtension.ts): its server, and its hooks, which follow the turn.
   const extension = join(DIR, 'gemini-extension')
   const viaExtension =
     preset?.id === 'gemini' && settings?.[GEMINI_EXTENSION_KEY] === true && node && cliPath
       ? await (() => {
           const shared = serverFor(node, nodeEntry(nodeRoot(), 'mcp/server'), 'gemini', '', process.env.CLAUDE_IDE_SOCKET)
-          const events = relays ? { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), 'gemini'] } : undefined
+          const events = { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), 'gemini'] }
           writeFiles({ line: '', env: {}, files: geminiExtension(shared, events, extension).map(f => ({ path: f.path, content: `${JSON.stringify(f.value)}\n` })) })
           return linkGeminiExtension(cliCommand(cliPath, found.node), extension, terminalEnv(process.env))
         })()
@@ -231,7 +230,7 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
         ...(cli ? ['usage'] : []),
       ]
       if (viaExtension) {
-        const launch = geminiLaunch(join(DIR, `${key}-gemini.toml`), relays ? ['turnEnd', 'activity', 'prompt'] : [], process.platform, resume)
+        const launch = geminiLaunch(join(DIR, `${key}-gemini.toml`), ['turnEnd', 'activity', 'prompt'], process.platform, resume)
         writeFiles(launch)
         return { env: launch.env, line: launch.line }
       }
