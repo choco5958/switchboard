@@ -96,8 +96,11 @@ describe('preset launch lines', () => {
     expect(JSON.parse(launch.files[1]!.content).name).toBe('switchboard-approvals')
     expect(JSON.parse(launch.files[2]!.content)).toEqual({
       version: 1,
-      hooks: { permissionRequest: [{ type: 'command', bash: '/n/node /r/mcp/hook.mjs copilot', timeoutSec: HOOK_TIMEOUT_S }] },
+      hooks: { permissionRequest: [{ type: 'command', exec: '/n/node', args: ['/r/mcp/hook.mjs', 'copilot'], timeoutSec: HOOK_TIMEOUT_S }] },
     })
+    // A Windows path: the folder beside the run's file, backslashes and all.
+    const win = presetLaunch(presetOf('copilot')!, server, 'C:\\Users\\u\\.claude-ide\\agents\\k-copilot.json', 'win32', hook, '1.0.105')
+    expect(win.files.map(f => f.path).slice(1)).toEqual(['C:\\Users\\u\\.claude-ide\\agents/copilot-plugin/plugin.json', 'C:\\Users\\u\\.claude-ide\\agents/copilot-plugin/hooks.json'])
     for (const version of ['1.0.104', null]) {
       const older = presetLaunch(presetOf('copilot')!, server, file, 'darwin', hook, version)
       expect([words(older.line).includes('--plugin-dir'), older.files.length]).toEqual([false, 1])

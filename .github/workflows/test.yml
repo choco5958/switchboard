@@ -55,3 +55,26 @@ jobs:
       - run: node --import ./scripts/test-env.ts --test bridge/endpoint.test.ts bridge/schedule.test.ts
       # agents.test.ts checks launch lines through /bin/sh.
       - run: pnpm exec vitest run src/main/shell.test.ts src/main/runtime.test.ts src/main/winLaunch.test.ts src/shared --exclude src/shared/agents.test.ts
+
+  # The permission relay with the real Copilot CLI (scripts/relay-check.ts): its own model server
+  # (BYOK, so no sign-in), the app's launch with the relay hook, a throwaway bridge and the app's
+  # answer. On Windows this is the check the relay there waits on.
+  relay:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/build-node.ts
+      - run: npm install -g @github/copilot@1.0.105
+      - run: pnpm exec jiti scripts/relay-check.ts

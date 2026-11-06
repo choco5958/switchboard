@@ -79,6 +79,9 @@ export function codexHookOverride(hook: McpServer): string {
   return `hooks.PermissionRequest=[{matcher="*",hooks=[{type="command",command=${tomlString(hookCommand(hook))},timeout=${HOOK_TIMEOUT_S}}]}]`
 }
 
+// The folder a file of the app's is in, with a Windows path's backslashes as well.
+const folderOf = (file: string) => file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
+
 // The Switchboard server's tools (mcp/server.ts mcpTools, kept the same by a test), for a CLI that
 // lists the tools it runs without a prompt.
 export const SWITCHBOARD_TOOLS = [
@@ -176,14 +179,16 @@ export const PRESETS: AgentPreset[] = [
     // is one for every Copilot run: the command holds nothing of a run, and the hook finds its run by
     // SWITCHBOARD_TERMINAL, which Copilot hands it. Copilot needs plugin.json, and reads hooks.json
     // beside it (1.0.105, tested; the plugin layout changed in 1.0.80, so older ones get no hook).
+    // scripts/relay-check.ts runs this with the real Copilot on macOS, Windows and Linux.
     permissionHook: (hook, { hookFile, version }) => {
       if (!version || olderThan(version, COPILOT_HOOK_VERSION)) return {}
-      const dir = `${hookFile.slice(0, hookFile.lastIndexOf('/'))}/copilot-plugin`
+      const dir = `${folderOf(hookFile)}/copilot-plugin`
       return {
         args: ['--plugin-dir', dir],
         files: [
           { path: `${dir}/plugin.json`, value: { name: 'switchboard-approvals', version: '1.0.0', description: 'Switchboard: permission asks while you are away' } },
-          { path: `${dir}/hooks.json`, value: { version: 1, hooks: { permissionRequest: [{ type: 'command', bash: hookCommand(hook), timeoutSec: HOOK_TIMEOUT_S }] } } },
+          // exec and args: Copilot runs the program itself, with no shell to quote for (Windows too).
+          { path: `${dir}/hooks.json`, value: { version: 1, hooks: { permissionRequest: [{ type: 'command', exec: hook.command, args: hook.args, timeoutSec: HOOK_TIMEOUT_S }] } } },
         ],
       }
     },
@@ -243,7 +248,7 @@ export const PRESETS: AgentPreset[] = [
     // run shares one folder and a tool the person allowlists stays allowed. Cursor does not hand its
     // env to the server: the terminal's key goes in through Cursor's ${env:} in the server's env.
     mcp: (server, configFile) => {
-      const dir = `${configFile.slice(0, Math.max(configFile.lastIndexOf('/'), configFile.lastIndexOf('\\')))}/cursor-plugin`
+      const dir = `${folderOf(configFile)}/cursor-plugin`
       const mcpServer = { command: server.command, args: withoutTerminal(server.args), env: { SWITCHBOARD_TERMINAL: '${env:SWITCHBOARD_TERMINAL}' } }
       return {
         args: ['--plugin-dir', dir],
