@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AgentDetect } from '../../../shared/types'
-import { CLOSE_TERMINALS_KEY, CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, CUSTOM_AGENTS_KEY, PLACEHOLDERS, PRESETS, SHOW_OTHER_AGENTS_KEY, TRUST_FOLDERS_KEY, customAgents, showOtherAgents, trustFolders, validateCustom } from '../../../shared/agents'
+import { CLOSE_TERMINALS_KEY, CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, AGENTS, CUSTOM_AGENTS_KEY, PLACEHOLDERS, SHOW_OTHER_AGENTS_KEY, TRUST_FOLDERS_KEY, customAgents, showOtherAgents, trustFolders, validateCustom } from '../../../shared/agents'
 import { AGENTS_FOUND } from '../Dock'
 import { agentTone, useToast } from '../parts'
 import { Badge, Button, Input, More, SettingGroup, SettingRow, Switch } from '../ui'
@@ -140,7 +140,7 @@ export function AgentSettings({ settings, part = 'cli' }: { settings: Record<str
       </SettingGroup>
 
       <SettingGroup title={t('agents.secCli')} className="agent-cards">
-        {PRESETS.map(p => {
+        {AGENTS.map(p => {
           const path = found?.found[p.bin]
           return (
             <details key={p.id} className="agent-card">
@@ -150,7 +150,7 @@ export function AgentSettings({ settings, part = 'cli' }: { settings: Record<str
                 </Badge>
                 <span className="mono-inline small quiet">{p.bin}</span>
                 <span className="agent-card-tags">
-                  {p.mcp === null && <Badge shape="pill">{t('agents.terminalOnly')}</Badge>}
+                  {p.via === 'mod' ? <Badge shape="pill">mod</Badge> : p.mcp === null && <Badge shape="pill">{t('agents.terminalOnly')}</Badge>}
                   {found === null ? (
                     <span className="quiet small">{t('agents.looking')}</span>
                   ) : path ? (
@@ -164,7 +164,7 @@ export function AgentSettings({ settings, part = 'cli' }: { settings: Record<str
                 <span className="agent-card-open"><Icon name="chevronDown" size="sm" /></span>
               </summary>
               <div className="agent-card-body small">
-                <p className="quiet">{p.mcp ? t('agents.via', { how: t(p.how) }) : t(p.how)}</p>
+                <p className="quiet">{p.mcp || p.via === 'mod' ? t('agents.via', { how: t(p.how) }) : t(p.how)}</p>
                 {found !== null && !path && <p>{tx('agents.installHint', { command: <code>{p.install}</code> })}</p>}
                 <a href={p.docs} target="_blank" rel="noreferrer">
                   {t('agents.docs')}

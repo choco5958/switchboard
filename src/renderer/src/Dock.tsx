@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentDetect, TermInfo } from '../../shared/types'
-import { CLAUDE_MIN, olderThan, PRESETS, type CustomAgent } from '../../shared/agents'
+import { CLAUDE, CLAUDE_MIN, olderThan, PRESETS, type CustomAgent } from '../../shared/agents'
 import { TerminalView } from './TerminalView'
 import { RESUME_SESSION } from './parts'
 import { OPEN_CLAUDE_SLOT } from '../../shared/ccr'
@@ -41,7 +41,7 @@ export function agentChoices(found: AgentDetect | null, customs: readonly Custom
   const missing = found !== null && !found.found.claude
   const old = !missing && found?.claudeVersion && olderThan(found.claudeVersion, CLAUDE_MIN) ? found.claudeVersion : null
   const warn = missing ? t('dock.claudeMissing') : old ? t('dock.claudeOld', { version: old, need: CLAUDE_MIN }) : undefined
-  const claude: AgentChoice = { kind: 'claude', label: 'Claude Code', via: 'mod', installed: !missing, title: warn ?? t('dock.newClaudeTitle'), menuTitle: t('dock.menuClaude'), warn, blocked: missing }
+  const claude: AgentChoice = { kind: CLAUDE.id, label: CLAUDE.label, via: 'mod', installed: !missing, title: warn ?? t('dock.newClaudeTitle'), menuTitle: t('dock.menuClaude'), warn, blocked: missing }
   if (!showOthers) return [claude]
   const preset = (p: (typeof PRESETS)[number], installed: boolean): AgentChoice => ({
     kind: p.id,

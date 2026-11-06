@@ -3,14 +3,14 @@ import type { AccountInfo, BridgeState, CcrSlot, SessionUsage } from '../../shar
 import { OPEN_CLAUDE_SLOT, refreshDaysLeft } from '../../shared/ccr'
 import { flipTheme, isLight, resetText } from './taskInfo'
 import { DEFAULT_THEME, themeOf } from './theme'
-import { isClaude } from '../../shared/agents'
+import { agentLabel, isClaude } from '../../shared/agents'
 import { LOCALE_TAG, getLang, t } from '../../shared/i18n'
 import { saveSetting } from './settings'
 import { Badge, Chip, IconButton } from './ui'
 import { UpdateChip } from './flows'
 
-// The usage meters: Claude Code's from the mod; Codex's from its MCP server (mcp/codexUsage.ts),
-// shown on their own. Other agent CLIs report none.
+// The usage meters: Claude Code's from the mod; the other agents' from their MCP server (Codex's
+// plan usage, mcp/codexUsage.ts), a row for each agent that reports some.
 export function usageOf(state: BridgeState): SessionUsage {
   for (const session of state.sessions.filter(s => isClaude(s.agent))) {
     try {
@@ -23,22 +23,27 @@ export function usageOf(state: BridgeState): SessionUsage {
   return {}
 }
 
-// Codex's plan usage, from the Codex session that reported last; {} when none did lately.
-export function codexUsageOf(state: BridgeState, now = Date.now()): SessionUsage {
-  let best: SessionUsage = {}
-  let at = 0
+// Each other agent's usage, from its session that reported last within LIVE_MS: plan limits or how
+// full the context is. In the order of the agents' first sessions.
+export function agentUsages(state: BridgeState, now = Date.now()): { agent: string; usage: SessionUsage }[] {
+  const best = new Map<string, { usage: SessionUsage; at: number }>()
   for (const session of state.sessions) {
-    if (session.agent !== 'codex' || now - session.last_seen > LIVE_MS || session.last_seen <= at) continue
+    const agent = session.agent || 'claude'
+    if (isClaude(agent) || now - session.last_seen > LIVE_MS || session.last_seen <= (best.get(agent)?.at ?? 0)) continue
     try {
       const usage = JSON.parse(session.usage || '{}') as SessionUsage
-      if (!usage.rateLimits?.length) continue
-      best = usage
-      at = session.last_seen
+      if (!usage.rateLimits?.length && usage.contextPercent === undefined) continue
+      best.set(agent, { usage, at: session.last_seen })
     } catch {
       // a session that never reported usage
     }
   }
-  return best
+  return [...best].map(([agent, { usage }]) => ({ agent, usage }))
+}
+
+// Codex's plan usage, from the Codex session that reported last; {} when none did lately.
+export function codexUsageOf(state: BridgeState, now = Date.now()): SessionUsage {
+  return agentUsages(state, now).find(u => u.agent === 'codex')?.usage ?? {}
 }
 
 const ACCOUNT_POLL_MS = 60_000
@@ -238,9 +243,7 @@ export function StatusFooter({
   const five = usage.rateLimits?.find(r => r.kind === 'five_hour')
   const week = usage.rateLimits?.find(r => r.kind === 'seven_day')
   const cost = usage.cost?.totalUsd
-  const codex = codexUsageOf(state).rateLimits ?? []
-  const codexFive = codex.find(r => r.kind === 'five_hour')
-  const codexWeek = codex.find(r => r.kind === 'seven_day')
+  const others = agentUsages(state)
   const theme = themeOf(state.settings.theme)
   const light = isLight(theme)
   const flip = async () => {
@@ -274,9 +277,18 @@ export function StatusFooter({
           {!ccr && <Meter label={t('top.fiveHour')} percent={five?.percentUsed} reset={resetText(five?.resetsAt)} />}
           {!ccr && <Meter label={t('top.week')} percent={week?.percentUsed} reset={resetText(week?.resetsAt)} />}
           <Meter label={t('top.context')} percent={usage.contextPercent} />
-          {(codexFive || codexWeek) && <span className="quiet small">Codex</span>}
-          {codexFive && <Meter label={t('top.fiveHour')} percent={codexFive.percentUsed} reset={resetText(codexFive.resetsAt)} />}
-          {codexWeek && <Meter label={t('top.week')} percent={codexWeek.percentUsed} reset={resetText(codexWeek.resetsAt)} />}
+          {others.map(({ agent, usage: theirs }) => {
+            const theirFive = theirs.rateLimits?.find(r => r.kind === 'five_hour')
+            const theirWeek = theirs.rateLimits?.find(r => r.kind === 'seven_day')
+            return (
+              <div key={agent} className="agent-usage">
+                <span className="quiet small">{agentLabel(agent)}</span>
+                {theirFive && <Meter label={t('top.fiveHour')} percent={theirFive.percentUsed} reset={resetText(theirFive.resetsAt)} />}
+                {theirWeek && <Meter label={t('top.week')} percent={theirWeek.percentUsed} reset={resetText(theirWeek.resetsAt)} />}
+                {theirs.contextPercent !== undefined && <Meter label={t('top.context')} percent={theirs.contextPercent} />}
+              </div>
+            )
+          })}
           {cost !== undefined && <span className="quiet small">{t('top.cost', { cost: `$${cost.toFixed(2)}` })}</span>}
           <Chip onClick={onReport} title={t('top.reportTitle')}>
             {t('top.report')}

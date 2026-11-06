@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, resumableId, geminiExtension, geminiLaunch, CUSTOM_AGENTS_KEY, PRESETS, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
+import { CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, resumableId, geminiExtension, geminiLaunch, AGENTS, CUSTOM_AGENTS_KEY, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
@@ -27,7 +27,7 @@ let cached: AgentDetect | null = null
 
 function detect(force = false): Promise<AgentDetect> {
   if (cached && !force) return Promise.resolve(cached)
-  const bins = ['node', 'claude', ...new Set(PRESETS.map(p => p.bin))]
+  const bins = ['node', ...new Set(AGENTS.map(p => p.bin))]
   const shell = loginShell()
   // Interactive on macOS and Linux, so what .zshrc adds to PATH counts.
   const args = process.platform === 'win32' ? shell.command(detectScript(bins)) : ['-l', '-i', '-c', detectScript(bins)]

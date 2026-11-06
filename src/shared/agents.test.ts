@@ -15,6 +15,10 @@ import {
   hookAttaches,
   hookCommand,
   codexHookOverrides,
+  AGENTS,
+  CLAUDE,
+  agentOf,
+  routineAgents,
   geminiExtension,
   geminiLaunch,
   presetOf,
@@ -222,6 +226,15 @@ describe('preset launch lines', () => {
     expect(launch.line).toBe('gemini --policy /h/.claude-ide/agents/k1-gemini.toml')
     expect(launch.env).toEqual({ SWITCHBOARD_ABILITIES: 'turnEnd,activity,prompt', SWITCHBOARD_EXTENSION: '1' })
     expect(launch.files[0]!.content).toBe('[[rule]]\ntoolName = "*"\nmcpName = "switchboard"\ndecision = "allow"\npriority = 100\n')
+  })
+
+  it('Claude Code is listed and named as the others are, but never opened as a per-run MCP CLI', () => {
+    expect(AGENTS[0]).toBe(CLAUDE)
+    expect(AGENTS.slice(1)).toEqual(PRESETS)
+    expect(agentOf('claude')?.via).toBe('mod')
+    // agentTerms.ts opens what presetOf finds: Claude Code goes through terminals.ts and the mod.
+    expect(presetOf('claude')).toBeUndefined()
+    expect(routineAgents(null, [])[0]).toEqual({ id: 'claude', label: 'Claude Code' })
   })
 
   it('the tools a CLI is told to allow are the server\'s tools', () => {

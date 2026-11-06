@@ -852,6 +852,7 @@ export const zhCN: Dict = {
   'agents.unknown': '未知的代理：{id}',
   'agents.notInstalled': '{label} 未安装。安装方法：{install}',
   'agents.noNode': '找不到 node，无法启动 Switchboard 连接服务器。请确认终端里能运行 node。',
+  'agents.how.claude': '通过 --plugin-dir 挂上 mod (Claude Code 扩展)。权限确认转发、返回最后的回答、用量条、子代理报告和 /switchboard 面板都可用',
   'agents.how.codex': '用 -c mcp_servers.switchboard.* 覆盖配置',
   'agents.how.gemini': '用环境变量 GEMINI_CLI_SYSTEM_DEFAULTS_PATH 指定默认配置文件 (mcpServers 会与用户配置合并)。Gemini 0.67 起不再读取该文件，需在设置中开启 Gemini 扩展才能连接',
   'agents.how.qwen': '--mcp-config 文件',

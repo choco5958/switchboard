@@ -852,6 +852,7 @@ export const en: Dict = {
   'agents.unknown': 'Unknown agent: {id}',
   'agents.notInstalled': '{label} is not installed. To install: {install}',
   'agents.noNode': 'Could not find node, so the Switchboard connection server cannot start. Check that node runs in a terminal.',
+  'agents.how.claude': 'The mod (a Claude Code extension) through --plugin-dir. The permission relay, sending the last answer back, usage bars, subagent reports and the /switchboard panel all work',
   'agents.how.codex': '-c mcp_servers.switchboard.* config overrides',
   'agents.how.gemini': 'A defaults file named by the GEMINI_CLI_SYSTEM_DEFAULTS_PATH env var (mcpServers merge with your settings). Gemini 0.67 and later no longer read it: turn on the Gemini extension in settings to connect',
   'agents.how.qwen': '--mcp-config file',

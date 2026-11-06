@@ -36,6 +36,8 @@ export type AgentPreset = {
   dataFolder?: boolean
   // Args that depend on the installed version (`bin --version`, null when unknown).
   versionArgs?: (version: string | null) => string[]
+  // 'mod': connected by the Claude Code mod instead of a per-run MCP server (CLAUDE below).
+  via?: 'mod'
   // How the CLI goes on with a past conversation of its own, by id (src/main/agentHistory.ts).
   // They come first on the line: Codex's is a subcommand.
   resumeArgs?: (id: string) => string[]
@@ -365,6 +367,25 @@ export function presetOf(id: string): AgentPreset | undefined {
   return PRESETS.find(p => p.id === id)
 }
 
+// Claude Code, as the other agents are described: listed, looked for and named the same way. It is
+// not in PRESETS, whose CLIs open with a per-run MCP server (src/main/agentTerms.ts): Claude Code
+// opens with the mod (src/main/terminals.ts claudeLine), which does all the hooks do and more.
+export const CLAUDE: AgentPreset = {
+  id: 'claude',
+  label: 'Claude Code',
+  bin: 'claude',
+  install: 'npm i -g @anthropic-ai/claude-code',
+  docs: 'https://code.claude.com/docs',
+  how: 'agents.how.claude',
+  mcp: null,
+  via: 'mod',
+  resumeArgs: id => ['--resume', id],
+}
+
+// Every agent the app knows, Claude Code first: for lists, detection and names.
+export const AGENTS: AgentPreset[] = [CLAUDE, ...PRESETS]
+export const agentOf = (id: string): AgentPreset | undefined => AGENTS.find(p => p.id === id)
+
 // The person's own CLIs, kept in the bridge settings under CUSTOM_AGENTS_KEY.
 export type CustomAgent = { id: string; name: string; command: string; mcp: string } // mcp: a template, or 'none'
 export const CUSTOM_AGENTS_KEY = 'customAgents'
@@ -550,7 +571,7 @@ export function agentLabel(kind: string | undefined, customs: readonly CustomAge
 // which commands are installed (agents:detect), null while unknown. The one already chosen stays.
 export function routineAgents(found: Record<string, unknown> | null, customs: readonly CustomAgent[], chosen?: string): { id: string; label: string }[] {
   const list = [
-    { id: 'claude', label: 'Claude Code' },
+    { id: CLAUDE.id, label: CLAUDE.label },
     ...PRESETS.filter(p => p.mcp !== null && found?.[p.bin]).map(p => ({ id: p.id, label: p.label })),
     ...customs.filter(c => c.mcp !== 'none').map(c => ({ id: c.id, label: c.name })),
   ]

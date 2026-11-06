@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { ccrFree, codexUsageOf, slotTitle, slotToken, slotUsage, usageOf } from './TopBar'
+import { agentUsages, ccrFree, codexUsageOf, slotTitle, slotToken, slotUsage, usageOf } from './TopBar'
 import type { BridgeState } from '../../shared/types'
 import type { CcrSlot, Session } from '../../shared/types'
 
@@ -71,6 +71,16 @@ describe('Codex usage', () => {
     const newer = session({ rateLimits: week }, NOW - 60_000, 'codex')
     expect(codexUsageOf(state([older, newer]), NOW).rateLimits).toEqual(week)
     expect(usageOf(state([older, newer]))).toEqual({})
+  })
+
+  test('a row for each other agent that reported, plan limits or context', () => {
+    const codex = session({ rateLimits: week }, NOW - 60_000, 'codex')
+    const qwen = session({ contextPercent: 30 }, NOW - 30_000, 'qwen')
+    const silent = session({}, NOW - 10_000, 'gemini')
+    expect(agentUsages(state([codex, qwen, silent]), NOW)).toEqual([
+      { agent: 'codex', usage: { rateLimits: week } },
+      { agent: 'qwen', usage: { contextPercent: 30 } },
+    ])
   })
 
   test('a Codex session gone quiet for 15 minutes shows nothing', () => {

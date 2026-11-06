@@ -851,6 +851,7 @@ export const ko = {
   'agents.unknown': '알 수 없는 에이전트입니다: {id}',
   'agents.notInstalled': '설치되지 않았습니다: {label}. 설치: {install}',
   'agents.noNode': 'node를 찾지 못해 Switchboard 연결 서버를 띄울 수 없습니다. 터미널에서 node가 실행되는지 확인하세요.',
+  'agents.how.claude': 'mod(Claude Code 확장 기능)를 --plugin-dir로 붙임. 권한 확인 중계, 턴 끝 답 돌려주기, 사용량 막대, 하위 에이전트 보고와 /switchboard 패널까지 됩니다',
   'agents.how.codex': '-c mcp_servers.switchboard.* 설정 덮어쓰기',
   'agents.how.gemini': 'GEMINI_CLI_SYSTEM_DEFAULTS_PATH 환경 변수로 기본 설정 파일 지정 (mcpServers는 사용자 설정과 합쳐짐). Gemini 0.67부터는 이 파일을 읽지 않아서, 설정의 Gemini 확장 기능을 켜야 연결됩니다',
   'agents.how.qwen': '--mcp-config 파일',

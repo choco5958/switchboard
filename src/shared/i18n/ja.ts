@@ -852,6 +852,7 @@ export const ja: Dict = {
   'agents.unknown': '不明なエージェントです: {id}',
   'agents.notInstalled': '{label} はインストールされていません。インストール: {install}',
   'agents.noNode': 'node が見つからないため Switchboard の接続サーバーを起動できません。ターミナルで node が動くか確認してください。',
+  'agents.how.claude': 'mod (Claude Code の拡張機能) を --plugin-dir で付ける。権限確認の中継、最後の回答の返送、使用量のメーター、サブエージェントの報告、/switchboard パネルまで使えます',
   'agents.how.codex': '-c mcp_servers.switchboard.* の設定上書き',
   'agents.how.gemini': '環境変数 GEMINI_CLI_SYSTEM_DEFAULTS_PATH で既定の設定ファイルを指定 (mcpServers はユーザー設定と統合)。Gemini 0.67 以降はこのファイルを読まないため、設定で Gemini 拡張機能をオンにすると接続されます',
   'agents.how.qwen': '--mcp-config ファイル',
