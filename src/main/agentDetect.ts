@@ -1,4 +1,5 @@
 import type { McpServer } from '../shared/agents'
+import { win32 } from 'node:path'
 import { isAbsolutePath, whereScript } from './shell'
 
 // Pure pieces of opening an agent terminal (agentTerms.ts): finding installed CLIs and
@@ -34,6 +35,15 @@ const NATIVE = ['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'caf
 export function cliBins(command: string, head: Uint8Array | null): string[] {
   const magic = head ? Buffer.from(head.subarray(0, 4)).toString('hex') : ''
   return [command, ...(NATIVE.includes(magic) ? [] : ['node'])].filter(Boolean)
+}
+
+// The script an npm shim on Windows (a .cmd) runs with node, or null. Node cannot start a .cmd
+// without a shell, so the app runs that script with node itself when it starts a CLI for a command
+// of its own (Codex's hook trust, Gemini's extension link). `shim`: the .cmd file's text, where npm
+// writes the script as "%dp0%\<path>" (cmd-shim).
+export function npmShimScript(shimPath: string, shim: string): string | null {
+  const script = shim.match(/"%~?dp0%\\([^"%]+\.[cm]?js)"/i)?.[1]
+  return script ? win32.join(win32.dirname(shimPath), script) : null
 }
 
 // The Node that runs a terminal's MCP server, or null when there is none to use. The installed

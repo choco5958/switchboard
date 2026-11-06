@@ -30,7 +30,7 @@ export type AgentPreset = {
   // The CLI's permission hook for one run (mcp/hook.ts), which sends an ask to the person while
   // they are away; `file` goes to hookFile, and an env var it sets replaces the one `mcp` set
   // (`injected`). Absent: the CLI asks in its terminal only.
-  permissionHook?: (hook: McpServer, at: { hookFile: string; injected: Injection; version: string | null }) => Injection
+  permissionHook?: (hook: McpServer, at: { hookFile: string; injected: Injection; version: string | null; platform: string }) => Injection
   // The config file sits in a folder the app keeps for the project (the CLI's data folder, which also
   // holds its history), not in one written for the run (src/main/agentTerms.ts).
   dataFolder?: boolean
@@ -80,19 +80,39 @@ const tomlString = (value: string) => (/['\r\n]/.test(value) ? json(value) : `'$
 export const HOOK_TIMEOUT_S = 6 * 3600 + 120
 // A hook that only tells the server about the turn (mcp/hook.ts EVENT_WAIT_MS is under it).
 export const EVENT_TIMEOUT_S = 30
-export function hookCommand(hook: McpServer): string {
-  return [hook.command, ...hook.args].map(word => shellWord(word, 'linux')).join(' ')
+// How a CLI's hook runner reads the command: a POSIX shell (Crush's own on every OS, the others' on
+// macOS and Linux), cmd.exe (Codex on Windows) or PowerShell (Gemini and Qwen on Windows).
+export type HookShell = 'sh' | 'cmd' | 'powershell'
+export function hookCommand(hook: McpServer, shell: HookShell = 'sh'): string {
+  const words = [hook.command, ...hook.args]
+  if (shell === 'powershell') return `& ${words.map(word => shellWord(word, 'win32')).join(' ')}`
+  if (shell === 'cmd') return words.map(word => (/^[A-Za-z0-9_@+=:,./\\-]+$/.test(word) ? word : `"${word}"`)).join(' ')
+  return words.map(word => shellWord(word, 'linux')).join(' ')
+}
+// The shell a CLI's hooks run in on Windows, and a POSIX shell elsewhere.
+const hookShell = (platform: string, windows: HookShell): HookShell => (platform === 'win32' ? windows : 'sh')
+// Codex runs a hook as `cmd.exe /C "<command>"` on Windows, where % expands and a word cannot hold a
+// double quote: such a command gets no hook (codexHookOverrides).
+export function codexHookCommand(hook: McpServer, platform: string = process.platform): string | null {
+  const shell = hookShell(platform, 'cmd')
+  if (shell === 'cmd' && [hook.command, ...hook.args].some(word => /["%]/.test(word))) return null
+  return hookCommand(hook, shell)
 }
 // The same command follows the turn as well (docs/에이전트-대등하게.md), each event its own -c value
 // so the person's other hooks and hooks.state stay. Codex trusts each hook apart.
 export const CODEX_EVENTS = ['PermissionRequest', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'] as const
-export function codexHookOverrides(hook: McpServer): string[] {
-  const command = tomlString(hookCommand(hook))
+export function codexHookOverrides(hook: McpServer, platform: string = process.platform): string[] {
+  const line = codexHookCommand(hook, platform)
+  if (line === null) return []
+  const command = tomlString(line)
   return CODEX_EVENTS.map(name => {
     const matcher = name === 'UserPromptSubmit' || name === 'Stop' ? '' : 'matcher="*",'
     return `hooks.${name}=[{${matcher}hooks=[{type="command",command=${command},timeout=${name === 'PermissionRequest' ? HOOK_TIMEOUT_S : EVENT_TIMEOUT_S}}]}]`
   })
 }
+
+// A Windows path (C:\\...) with forward slashes, for a CLI that reads a backslash as an escape.
+const forwardSlashes = (value: string) => (/^[A-Za-z]:\\/.test(value) ? value.replace(/\\/g, '/') : value)
 
 // The folder a file of the app's is in, with a Windows path's backslashes as well.
 const folderOf = (file: string) => file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
@@ -117,15 +137,19 @@ function withoutTerminal(args: string[]): string[] {
 // command hook timeout of 1000 or more is read as milliseconds. Qwen expands $VAR in every string
 // of a settings file, so a command holding a $ gets no hook.
 export const QWEN_DEFAULTS_ENV = 'QWEN_CODE_SYSTEM_DEFAULTS_PATH'
-export function qwenHookSettings(hook: McpServer): unknown | null {
-  const command = hookCommand(hook)
+// On Windows Qwen runs a hook with cmd.exe, through Node's quoting of one argument, which a quoted
+// path does not survive; a hook that names PowerShell runs there instead.
+export function qwenHookSettings(hook: McpServer, platform: string = process.platform): unknown | null {
+  const shell = hookShell(platform, 'powershell')
+  const command = hookCommand(hook, shell)
   if (command.includes('$')) return null
+  const entry = (timeout: number) => ({ type: 'command', command, name: 'switchboard', timeout, ...(shell === 'powershell' ? { shell } : {}) })
   // The same command follows the turn too (docs/에이전트-대등하게.md): the person's prompt, each tool
   // and the turn's end, each with a short timeout (milliseconds as well).
-  const follow = (name: string) => [name, [{ matcher: '*', hooks: [{ type: 'command', command, name: 'switchboard', timeout: EVENT_TIMEOUT_S * 1000 }] }]]
+  const follow = (name: string) => [name, [{ matcher: '*', hooks: [entry(EVENT_TIMEOUT_S * 1000)] }]]
   return {
     hooks: {
-      PermissionRequest: [{ matcher: '*', hooks: [{ type: 'command', command, name: 'switchboard', timeout: HOOK_TIMEOUT_S * 1000 }] }],
+      PermissionRequest: [{ matcher: '*', hooks: [entry(HOOK_TIMEOUT_S * 1000)] }],
       ...Object.fromEntries(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'].map(follow)),
     },
   }
@@ -155,7 +179,7 @@ export const PRESETS: AgentPreset[] = [
     mcp: server => ({
       args: ['-c', `mcp_servers.${MCP_NAME}.command=${tomlString(server.command)}`, '-c', `mcp_servers.${MCP_NAME}.args=[${server.args.map(tomlString).join(',')}]`],
     }),
-    permissionHook: hook => ({ args: codexHookOverrides(hook).flatMap(value => ['-c', value]) }),
+    permissionHook: (hook, { platform }) => ({ args: codexHookOverrides(hook, platform).flatMap(value => ['-c', value]) }),
   },
   {
     id: 'gemini',
@@ -187,8 +211,8 @@ export const PRESETS: AgentPreset[] = [
       args: ['--mcp-config', configFile],
       file: { mcpServers: { [MCP_NAME]: { command: server.command, args: server.args, trust: true } } },
     }),
-    permissionHook: (hook, { hookFile }) => {
-      const settings = qwenHookSettings(hook)
+    permissionHook: (hook, { hookFile, platform }) => {
+      const settings = qwenHookSettings(hook, platform)
       return settings ? { env: { [QWEN_DEFAULTS_ENV]: hookFile }, file: settings } : {}
     },
   },
@@ -336,15 +360,17 @@ export const PRESETS: AgentPreset[] = [
     // project. Every run in the project writes the same file, so two Crush terminals there do not
     // change each other's server: its key comes from SWITCHBOARD_TERMINAL, which Crush passes on to
     // the server. Crush runs these values through its shell expansion (internal/shell/expand.go); one
-    // holding a character that expansion reads (a Windows path's backslash among them) gets a plain
-    // terminal.
+    // holding a character that expansion reads gets a plain terminal. A Windows path goes with
+    // forward slashes, which Windows takes too, so its backslashes are not read as escapes.
     mcp: (server, configFile) => {
-      const args = withoutTerminal(server.args)
-      if ([server.command, ...args, configFile].some(value => /[$`\\'"]/.test(value))) return {}
+      const command = forwardSlashes(server.command)
+      const args = withoutTerminal(server.args).map(forwardSlashes)
+      const config = forwardSlashes(configFile)
+      if ([command, ...args, config].some(value => /[$`\\'"]/.test(value))) return {}
       return {
-        args: ['-D', configFile.slice(0, configFile.lastIndexOf('/'))],
+        args: ['-D', config.slice(0, config.lastIndexOf('/'))],
         file: {
-          mcp: { [MCP_NAME]: { type: 'stdio', command: server.command, args } },
+          mcp: { [MCP_NAME]: { type: 'stdio', command, args } },
           permissions: { allowed_tools: SWITCHBOARD_TOOLS.map(name => `mcp_${MCP_NAME}_${name}`) },
         },
       }
@@ -355,7 +381,7 @@ export const PRESETS: AgentPreset[] = [
     // (mcp/permission.ts), so it may wait as long as the other CLIs' permission hooks.
     permissionHook: (hook, { injected }) => {
       if (injected.file === undefined) return {}
-      const command = hookCommand(hook)
+      const command = hookCommand({ command: forwardSlashes(hook.command), args: hook.args.map(forwardSlashes) })
       const follow = (timeout: number) => [{ name: 'switchboard', command, timeout }]
       const hooks = {
         PreToolUse: follow(HOOK_TIMEOUT_S),
@@ -425,11 +451,12 @@ export const GEMINI_EXTENSION = 'switchboard'
 // Set on a run the app opened through the extension: with the setting off, the link may still be
 // there, and the extension's server and hooks then stay quiet in the app's terminals too.
 export const EXTENSION_RUN_ENV = 'SWITCHBOARD_EXTENSION'
-export function geminiExtension(server: McpServer, hook: McpServer | undefined, folder: string): { path: string; value: unknown }[] {
+// Gemini runs its hooks in PowerShell on Windows.
+export function geminiExtension(server: McpServer, hook: McpServer | undefined, folder: string, platform: string = process.platform): { path: string; value: unknown }[] {
   const at = server.args.indexOf('--abilities')
   const args = [...withoutTerminal(at < 0 ? server.args : [...server.args.slice(0, at), ...server.args.slice(at + 2)]), '--app-only']
   const manifest = { name: GEMINI_EXTENSION, version: '1.0.0', description: 'Switchboard', mcpServers: { [MCP_NAME]: { command: server.command, args } } }
-  const command = hook ? hookCommand(hook) : ''
+  const command = hook ? hookCommand(hook, hookShell(platform, 'powershell')) : ''
   const follow = (name: string) => [name, [{ matcher: '*', hooks: [{ type: 'command', name: 'switchboard', command, timeout: EVENT_TIMEOUT_S * 1000 }] }]]
   return [
     { path: `${folder}/gemini-extension.json`, value: manifest },
@@ -441,8 +468,12 @@ export function geminiExtension(server: McpServer, hook: McpServer | undefined, 
 // A policy for one run (--policy): Switchboard's tools run without a confirmation, as they do in
 // Claude Code; Gemini still asks for its own. An extension's server cannot be given `trust`.
 export function geminiLaunch(policyFile: string, abilities: readonly string[], platform: string = process.platform, resume?: string): Launch {
+  const run = geminiRun(policyFile, abilities, resume)
+  return { line: [commandWord('gemini', platform), ...run.args.map(word => shellWord(word, platform))].join(' '), env: run.env, files: run.files }
+}
+export function geminiRun(policyFile: string, abilities: readonly string[], resume?: string): Run {
   return {
-    line: [commandWord('gemini', platform), ...(resume ? ['--resume', resume] : []), '--policy', shellWord(policyFile, platform)].join(' '),
+    args: [...(resume ? ['--resume', resume] : []), '--policy', policyFile],
     env: { SWITCHBOARD_ABILITIES: abilities.join(','), [EXTENSION_RUN_ENV]: '1' },
     files: [{ path: policyFile, content: `[[rule]]\ntoolName = "*"\nmcpName = "${MCP_NAME}"\ndecision = "allow"\npriority = 100\n` }],
   }
@@ -480,21 +511,27 @@ export const hookFileOf = (configFile: string) => configFile.replace(/(\.json)?$
 
 // Whether a run of this preset gets its relay hook at all (the version, a command the CLI's config
 // cannot hold): what the run's server says it can do depends on it (src/main/agentTerms.ts).
-export function hookAttaches(preset: AgentPreset, hook: McpServer, version: string | null): boolean {
+export function hookAttaches(preset: AgentPreset, hook: McpServer, version: string | null, platform: string = process.platform): boolean {
   const injected = preset.mcp?.({ command: hook.command, args: [] }, '/sb/agents/run.json') ?? {}
-  const got = preset.permissionHook?.(hook, { hookFile: '/sb/agents/run-hook.json', injected, version }) ?? {}
+  const got = preset.permissionHook?.(hook, { hookFile: '/sb/agents/run-hook.json', injected, version, platform }) ?? {}
   return (got.args?.length ?? 0) > 0 || got.env !== undefined || got.file !== undefined || got.config !== undefined || (got.files?.length ?? 0) > 0
 }
 
 // `resume`: a past conversation's id, checked by the caller (resumableId).
+// The run's args (after the command), env and files: presetLaunch makes the shell line of them, and
+// scripts/relay-check.ts starts the CLI with them as they are.
+export type Run = { args: string[]; env: Record<string, string>; files: { path: string; content: string }[] }
 export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform, hook?: McpServer, version: string | null = null, resume?: string): Launch {
+  const run = presetRun(preset, server, configFile, platform, hook, version, resume)
+  return { line: [commandWord(preset.bin, platform), ...run.args.map(word => shellWord(word, platform))].join(' '), env: run.env, files: run.files }
+}
+export function presetRun(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform, hook?: McpServer, version: string | null = null, resume?: string): Run {
   const got = preset.mcp?.(server, configFile) ?? {}
   const pinned = [...(resume && preset.resumeArgs ? preset.resumeArgs(resume) : []), ...(preset.versionArgs?.(version) ?? [])]
   const hookFile = hookFileOf(configFile)
-  const hooked = hook && preset.permissionHook ? preset.permissionHook(hook, { hookFile, injected: got, version }) : {}
-  const words = [commandWord(preset.bin, platform), ...[...pinned, ...(got.args ?? []), ...(hooked.args ?? [])].map(word => shellWord(word, platform))]
+  const hooked = hook && preset.permissionHook ? preset.permissionHook(hook, { hookFile, injected: got, version, platform }) : {}
   return {
-    line: words.join(' '),
+    args: [...pinned, ...(got.args ?? []), ...(hooked.args ?? [])],
     env: { ...got.env, ...hooked.env },
     files: [
       ...((hooked.config ?? got.file) === undefined ? [] : [{ path: configFile, content: `${json(hooked.config ?? got.file)}\n` }]),

@@ -4,11 +4,11 @@ import { createHash } from 'node:crypto'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, resumableId, geminiExtension, geminiLaunch, AGENTS, CUSTOM_AGENTS_KEY, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
+import { CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, resumableId, geminiExtension, geminiLaunch, AGENTS, CUSTOM_AGENTS_KEY, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, codexHookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
-import { cliBins, detectScript, mcpNode, parseDetect, serverFor } from './agentDetect'
+import { cliBins, detectScript, mcpNode, npmShimScript, parseDetect, serverFor } from './agentDetect'
 import { openTerminal } from './terminals'
 import { nodeRoot } from './appRoot'
 import { nodeEntry, nodeLauncher } from './runtime'
@@ -110,6 +110,21 @@ export function dataFolderOf(dir: string, agent: string, cwd: string): string {
 }
 
 // The first bytes of a program file (through its symlinks), or null when it cannot be read.
+// How to start a CLI the app found, for a command of its own: npm-installed ones run as node, and
+// on Windows through the script behind npm's .cmd shim (npmShimScript).
+function cliCommand(cliPath: string, node: string | null): string[] {
+  if (process.platform === 'win32' && /\.cmd$/i.test(cliPath)) {
+    let script: string | null = null
+    try {
+      script = npmShimScript(cliPath, readFileSync(cliPath, 'utf8'))
+    } catch {
+      // unreadable: started as it is, which fails as before
+    }
+    return script && node ? [node, script] : [cliPath]
+  }
+  return cliBins(cliPath, headOf(cliPath)).includes('node') && node ? [node, cliPath] : [cliPath]
+}
+
 function headOf(path: string | undefined): Uint8Array | null {
   if (!path) return null
   try {
@@ -171,9 +186,9 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   const hooked =
     hook && preset?.id === 'codex' && settings?.[CODEX_APPROVALS_KEY] === true && cliPath
       ? await trustCodexHook(
-          cliBins(cliPath, headOf(cliPath)).includes('node') && found.node ? [found.node, cliPath] : [cliPath],
+          cliCommand(cliPath, found.node),
           codexHookOverrides(hook),
-          hookCommand(hook),
+          codexHookCommand(hook) ?? '',
           folder,
           terminalEnv(process.env),
         )
@@ -190,8 +205,7 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
           const shared = serverFor(node, nodeEntry(nodeRoot(), 'mcp/server'), 'gemini', '', process.env.CLAUDE_IDE_SOCKET)
           const events = relays ? { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), 'gemini'] } : undefined
           writeFiles({ line: '', env: {}, files: geminiExtension(shared, events, extension).map(f => ({ path: f.path, content: `${JSON.stringify(f.value)}\n` })) })
-          const gemini = cliBins(cliPath, headOf(cliPath)).includes('node') && found.node ? [found.node, cliPath] : [cliPath]
-          return linkGeminiExtension(gemini, extension, terminalEnv(process.env))
+          return linkGeminiExtension(cliCommand(cliPath, found.node), extension, terminalEnv(process.env))
         })()
       : false
   return openTerminal({

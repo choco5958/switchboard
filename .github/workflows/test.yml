@@ -59,11 +59,22 @@ jobs:
   # The permission relay with the real Copilot CLI (scripts/relay-check.ts): its own model server
   # (BYOK, so no sign-in), the app's launch with the relay hook, a throwaway bridge and the app's
   # answer. On Windows this is the check the relay there waits on.
+  # Each agent CLI's hooks with the real CLI (scripts/relay-check.ts), at the version the app was
+  # tested with: on Windows the app turns on only the ones that pass here (src/main/agentTerms.ts).
   relay:
+    name: relay (${{ matrix.agent }}, ${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
+        agent: [copilot, qwen, crush, opencode, codex, gemini]
+        include:
+          - { agent: copilot, package: '@github/copilot@1.0.105' }
+          - { agent: qwen, package: '@qwen-code/qwen-code@0.26.7' }
+          - { agent: crush, package: '@charmland/crush@0.99.0' }
+          - { agent: opencode, package: 'opencode-ai@2.2.5' }
+          - { agent: codex, package: '@openai/codex@0.166.0' }
+          - { agent: gemini, package: '@google/gemini-cli@0.67.0' }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -76,6 +87,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: node scripts/build-node.ts
-      - run: npm install -g @github/copilot@1.0.105
+      - run: npm install -g ${{ matrix.package }}
       # jiti reads the app's TypeScript as it is (imports without extensions); it is not a dependency.
-      - run: npx -y jiti@2.6.1 scripts/relay-check.ts
+      - run: npx -y jiti@2.6.1 scripts/relay-check.ts ${{ matrix.agent }}

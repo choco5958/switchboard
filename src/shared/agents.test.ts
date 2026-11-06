@@ -15,6 +15,8 @@ import {
   hookAttaches,
   hookCommand,
   codexHookOverrides,
+  presetRun,
+  qwenHookSettings,
   AGENTS,
   CLAUDE,
   agentOf,
@@ -178,7 +180,8 @@ describe('preset launch lines', () => {
     expect(config.permissions.allowed_tools).toContain('mcp_switchboard_ask_decision')
     expect(presetOf('crush')!.dataFolder).toBe(true)
     // What Crush's shell expansion would read: a plain terminal.
-    for (const odd of [{ ...server, command: '/o$x/node' }, { ...server, command: 'C:\\node\\node.exe' }]) {
+    // (A Windows path goes with forward slashes: the Windows tests below.)
+    for (const odd of [{ ...server, command: '/o$x/node' }, { ...server, command: "/o'dd/node" }, { ...server, command: '/a\\b/node' }]) {
       expect(presetLaunch(presetOf('crush')!, odd, `${folder}/crush.json`)).toEqual({ line: 'crush', env: {}, files: [] })
     }
   })
@@ -254,6 +257,44 @@ describe('preset launch lines', () => {
       expect(preset.label).not.toMatch(/[\u2013\u2014\u00b7]/)
       expect(Object.hasOwn(ko, preset.how), preset.how).toBe(true)
     }
+  })
+})
+
+describe('hook commands on Windows', () => {
+  // A default Node install and a home with a space, as a Windows PC often has.
+  const node = 'C:\\Program Files\\nodejs\\node.exe'
+  const script = 'C:\\Users\\Dae Hyeon\\.claude-ide\\runtime\\b1\\out\\node\\mcp\\hook.mjs'
+  const hook = (agent: string) => ({ command: node, args: [script, agent] })
+
+  it('Codex runs its hooks with cmd.exe /C: double quotes, and none for a word that cmd would read', () => {
+    expect(hookCommand(hook('codex'), 'cmd')).toBe(`"${node}" "${script}" codex`)
+    expect(codexHookOverrides(hook('codex'), 'win32')[0]).toContain(`command='"${node}" "${script}" codex'`)
+    expect(codexHookOverrides(hook('codex'), 'win32')).toHaveLength(5)
+    const odd = { command: node, args: ['C:\\100%\\hook.mjs', 'codex'] }
+    expect(codexHookOverrides(odd, 'win32')).toEqual([])
+    expect(hookAttaches(presetOf('codex')!, odd, null, 'win32')).toBe(false)
+    // Elsewhere the same POSIX words as before.
+    expect(codexHookOverrides(hook('codex'), 'linux')[0]).toContain(`command=${JSON.stringify(hookCommand(hook('codex')))}`)
+  })
+
+  it('Qwen and Gemini run them in PowerShell, Qwen because the hook names it', () => {
+    const qwen = qwenHookSettings(hook('qwen'), 'win32') as { hooks: Record<string, { hooks: { command: string; shell?: string }[] }[]> }
+    const command = `& '${node}' '${script}' qwen`
+    // (a word PowerShell reads as it is stays bare)
+    for (const event of Object.values(qwen.hooks)) expect(event[0]!.hooks[0]).toMatchObject({ command, shell: 'powershell' })
+    expect((qwenHookSettings(hook('qwen'), 'darwin') as typeof qwen).hooks.Stop![0]!.hooks[0]!.shell).toBeUndefined()
+    const shared = { command: node, args: ['C:\\app\\mcp\\server.mjs', '--agent', 'gemini', '--terminal', ''] }
+    const gemini = geminiExtension(shared, hook('gemini'), 'C:\\x', 'win32')[1]!.value as { hooks: Record<string, { hooks: { command: string }[] }[]> }
+    expect(gemini.hooks.BeforeAgent![0]!.hooks[0]!.command).toBe(`& '${node}' '${script}' gemini`)
+  })
+
+  it("Crush's own POSIX shell runs them on every OS, its Windows paths with forward slashes", () => {
+    const winServer = { command: node, args: ['C:\\Users\\Dae Hyeon\\mcp\\server.mjs', '--agent', 'crush', '--terminal', 't1'] }
+    const run = presetRun(presetOf('crush')!, winServer, 'C:\\Users\\Dae Hyeon\\.claude-ide\\agents\\crush\\p1\\crush.json', 'win32', hook('crush'))
+    expect(run.args).toEqual(['-D', 'C:/Users/Dae Hyeon/.claude-ide/agents/crush/p1'])
+    const config = JSON.parse(run.files[0]!.content) as { mcp: { switchboard: { command: string; args: string[] } }; hooks: Record<string, { command: string }[]> }
+    expect(config.mcp.switchboard).toMatchObject({ command: 'C:/Program Files/nodejs/node.exe', args: ['C:/Users/Dae Hyeon/mcp/server.mjs', '--agent', 'crush'] })
+    expect(config.hooks.PreToolUse![0]!.command).toBe(`'C:/Program Files/nodejs/node.exe' 'C:/Users/Dae Hyeon/.claude-ide/runtime/b1/out/node/mcp/hook.mjs' crush`)
   })
 })
 
