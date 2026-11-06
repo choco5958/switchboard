@@ -3,7 +3,7 @@
 // the app opens it (src/shared/agents.ts presetLaunch, with the relay hook), a throwaway bridge,
 // the app's answer, and the file the agent writes once it is allowed.
 //
-//   pnpm exec jiti scripts/relay-check.ts [copilot executable or its npm-loader.js]
+//   npx -y jiti@2.6.1 scripts/relay-check.ts [copilot executable or its npm-loader.js]
 //
 // Needs `node scripts/build-node.ts` first (out/node/mcp). Everything lives in a temporary folder:
 // HOME, USERPROFILE, COPILOT_HOME, the bridge's socket and database. Only the processes this script
