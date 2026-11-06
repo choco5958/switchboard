@@ -93,9 +93,15 @@ export function useTerminals({ onFolder, onOpened, slotFolder }: { onFolder: (cw
 
   useEffect(() => {
     void window.ide.termList().then(setTerms)
-    return window.ide.onTermExit(event =>
+    const exited = window.ide.onTermExit(event =>
       setTerms(list => list.map(t => (t.id === event.id ? { ...t, alive: false, exitCode: event.exitCode } : t))),
     )
+    // Opened by the app itself (a scheduled prompt, delegated work): listed, not brought forward.
+    const opened = window.ide.onTermOpened?.(term => setTerms(list => (list.some(t => t.id === term.id) ? list : [...list, term])))
+    return () => {
+      exited()
+      opened?.()
+    }
   }, [])
 
   useEffect(() => {

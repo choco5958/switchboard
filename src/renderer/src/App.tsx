@@ -337,8 +337,9 @@ export function App() {
         stalled,
         limited,
         projectOf: (cwd, fallback) => projectOfCwd(allProjects, cwd) ?? fallback,
+        delegations: state.delegations ?? [],
       }),
-    [state.sessions, state.live, state.tasks, state.questions, state.approvals, terminals.terms, stalled, limited, allProjects],
+    [state.sessions, state.live, state.tasks, state.questions, state.approvals, terminals.terms, stalled, limited, allProjects, state.delegations],
   )
   rowsRef.current = rows
   // The one "waiting for me" count (waiting.ts): home in the sidebar and the palette.

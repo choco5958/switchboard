@@ -88,6 +88,27 @@ type ApprovalRow = {
   note: string
 }
 
+// A piece of work a session handed to another agent (the delegate tool): the app opens that agent's
+// terminal in the same project ('delegate-open'), says which (POST /delegations/:id/opened), and
+// the session that comes up in it gets the work as a request from the one that delegated.
+type DelegationRow = {
+  id: number
+  from_session: string
+  agent: string
+  project: string
+  cwd: string
+  task: string
+  created_at: number
+  chain: number | null
+  status: 'waiting' | 'opened' | 'sent' | 'failed'
+  terminal: string
+  opened_at: number | null
+  session_id: string
+  message_id: number | null
+  failure: string
+  request_key: string
+}
+
 type OutboxRow = PeerRow & {
   session_id: string
   delivered: number
@@ -189,6 +210,13 @@ create table if not exists routine_runs (
   opened integer not null default 0
 );
 create index if not exists routine_runs_routine on routine_runs (routine_id, id);
+create table if not exists delegations (
+  id integer primary key, from_session text not null, agent text not null, project text not null,
+  cwd text not null, task text not null, created_at integer not null, chain integer,
+  status text not null default 'waiting', terminal text not null default '', opened_at integer,
+  session_id text not null default '', message_id integer, failure text not null default '',
+  request_key text not null default ''
+);
 create table if not exists secrets (key text primary key, value text not null);
 create table if not exists approvals (
   id integer primary key, session_id text not null, project text not null, tool text not null,
@@ -377,7 +405,8 @@ export function appOnly(method: string, path: string): boolean {
     path === '/settings' ||
     path === '/commands' ||
     path === '/routines' ||
-    /^\/routines\/\d+\/(run|delete)$/.test(path)
+    /^\/routines\/\d+\/(run|delete)$/.test(path) ||
+    /^\/delegations\/\d+\/opened$/.test(path)
   )
 }
 
@@ -752,6 +781,22 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     changed('outbox')
   }
 
+  // The run of hand-offs a request from this session belongs to: the request it is working on
+  // now (from another session or the shell), and how many requests that run made already.
+  const requestChain = (from: string): { chain: number | null; used: number } => {
+    const parent = db
+      .prepare(
+        `select id, chain from outbox where session_id = ? and delivered = 1 and expects_reply = 1 and answered = 0 and cancelled = 0
+         and no_reply = '' and routine_run is null and wait_id is null and created_at > ? order by id desc limit 1`,
+      )
+      .get(from, now() - CHAIN_WINDOW_MS) as { id: number; chain: number | null } | undefined
+    const chain = parent ? (parent.chain ?? parent.id) : null
+    const sent = chain === null ? 0 : (db.prepare("select count(*) as n from outbox where chain = ? and from_session != '' and expects_reply = 1").get(chain) as { n: number }).n
+    // Work handed off that has not reached its session yet counts too.
+    const pending = chain === null ? 0 : (db.prepare("select count(*) as n from delegations where chain = ? and status in ('waiting', 'opened')").get(chain) as { n: number }).n
+    return { chain, used: sent + pending }
+  }
+
   // One message from a session to others; replies and plain information want no answer.
   // A request carries the run of hand-offs it belongs to (`chain`, DELEGATION_MAX); one that
   // starts a run names itself.
@@ -844,6 +889,49 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       pushDeliveries(sessionId)
     }
   }
+  // Delegated work (the delegate tool). The app opens the terminal and names its key; the session
+  // that registers with that key, once its delivery stream is open, gets the work as a request
+  // from the session that delegated, so its turn's end answers it (/messages/turn-end).
+  const DELEGATE_OPEN_MS = 2 * 60_000
+  const DELEGATE_START_MS = 5 * 60_000
+  const failDelegation = (d: DelegationRow, reason: string) => {
+    const marked = db.prepare("update delegations set status = 'failed', failure = ? where id = ? and status in ('waiting', 'opened')").run(reason.slice(0, 500), d.id)
+    if (marked.changes === 0) return
+    db.prepare("insert into outbox (session_id, kind, text, created_at, from_app) values (?, '세션메시지', ?, ?, 1)").run(
+      d.from_session,
+      say('delegate.failed', { id: `d${d.id}`, agent: d.agent, reason }),
+      now(),
+    )
+    logEvent(d.from_session, '세션메시지', say('bridge.event.delegateFailed', { id: `d${d.id}`, agent: d.agent }))
+    changed('outbox')
+    pushDeliveries(d.from_session)
+  }
+  const assignDelegations = (at = now()) => {
+    const open = db.prepare("select * from delegations where status in ('waiting', 'opened') order by id").all() as DelegationRow[]
+    if (open.length === 0) return
+    const live = liveSessions()
+    for (const d of open) {
+      if (d.status === 'waiting') {
+        if (at - d.created_at > DELEGATE_OPEN_MS) failDelegation(d, say('delegate.noTerminal'))
+        continue
+      }
+      const ready = d.terminal
+        ? (db.prepare('select id from sessions where terminal = ? and agent = ? order by last_seen desc').all(d.terminal, d.agent) as { id: string }[]).find(row => live.includes(row.id))
+        : undefined
+      if (!ready) {
+        if (at - (d.opened_at ?? d.created_at) > DELEGATE_START_MS) failDelegation(d, say('delegate.noSession'))
+        continue
+      }
+      atomic(() => {
+        const [id] = sendPeer(d.from_session, [ready.id], d.task, null, true, `delegate:${d.id}`, d.chain)
+        db.prepare("update delegations set status = 'sent', session_id = ?, message_id = ? where id = ?").run(ready.id, Number(String(id).slice(1)), d.id)
+      })
+      logEvent(d.from_session, '세션메시지', say('bridge.event.delegated', { id: `d${d.id}`, recipient: sessionLabel(ready.id) }))
+      changed('delegations')
+      pushDeliveries(ready.id)
+    }
+  }
+
   // Only runs that reached a session count: one that found no session, was skipped or missed
   // spent nothing. Counting starts again when the person saves or switches the routine back on.
   const stopIfFailing = (routineId: number) => {
@@ -888,6 +976,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       stopIfFailing(run.routine_id)
     }
     assignRuns()
+    assignDelegations(at)
     if (due.length > 0 || stale.length > 0) changed('routines')
   }
 
@@ -1159,6 +1248,10 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       return full ? a : { ...a, summary: maskSecrets(a.summary) }
     }),
     routineRuns: stmt('select * from (select * from routine_runs order by id desc limit 100) order by id').all(),
+    // Who handed what to whom, for the sidebar; the work's words and the terminal's key stay here.
+    delegations: stmt(
+      'select id, from_session, agent, project, cwd, status, session_id, failure, created_at from (select * from delegations order by id desc limit 50) order by id',
+    ).all(),
     activity: Object.fromEntries(activity),
     // Every running task, however many: the limit only trims waiting ones.
     tasks: stmt(
@@ -1570,6 +1663,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (set.size === 1) {
         changed('sessions')
         assignRuns()
+        assignDelegations()
       }
       // Guarded: an exception in an event handler would end the bridge.
       req.on('close', guarded('stream close', () => {
@@ -2095,15 +2189,9 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       // run of hand-offs; a run stops at DELEGATION_MAX requests between sessions.
       let chain: number | null = null
       if (expectsReply) {
-        const parent = db
-          .prepare(
-            `select id, chain from outbox where session_id = ? and delivered = 1 and expects_reply = 1 and answered = 0 and cancelled = 0
-             and no_reply = '' and routine_run is null and wait_id is null and created_at > ? order by id desc limit 1`,
-          )
-          .get(from, now() - CHAIN_WINDOW_MS) as { id: number; chain: number | null } | undefined
-        chain = parent ? (parent.chain ?? parent.id) : null
-        const used = chain === null ? 0 : (db.prepare("select count(*) as n from outbox where chain = ? and from_session != '' and expects_reply = 1").get(chain) as { n: number }).n
-        if (used + to.length > DELEGATION_MAX) return send(res, 400, { error: say('bridge.peer.chainFull', { max: DELEGATION_MAX }) })
+        const run = requestChain(from)
+        chain = run.chain
+        if (run.used + to.length > DELEGATION_MAX) return send(res, 400, { error: say('bridge.peer.chainFull', { max: DELEGATION_MAX }) })
         for (const recipient of to) {
           const recent = (db
             .prepare("select count(*) as n from outbox where from_session = ? and session_id = ? and expects_reply = 1 and created_at > ?")
@@ -2114,6 +2202,58 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       if (replied) db.prepare('update outbox set answered = 1 where id = ?').run(replied.id)
       const ids = sendPeer(from, to, text, replied?.id ?? null, expectsReply, requestKey, chain)
       return send(res, 200, { ids })
+    }
+
+    // delegate: a session hands a piece of work to another agent, which the app starts in a terminal
+    // of the same project. Only with the app there to open it; it counts as a request between
+    // sessions (DELEGATION_MAX).
+    if (method === 'POST' && path === '/delegations') {
+      const body = await readJson(req)
+      const from = str(body.sessionId)
+      const sender = db.prepare('select project, cwd from sessions where id = ?').get(from) as { project: string; cwd: string } | undefined
+      if (!sender) return send(res, 404, { error: say('bridge.noSessionFound', { id: from }) })
+      if (!asSession(from)) return notYours(from)
+      const agent = str(body.agent).trim().toLowerCase()
+      const task = str(body.task).trim()
+      if (!AGENT_KIND.test(agent) || agent === 'shell') return send(res, 400, { error: say('bridge.badAgent') })
+      if (!task) return send(res, 400, { error: say('bridge.needText') })
+      if (!sender.cwd) return send(res, 400, { error: say('delegate.noFolder') })
+      const requestKey = str(body.requestKey)
+      if (requestKey) {
+        const again = db.prepare('select id from delegations where from_session = ? and request_key = ?').get(from, requestKey) as { id: number } | undefined
+        if (again) return send(res, 200, { id: `d${again.id}`, duplicate: true })
+      }
+      if (watchers.size === 0) return send(res, 409, { error: say('delegate.noApp') })
+      const run = requestChain(from)
+      if (run.used + 1 > DELEGATION_MAX) return send(res, 400, { error: say('bridge.peer.chainFull', { max: DELEGATION_MAX }) })
+      const id = Number(
+        db
+          .prepare('insert into delegations (from_session, agent, project, cwd, task, created_at, chain, request_key) values (?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(from, agent, sender.project, sender.cwd, clipText(task), now(), run.chain, requestKey).lastInsertRowid,
+      )
+      logEvent(from, '세션메시지', say('bridge.event.delegating', { id: `d${id}`, agent }))
+      for (const res of watchers) sseSend(res, 'change', { type: 'delegate-open', delegationId: id })
+      changed('delegations')
+      return send(res, 200, { id: `d${id}` })
+    }
+
+    // The app opened the terminal for delegated work (its key), or could not (error).
+    const opened = method === 'POST' ? /^\/delegations\/(\d+)\/opened$/.exec(path) : null
+    if (opened) {
+      const body = await readJson(req)
+      const d = db.prepare('select * from delegations where id = ?').get(Number(opened[1])) as DelegationRow | undefined
+      if (!d) return send(res, 404, { error: say('delegate.notFound', { id: `d${opened[1]}` }) })
+      if (d.status !== 'waiting') return send(res, 200, { ok: true, status: d.status })
+      const error = str(body.error).trim()
+      if (error) {
+        failDelegation(d, error)
+        return send(res, 200, { ok: true, status: 'failed' })
+      }
+      const terminal = str(body.terminal).trim()
+      if (!terminal || !TERMINAL_ID.test(terminal)) return send(res, 400, { error: say('bridge.badTerminal') })
+      db.prepare("update delegations set status = 'opened', terminal = ?, opened_at = ? where id = ?").run(terminal, now(), d.id)
+      assignDelegations()
+      return send(res, 200, { ok: true, status: 'opened' })
     }
 
     // cancel_request: a session takes back requests it sent. One not delivered yet never goes

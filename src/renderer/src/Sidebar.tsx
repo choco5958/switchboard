@@ -100,7 +100,9 @@ export function Sidebar({
       <span className="state-dot" aria-hidden="true" />
       <span className="session-text">
         <span className="session-title">{row.title}</span>
-        {rowAgent(row, customs) && <span className="session-sub">{rowAgent(row, customs)}</span>}
+        {(rowAgent(row, customs) || row.delegatedBy) && (
+          <span className="session-sub">{[rowAgent(row, customs), row.delegatedBy ? t('row.delegatedBy', { from: row.delegatedBy }) : ''].filter(Boolean).join(', ')}</span>
+        )}
       </span>
       <span className={cx('session-state', needsAnswer(row.state) && 'strong')}>{rowStateText(row)}</span>
     </button>

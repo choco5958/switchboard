@@ -1510,3 +1510,85 @@ describe('writes that belong together', () => {
     assert.equal(count("select count(*) n from tasks where session_id = 'tx-k'"), 0)
   })
 })
+
+describe('delegate: work handed to another agent', () => {
+  // The app's stream (GET /stream), where 'delegate-open' tells it to open a terminal.
+  const appStream = () => {
+    const events: any[] = []
+    const req = request({ socketPath, path: '/stream', headers: { 'x-switchboard-app': APP_KEY } }, res => {
+      let buffer = ''
+      res.on('data', chunk => {
+        buffer += chunk
+        for (const m of buffer.matchAll(/event: change\ndata: (.*)\n\n/g)) events.push(JSON.parse(m[1] ?? '{}'))
+        buffer = buffer.slice(buffer.lastIndexOf('\n\n') + 2)
+      })
+    })
+    req.on('error', () => undefined)
+    req.end()
+    // Closing it tells the bridge the app went away (telegram, phones): let that finish here.
+    return { events, close: () => new Promise(resolve => { req.destroy(); setTimeout(resolve, 300) }) }
+  }
+  const noApp = (method: string, path: string, body: unknown) =>
+    new Promise<number>(resolve => {
+      const req = request({ socketPath, method, path, headers: { 'content-type': 'application/json' } }, res => {
+        res.resume()
+        resolve(res.statusCode ?? 0)
+      })
+      req.end(JSON.stringify(body))
+    })
+
+  test('with the app there, the session that comes up in its terminal gets the work, and its answer comes back', async () => {
+    await call('POST', '/sessions', { id: 'dg-from', cwd: '/w/shop' })
+    // No app to open a terminal: refused, so the session asks a connected one instead.
+    assert.equal((await call('POST', '/delegations', { sessionId: 'dg-from', agent: 'codex', task: '테스트를 고쳐 줘' })).status, 409)
+    const app = appStream()
+    await eventually(async () => (await call('GET', '/state')).json.sessions !== undefined && app.events !== undefined)
+    let made: any = { status: 0 }
+    await eventually(async () => {
+      made = await call('POST', '/delegations', { sessionId: 'dg-from', agent: 'codex', task: '테스트를 고쳐 줘', requestKey: 'toolu_d1' })
+      return made.status === 200
+    })
+    assert.match(made.json.id, /^d\d+$/)
+    const id = Number(made.json.id.slice(1))
+    // The same call again (a lost reply) finds the same work.
+    assert.deepEqual((await call('POST', '/delegations', { sessionId: 'dg-from', agent: 'codex', task: '테스트를 고쳐 줘', requestKey: 'toolu_d1' })).json, { id: made.json.id, duplicate: true })
+    await eventually(async () => app.events.some(e => e.type === 'delegate-open' && e.delegationId === id))
+    const listed = (await call('GET', '/state')).json.delegations.find((d: any) => d.id === id)
+    assert.deepEqual([listed.agent, listed.cwd, listed.status, listed.terminal, listed.task], ['codex', '/w/shop', 'waiting', undefined, undefined])
+    // Only the app names the terminal.
+    assert.equal(await noApp('POST', `/delegations/${id}/opened`, { terminal: 'k-dg1' }), 403)
+    assert.equal((await call('POST', `/delegations/${id}/opened`, { terminal: 'k-dg1' })).json.status, 'opened')
+    // A session of another agent in that terminal is not the one.
+    await call('POST', '/sessions', { id: 'dg-to', cwd: '/w/shop', agent: 'codex', terminal: 'k-dg1' })
+    const got = await firstDelivery('dg-to')
+    assert.match(got.text, /테스트를 고쳐 줘/)
+    const state = (await call('GET', '/state')).json
+    assert.deepEqual(
+      [state.delegations.find((d: any) => d.id === id).status, state.delegations.find((d: any) => d.id === id).session_id],
+      ['sent', 'dg-to'],
+    )
+    // Its turn's end answers the delegating session, as for any request between sessions.
+    await call('POST', '/messages/turn-end', { sessionId: 'dg-to', ids: [got.id], answer: '고쳤습니다' })
+    const back = (await call('POST', '/deliveries/take', { sessionId: 'dg-from' })).json.items as { text: string }[]
+    assert.ok(back.some(item => item.text.includes('고쳤습니다')))
+    await app.close()
+  })
+
+  test('a terminal that could not open tells the delegating session no result is coming', async () => {
+    await call('POST', '/sessions', { id: 'dg-from2', cwd: '/w/shop' })
+    const app = appStream()
+    let made: any = { status: 0 }
+    await eventually(async () => {
+      made = await call('POST', '/delegations', { sessionId: 'dg-from2', agent: 'gemini', task: '문서를 읽어 줘' })
+      return made.status === 200
+    })
+    const id = Number(made.json.id.slice(1))
+    assert.equal((await call('POST', `/delegations/${id}/opened`, { error: 'Gemini를 찾지 못했습니다' })).json.status, 'failed')
+    const told = (await call('POST', '/deliveries/take', { sessionId: 'dg-from2' })).json.items as { text: string }[]
+    assert.ok(told.some(item => item.text.includes(`d${id}`) && item.text.includes('Gemini를 찾지 못했습니다')))
+    // Shell and malformed agents are refused.
+    assert.equal((await call('POST', '/delegations', { sessionId: 'dg-from2', agent: 'shell', task: 'x' })).status, 400)
+    assert.equal((await call('POST', '/delegations', { sessionId: 'dg-from2', agent: 'codex', task: ' ' })).status, 400)
+    await app.close()
+  })
+})

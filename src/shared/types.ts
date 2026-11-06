@@ -123,6 +123,7 @@ export type BridgeState = {
   routines?: Routine[]
   approvals?: Approval[] // the newest 30 permission asks (bridge: POST /approvals)
   routineRuns?: RoutineRun[] // the newest 100
+  delegations?: Delegation[] // the newest 50 (bridge/server.ts, the delegate tool)
   tasks: Task[]
   questions: Question[]
   answeredCount: number
@@ -228,6 +229,7 @@ export type IdeApi = {
   termKeeps: () => Promise<boolean>
   onTermData: (listener: (event: { id: string; data: string; seq: number }) => void) => () => void
   onTermExit: (listener: (event: { id: string; exitCode: number }) => void) => () => void
+  onTermOpened: (listener: (term: TermInfo) => void) => () => void
   accountInfo: () => Promise<AccountInfo | null>
   measureAccounts: () => Promise<AccountInfo | null>
   // Feature area: the app's own updates (src/main/updater.ts), for the settings page.
@@ -242,6 +244,19 @@ export type IdeApi = {
 // One past Claude Code conversation, from its transcript. folder: the project folder name
 // Claude Code made from the working directory; project: the working directory's own name.
 // messages counts prompts and replies; approximate when only the ends of a long file were read.
+// Work a session handed to another agent: who gave it, what runs it (session_id once it started).
+export type Delegation = {
+  id: number
+  from_session: string
+  agent: string
+  project: string
+  cwd: string
+  status: 'waiting' | 'opened' | 'sent' | 'failed'
+  session_id: string
+  failure: string
+  created_at: number
+}
+
 export type PastSession = {
   id: string
   agent: string // the CLI it was: 'claude', or a preset's id (agents.ts) that resumes by id

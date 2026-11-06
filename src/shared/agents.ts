@@ -100,7 +100,7 @@ const folderOf = (file: string) => file.slice(0, Math.max(file.lastIndexOf('/'),
 // The Switchboard server's tools (mcp/server.ts mcpTools, kept the same by a test), for a CLI that
 // lists the tools it runs without a prompt.
 export const SWITCHBOARD_TOOLS = [
-  'ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'list_sessions', 'send_to_session', 'cancel_request',
+  'ask_decision', 'set_task', 'plan_nodes', 'node_worktree', 'list_sessions', 'send_to_session', 'delegate', 'cancel_request',
   'routine_no_update', 'routine_report_failure', 'await_event', 'close_wait', 'browser_snapshot', 'browser_click',
   'browser_type', 'browser_navigate', 'browser_console', 'browser_screenshot', 'update_node', 'open_in_ide', 'check_answers',
 ]

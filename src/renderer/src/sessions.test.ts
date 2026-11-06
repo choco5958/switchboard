@@ -22,6 +22,15 @@ const input = (over: Partial<RowInput>): RowInput => ({
 })
 
 describe('sidebar session rows', () => {
+  test('a session that took delegated work names the project of the session that gave it', () => {
+    const from = session('lead', { project: 'shop' })
+    const took = session('s2', { terminal: 't2', agent: 'codex' })
+    const work = { id: 1, from_session: 'lead', agent: 'codex', project: 'shop', cwd: '/w/p', status: 'sent' as const, session_id: 's2', failure: '', created_at: 1 }
+    const rows = sessionRows(input({ sessions: [from, took], live: ['s2'], terms: [term('t2', { claude: false, agent: 'codex' })], delegations: [work] }))
+    expect(rows.find(r => r.session?.id === 's2')?.delegatedBy).toBe('shop')
+    expect(rows.find(r => r.session?.id === 'lead')?.delegatedBy).toBeUndefined()
+  })
+
   test('a terminal shows the session in it, named by its running task', () => {
     const rows = sessionRows(input({ sessions: [session('s1', { terminal: 't1' })], live: ['s1'], tasks: [task(1, 's1')], terms: [term('t1')] }))
     expect(rows).toHaveLength(1)

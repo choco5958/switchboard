@@ -6,7 +6,7 @@ import { registerPane } from './pane'
 import { registerDevtool } from './devtool'
 import { currentLang, langOfState, sessionLang, setLang, t } from './i18n.ts'
 import { SESSION_HEADER, bridgeFetch, startArgv, streamArgv } from './link.ts'
-import { BROWSER_TOOLS, cancelText, peersText, sentText, toolDefs, worktreeRoot, type Peer } from './tools.ts'
+import { BROWSER_TOOLS, cancelText, delegatedText, peersText, sentText, toolDefs, worktreeRoot, type Peer } from './tools.ts'
 import { waitApproval } from './approval.ts'
 
 // The mod connects this Claude Code session to the Switchboard bridge:
@@ -588,6 +588,14 @@ export const register: Register = on => {
     if (!reply.ok) return { result: t(currentLang(), 'tool.sendFailed', { error: String(reply.json.error) }) }
     return { result: sentText(reply.json, expectsReply, currentLang()) }
   }).catch(() => ({ result: t(currentLang(), 'tool.sendFailed', { error: '' }) }))
+
+  on('tool.call', { tool: 'mcp__ide-bridge__delegate' }, async ($, e) => {
+    const reply = await call($, 'POST', '/delegations', { sessionId, agent: e.agent, task: e.task, requestKey: e.tool_use_id }).catch(
+      (error: unknown): Reply => ({ ok: false, status: 0, json: { error: String(error) } }),
+    )
+    if (!reply.ok) return { result: t(currentLang(), 'tool.delegateFailed', { error: String(reply.json.error) }) }
+    return { result: delegatedText(reply.json, String(e.agent ?? ''), currentLang()) }
+  }).catch(() => ({ result: t(currentLang(), 'tool.delegateFailed', { error: '' }) }))
 
   on('tool.call', { tool: 'mcp__ide-bridge__cancel_request' }, async ($, e) => {
     const reply = await call($, 'POST', '/messages/cancel', { sessionId, ids: e.ids, reason: e.reason }).catch(

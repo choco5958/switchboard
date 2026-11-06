@@ -49,6 +49,8 @@ export const IDE_CALLS = {
   termKeeps: { kind: 'invoke', channel: 'term:keeps' },
   onTermData: { kind: 'listen', channel: 'term:data' },
   onTermExit: { kind: 'listen', channel: 'term:exit' },
+  // A terminal the app opened by itself: a scheduled prompt's, or one for delegated work.
+  onTermOpened: { kind: 'listen', channel: 'term:opened' },
   accountInfo: { kind: 'invoke', channel: 'account:info' },
   measureAccounts: { kind: 'invoke', channel: 'account:measure' },
   updateStatus: { kind: 'invoke', channel: 'update:status' },

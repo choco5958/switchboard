@@ -67,6 +67,13 @@ const KO = {
     '받은 요청에 답할 때는 replyTo에 그 메시지 id를 준다(to는 생략). 정보만 알릴 때는 expectsReply false. ' +
     '같은 요청을 반복해 보내지 않고, 받은 요청을 보낸 세션에 되돌려 맡기지 않으며, 사용자의 제한이나 안전 확인을 피하려고 다른 세션을 쓰지 않는다. ' +
     '한 요청에서 시작해 세션끼리 맡기는 요청은 모두 합쳐 8번까지다. 받은 세션의 연결이 끊기거나 턴이 중단되면 답이 오지 않는다는 알림이 들어온다.',
+  delegate:
+    '다른 에이전트(Claude Code, Codex, Gemini 등)에게 일을 맡긴다. Switchboard 앱이 이 세션의 프로젝트 폴더에 그 에이전트의 터미널을 새로 열고 할 일을 넣는다. 사람은 그 터미널을 보고 끼어들 수 있다. ' +
+    '호출은 바로 끝나고 맡긴 일 번호(d번호)를 돌려준다. 기다리며 폴링하거나 sleep하지 말고 턴을 끝낸다. 맡은 세션의 턴이 끝나면 그 결과가 다음 턴에 "[Switchboard] ...이(가) 보낸 메시지"로 들어온다. ' +
+    '맡은 세션은 이 대화와 메모리를 볼 수 없으니 할 일을 혼자 읽어도 되는 한 메시지로 쓴다: 목표, 필요한 맥락, 하지 말아야 할 일, 끝났다고 볼 기준. ' +
+    '이미 연결된 세션에 물으면 되는 일은 send_to_session을 쓴다. 사용자의 제한이나 안전 확인을 피하려고 다른 에이전트를 쓰지 않는다. 세션끼리 맡기는 요청 수 제한(8번)에 함께 센다.',
+  delegateAgent: '맡을 에이전트의 id: claude, codex, gemini, qwen, copilot, opencode, crush처럼 설정의 에이전트 CLI에 있는 것',
+  delegateTask: '맡길 일. 혼자 읽어도 되는 한 메시지',
   sendTo: '받을 세션 id 목록 (list_sessions의 id). 답장이면 생략',
   sendText: '보낼 메시지',
   sendReplyTo: '답하는 메시지 id (예: m12)',
@@ -165,6 +172,13 @@ const EN: typeof KO = {
     'To answer a request you received, give its message id as replyTo (leave out to). For information only, set expectsReply false. ' +
     'Do not send the same request again, do not hand a request back to the session that sent it, and never use another session to get around a user limit or a safety check. ' +
     'Requests handed between sessions that start from one request are capped at 8 in all. If the receiving session disconnects or its turn is interrupted, a notice says no answer is coming.',
+  delegate:
+    'Hands a piece of work to another agent (Claude Code, Codex, Gemini and others). The Switchboard app opens a new terminal of that agent in this session\'s project folder and types the work in; the person can watch that terminal and step in. ' +
+    'The call returns at once with the work\'s number (d number). End your turn; do not poll or sleep while waiting. When the other session\'s turn ends, its result arrives in a later turn as "[Switchboard] A message from ...". ' +
+    'That session cannot see this conversation or your memory, so write the work as one message that stands alone: the goal, the context it needs, what it must not do, and what counts as finished. ' +
+    'For a question a session already connected can answer, use send_to_session. Never use another agent to get around a user limit or a safety check. It counts toward the cap on requests between sessions (8).',
+  delegateAgent: 'The id of the agent to take it: claude, codex, gemini, qwen, copilot, opencode, crush or another in the agent CLIs of the settings',
+  delegateTask: 'The work. One message that stands alone',
   sendTo: 'Ids of the sessions to send to (ids from list_sessions). Leave out on a reply',
   sendText: 'The message',
   sendReplyTo: 'Id of the message this answers (e.g. m12)',
@@ -313,6 +327,18 @@ export function toolDefs(lang: Lang): ToolDef[] {
       },
     },
     {
+      name: 'delegate',
+      description: d.delegate,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          agent: { type: 'string', description: d.delegateAgent },
+          task: { type: 'string', description: d.delegateTask },
+        },
+        required: ['agent', 'task'],
+      },
+    },
+    {
       name: 'cancel_request',
       description: d.cancel,
       inputSchema: {
@@ -456,6 +482,11 @@ export function sentText(json: Record<string, unknown>, expectsReply: boolean, l
   const ids = Array.isArray(json.ids) ? json.ids.join(', ') : ''
   if (json.duplicate) return t(lang, 'tool.sentAgain', { ids })
   return t(lang, expectsReply ? 'tool.sentRequest' : 'tool.sentInfo', { ids })
+}
+
+// delegate's result (bridge POST /delegations).
+export function delegatedText(json: Record<string, unknown>, agent: string, lang: Lang): string {
+  return t(lang, json.duplicate ? 'tool.delegateAgain' : 'tool.delegated', { id: String(json.id ?? ''), agent })
 }
 
 // cancel_request's result, one line per request (bridge POST /messages/cancel).

@@ -14,7 +14,7 @@ import { registerDevServers } from './devservers'
 import { bridgePathAllowed, debugPathAllowed } from './guard'
 import { saveShot } from './shots'
 import { anyoneWorking } from './awake'
-import { dockIdOf, onTerminalsChange, openClaudeIn, registerTerminals, setCloseTerminalsOnQuit, startTerminalHost, terminalConfigDir, typingTarget } from './terminals'
+import { dockIdOf, keyOfDock, onTerminalsChange, openClaudeIn, registerTerminals, setCloseTerminalsOnQuit, startTerminalHost, terminalConfigDir, typingTarget } from './terminals'
 import { registerSessionHistory } from './sessionHistory'
 import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
@@ -303,6 +303,7 @@ export function watchCore(): void {
       // A scheduled prompt found no session of its agent in its project: start one there.
       const change = event as { type?: string; routineId?: unknown }
       if (change.type === 'routine-open') void openForRoutine(change.routineId)
+      if (change.type === 'delegate-open') void openForDelegation((event as { delegationId?: unknown }).delegationId)
       send('bridge:change', event)
       scheduleScan()
       agentDelivery?.onBridgeEvent(event)
@@ -319,12 +320,24 @@ async function openForRoutine(routineId: unknown): Promise<void> {
   if (!reply.proven) return
   const routine = ((reply.json as unknown as BridgeState).routines ?? []).find(r => r.id === routineId)
   if (!routine?.cwd) return
-  if (!routine.agent || routine.agent === 'claude') {
-    openClaudeIn(routine.cwd)
-    return
-  }
-  const opened = await openAgentIn(call, routine.cwd, routine.agent)
+  const opened = !routine.agent || routine.agent === 'claude' ? openClaudeIn(routine.cwd) : await openAgentIn(call, routine.cwd, routine.agent)
   if ('error' in opened) console.error('routine terminal:', opened.error)
+  else send('term:opened', opened)
+}
+
+// The terminal for work a session handed to another agent (the delegate tool): that agent in the
+// delegating session's folder, then its key to the bridge, which gives the work to the session that
+// comes up in it. Only for work a bridge that proved the key lists, as for a routine.
+async function openForDelegation(delegationId: unknown): Promise<void> {
+  if (typeof delegationId !== 'number') return
+  const reply = await call('GET', '/state')
+  if (!reply.proven) return
+  const work = ((reply.json as unknown as BridgeState).delegations ?? []).find(d => d.id === delegationId)
+  if (!work?.cwd || work.status !== 'waiting') return
+  const opened = work.agent === 'claude' ? openClaudeIn(work.cwd) : await openAgentIn(call, work.cwd, work.agent)
+  const key = 'error' in opened ? undefined : keyOfDock(opened.id)
+  await call('POST', `/delegations/${delegationId}/opened`, key ? { terminal: key } : { error: 'error' in opened ? opened.error : 'no terminal key' })
+  if (!('error' in opened)) send('term:opened', opened)
 }
 
 // The page's calls (window.ide), each through the shell's guarded IPC.

@@ -16,7 +16,7 @@ import { langFromLocale, langOfState, osLocale, t, type Key, type Lang, type Var
 import { waitApproval } from '../mod/hooks/approval.ts'
 import { codexArgv, watchCodexUsage } from './codexUsage.ts'
 import { HOOK_WAIT_MS, PASS, copilotAnswer, hookSocket, sameTerminal, type HookAnswer, type HookAsk, type HookEvent, type HookEventReply, type HookRequest } from './permission.ts'
-import { BROWSER_TOOLS, cancelText, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, worktreeRoot, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
+import { BROWSER_TOOLS, cancelText, delegatedText, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, worktreeRoot, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
 
 export { takenText }
 
@@ -274,6 +274,11 @@ export function createSession(options: Options, deps: Deps) {
       const reply = await call('POST', '/messages', { sessionId, to: a.to, text: a.text, replyTo: a.replyTo, expectsReply, requestKey })
       if (!reply.ok) return { text: say('tool.sendFailed', { error: errorText(reply) }), isError: true }
       return { text: sentText(reply.json, expectsReply, lang) }
+    }
+    if (name === 'delegate') {
+      const reply = await call('POST', '/delegations', { sessionId, agent: a.agent, task: a.task, requestKey })
+      if (!reply.ok) return { text: say('tool.delegateFailed', { error: errorText(reply) }), isError: true }
+      return { text: delegatedText(reply.json, String(a.agent ?? ''), lang) }
     }
     if (name === 'cancel_request') {
       const reply = await call('POST', '/messages/cancel', { sessionId, ids: a.ids, reason: a.reason })

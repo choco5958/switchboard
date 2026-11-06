@@ -1,7 +1,7 @@
 // The sidebar's rows under each project: one per app terminal, and one per session that runs
 // outside the app but still matters (connected, or with a question, permission ask or running
 // task). A row says what it needs from the person first. Pure, so the rules are testable.
-import type { Approval, Question, Session, Task, TermInfo } from '../../shared/types'
+import type { Approval, Delegation, Question, Session, Task, TermInfo } from '../../shared/types'
 import { isRunning } from '../../shared/projects'
 import { terminalOf } from './taskInfo'
 
@@ -20,6 +20,7 @@ export type SessionRow = {
   task?: Task
   questions: Question[] // pending, oldest first
   approvals: Approval[] // pending, oldest first
+  delegatedBy?: string // the project of the session that handed this one its work (delegate)
 }
 
 export type RowInput = {
@@ -32,6 +33,7 @@ export type RowInput = {
   stalled: ReadonlySet<string>
   limited: ReadonlySet<string>
   projectOf: (cwd: string, fallback: string) => string
+  delegations?: readonly Delegation[]
 }
 
 export const termKey = (id: string) => `term:${id}`
@@ -84,7 +86,11 @@ export function sessionRows(input: RowInput): SessionRow[] {
                   : task && isRunning(task)
                     ? 'working'
                     : 'idle'
-    return { key, project, cwd, title: task?.title || term?.title || agent, agent, state, session, term, task, questions, approvals }
+    // The newest work handed to this session, by the session that gave it.
+    const given = session ? [...(input.delegations ?? [])].reverse().find(d => d.session_id === session.id) : undefined
+    const giver = given ? input.sessions.find(s => s.id === given.from_session) : undefined
+    const delegatedBy = given ? (giver?.project ?? given.project) : undefined
+    return { key, project, cwd, title: task?.title || term?.title || agent, agent, state, session, term, task, questions, approvals, ...(delegatedBy ? { delegatedBy } : {}) }
   }
 
   const rows = input.terms.map(term => row(termKey(term.id), inTerm.get(term.id), term))
