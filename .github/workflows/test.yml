@@ -77,4 +77,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: node scripts/build-node.ts
       - run: npm install -g @github/copilot@1.0.105
-      - run: pnpm exec jiti scripts/relay-check.ts
+      # jiti reads the app's TypeScript as it is (imports without extensions); it is not a dependency.
+      - run: npx -y jiti@2.6.1 scripts/relay-check.ts
