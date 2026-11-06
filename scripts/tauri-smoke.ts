@@ -79,7 +79,7 @@ export async function seed(env: Env, home: string, scratch: string): Promise<voi
 }
 
 // What runs in the app's page once it has loaded. Each step reports one line; "done" ends it.
-function pageScript(scratch: string, page: string): string {
+export function pageScript(scratch: string, page: string): string {
   return `(async () => {
   const report = text => window.__TAURI_INTERNALS__.invoke('capture_log', { text })
   const invoke = (command, args) => window.__TAURI_INTERNALS__.invoke(command, args)
@@ -107,9 +107,19 @@ function pageScript(scratch: string, page: string): string {
   await step('terminal', async () => {
     const term = await window.ide.termOpen(${JSON.stringify(scratch)}, false, 100, 30)
     if (term.error) throw new Error(term.error)
-    await sleep(1500)
-    window.ide.termWrite(term.id, ${JSON.stringify(WINDOWS ? 'echo "smoke-$(40+2)"\r' : 'echo smoke-$((40+2))\r')})
-    await until(async () => (await window.ide.termBuffer(term.id)).data.includes('smoke-42'))
+    // The shell's first output (its prompt) says it reads input: PowerShell on a slow runner (Windows
+    // ARM) took longer than a fixed wait, and what was typed before it was ready was lost. Typed
+    // again if nothing came back.
+    const output = async () => (await window.ide.termBuffer(term.id)).data
+    await until(async () => (await output()).trim().length > 0, 60000).catch(() => undefined)
+    await sleep(500)
+    const line = ${JSON.stringify(WINDOWS ? 'echo "smoke-$(40+2)"\r' : 'echo smoke-$((40+2))\r')}
+    let echoed = false
+    for (let typed = 0; typed < 3 && !echoed; typed++) {
+      window.ide.termWrite(term.id, line)
+      echoed = await until(async () => (await output()).includes('smoke-42'), 15000).then(() => true, () => false)
+    }
+    if (!echoed) throw new Error('timed out: ' + JSON.stringify((await output()).slice(-300)))
     await window.ide.termClose(term.id)
     return 'echoed'
   })
