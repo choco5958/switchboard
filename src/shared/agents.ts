@@ -36,6 +36,9 @@ export type AgentPreset = {
   dataFolder?: boolean
   // Args that depend on the installed version (`bin --version`, null when unknown).
   versionArgs?: (version: string | null) => string[]
+  // How the CLI goes on with a past conversation of its own, by id (src/main/agentHistory.ts).
+  // They come first on the line: Codex's is a subcommand.
+  resumeArgs?: (id: string) => string[]
 }
 
 const json = (value: unknown) => JSON.stringify(value)
@@ -145,6 +148,7 @@ export const PRESETS: AgentPreset[] = [
     install: 'npm i -g @openai/codex',
     docs: 'https://developers.openai.com/codex/mcp',
     how: 'agents.how.codex',
+    resumeArgs: id => ['resume', id],
     // The value of -c is TOML.
     mcp: server => ({
       args: ['-c', `mcp_servers.${MCP_NAME}.command=${tomlString(server.command)}`, '-c', `mcp_servers.${MCP_NAME}.args=[${server.args.map(tomlString).join(',')}]`],
@@ -158,6 +162,7 @@ export const PRESETS: AgentPreset[] = [
     install: 'npm i -g @google/gemini-cli',
     docs: 'https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md',
     how: 'agents.how.gemini',
+    resumeArgs: id => ['--resume', id],
     mcp: (server, configFile) => ({
       // `trust`: Switchboard's own tools run without a confirmation, as they do in Claude Code
       // (the mod's tools); the CLI still asks for its own shell and file tools. open_in_ide's
@@ -175,6 +180,7 @@ export const PRESETS: AgentPreset[] = [
     install: 'npm i -g @qwen-code/qwen-code@latest',
     docs: 'https://github.com/QwenLM/qwen-code',
     how: 'agents.how.qwen',
+    resumeArgs: id => ['--resume', id],
     mcp: (server, configFile) => ({
       args: ['--mcp-config', configFile],
       file: { mcpServers: { [MCP_NAME]: { command: server.command, args: server.args, trust: true } } },
@@ -191,6 +197,7 @@ export const PRESETS: AgentPreset[] = [
     install: 'npm i -g @github/copilot',
     docs: 'https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference',
     how: 'agents.how.copilot',
+    resumeArgs: id => ['--resume', id],
     mcp: (server, configFile) => ({
       args: ['--additional-mcp-config', `@${configFile}`],
       file: { mcpServers: { [MCP_NAME]: { type: 'local', command: server.command, args: server.args, tools: ['*'] } } },
@@ -409,9 +416,9 @@ export function geminiExtension(server: McpServer, hook: McpServer | undefined, 
 
 // A policy for one run (--policy): Switchboard's tools run without a confirmation, as they do in
 // Claude Code; Gemini still asks for its own. An extension's server cannot be given `trust`.
-export function geminiLaunch(policyFile: string, abilities: readonly string[], platform: string = process.platform): Launch {
+export function geminiLaunch(policyFile: string, abilities: readonly string[], platform: string = process.platform, resume?: string): Launch {
   return {
-    line: [commandWord('gemini', platform), '--policy', shellWord(policyFile, platform)].join(' '),
+    line: [commandWord('gemini', platform), ...(resume ? ['--resume', resume] : []), '--policy', shellWord(policyFile, platform)].join(' '),
     env: { SWITCHBOARD_ABILITIES: abilities.join(','), [EXTENSION_RUN_ENV]: '1' },
     files: [{ path: policyFile, content: `[[rule]]\ntoolName = "*"\nmcpName = "${MCP_NAME}"\ndecision = "allow"\npriority = 100\n` }],
   }
@@ -455,9 +462,10 @@ export function hookAttaches(preset: AgentPreset, hook: McpServer, version: stri
   return (got.args?.length ?? 0) > 0 || got.env !== undefined || got.file !== undefined || got.config !== undefined || (got.files?.length ?? 0) > 0
 }
 
-export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform, hook?: McpServer, version: string | null = null): Launch {
+// `resume`: a past conversation's id, checked by the caller (resumableId).
+export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform, hook?: McpServer, version: string | null = null, resume?: string): Launch {
   const got = preset.mcp?.(server, configFile) ?? {}
-  const pinned = preset.versionArgs?.(version) ?? []
+  const pinned = [...(resume && preset.resumeArgs ? preset.resumeArgs(resume) : []), ...(preset.versionArgs?.(version) ?? [])]
   const hookFile = hookFileOf(configFile)
   const hooked = hook && preset.permissionHook ? preset.permissionHook(hook, { hookFile, injected: got, version }) : {}
   const words = [commandWord(preset.bin, platform), ...[...pinned, ...(got.args ?? []), ...(hooked.args ?? [])].map(word => shellWord(word, platform))]

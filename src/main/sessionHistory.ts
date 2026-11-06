@@ -4,11 +4,13 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { PastSession, PastSessions } from '../shared/types'
 import { resumableId } from '../shared/agents'
+import { agentSources } from './agentHistory'
 
-// Past Claude Code conversations on this computer, for the past sessions page: read from the
-// transcripts Claude Code keeps at <config>/projects/<folder>/<session id>.jsonl. Read only:
-// nothing here writes a file or sends anything anywhere. A transcript can run to hundreds of
-// megabytes, so only its head (the first prompt) and its tail (the latest words) are read.
+// Past conversations on this computer, for the past sessions page: Claude Code's, read from the
+// transcripts it keeps at <config>/projects/<folder>/<session id>.jsonl, and the other CLIs' that
+// can be resumed by id (agentHistory.ts). Read only: nothing here writes a file or sends anything
+// anywhere. A transcript can run to hundreds of megabytes, so only its head (the first prompt) and
+// its tail (the latest words) are read.
 
 const HEAD_BYTES = 128 * 1024
 const TAIL_BYTES = 64 * 1024
@@ -42,7 +44,7 @@ type Line = {
 const WRAPPED = /^<[a-z][a-z0-9]*(?:-[a-z0-9]+)+[\s>]/
 const INTERRUPTED = /^\[Request interrupted by user/
 
-const oneLine = (text: string, max: number): string => {
+export const oneLine = (text: string, max: number): string => {
   const flat = text.replace(/\s+/g, ' ').trim()
   return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat
 }
@@ -69,16 +71,16 @@ function replyOf(record: Line): string {
 }
 
 // Whole lines only: a chunk that starts or ends inside a line drops that part line.
-function recordsOf(text: string, cutStart: boolean, cutEnd: boolean): Line[] {
+export function recordsOf<T = Line>(text: string, cutStart: boolean, cutEnd: boolean): T[] {
   const lines = text.split('\n')
   if (cutStart) lines.shift()
   if (cutEnd) lines.pop()
-  const records: Line[] = []
+  const records: T[] = []
   for (const line of lines) {
     if (!line.trim()) continue
     try {
       const record = JSON.parse(line) as unknown
-      if (record && typeof record === 'object' && !Array.isArray(record)) records.push(record as Line)
+      if (record && typeof record === 'object' && !Array.isArray(record)) records.push(record as T)
     } catch {
       // A broken or half-written line: skip it.
     }
@@ -112,10 +114,10 @@ export function parseTranscript(input: { id: string; folder: string; head: strin
   let snippet = ''
   for (let i = all.length - 1; i >= 0 && !snippet; i--) snippet = promptOf(all[i]!) || replyOf(all[i]!)
   // Only part of a long file was read: the count grows by the share of bytes read.
-  const read = Buffer.byteLength(input.head) + Buffer.byteLength(input.tail)
-  if (!input.whole && read > 0 && read < input.size) messages = Math.round((messages * input.size) / read)
+  messages = countAll(messages, input)
   return {
     id: input.id,
+    agent: 'claude',
     cwd,
     project: cwd ? basename(cwd) : input.folder,
     folder: input.folder,
@@ -128,7 +130,16 @@ export function parseTranscript(input: { id: string; folder: string; head: strin
   }
 }
 
-type Found = { path: string; id: string; folder: string; size: number; mtime: number }
+// `side`: what the listing learned besides the file (a name a CLI keeps apart, its project folder).
+export type Found = { path: string; id: string; folder: string; size: number; mtime: number; side?: { title?: string; cwd?: string } }
+export type Ends = { head: string; tail: string; whole: boolean }
+// Where one CLI keeps its conversations, and how one reads.
+export type Source = { files: () => Promise<Found[]>; parse: (input: Found & Ends) => PastSession | null }
+// The share of a long file's records that were read, to count all of them.
+export function countAll(count: number, input: { head: string; tail: string; whole: boolean; size: number }): number {
+  const read = Buffer.byteLength(input.head) + Buffer.byteLength(input.tail)
+  return !input.whole && read > 0 && read < input.size ? Math.round((count * input.size) / read) : count
+}
 
 async function transcripts(root: string): Promise<Found[]> {
   const found: Found[] = []
@@ -165,7 +176,7 @@ async function transcripts(root: string): Promise<Found[]> {
   return found
 }
 
-async function readEnds(path: string, size: number): Promise<{ head: string; tail: string; whole: boolean }> {
+async function readEnds(path: string, size: number): Promise<Ends> {
   const file = await open(path, 'r')
   try {
     const whole = size <= HEAD_BYTES + TAIL_BYTES
@@ -181,33 +192,45 @@ async function readEnds(path: string, size: number): Promise<{ head: string; tai
 }
 
 // A transcript read once is kept until its file changes (another size or time).
-const cache = new Map<string, { size: number; mtime: number; session: PastSession | null }>()
+const cache = new Map<string, { size: number; mtime: number; title?: string; session: PastSession | null }>()
 
-// The newest transcripts, newest first. total: how many transcripts there are in all.
-export async function loadSessions(configDir = claudeConfigDir()): Promise<{ total: number; sessions: PastSession[] }> {
-  const found = (await transcripts(join(configDir, 'projects'))).sort((a, b) => b.mtime - a.mtime)
+export const claudeSource = (configDir: string): Source => ({
+  files: () => transcripts(join(configDir, 'projects')),
+  parse: input => parseTranscript(input),
+})
+
+// Claude Code's newest transcripts, newest first. total: how many transcripts there are in all.
+export function loadSessions(configDir = claudeConfigDir()): Promise<{ total: number; sessions: PastSession[] }> {
+  return loadFrom([claudeSource(configDir)])
+}
+
+// The newest conversations of all the sources, newest first.
+export async function loadFrom(sources: readonly Source[]): Promise<{ total: number; sessions: PastSession[] }> {
+  const listed = await Promise.all(sources.map(async source => (await source.files().catch(() => [])).map(file => ({ file, source }))))
+  const found = listed.flat().sort((a, b) => b.file.mtime - a.file.mtime)
   const newest = found.slice(0, MAX_FILES)
   const sessions: (PastSession | null)[] = new Array(newest.length).fill(null)
   for (let start = 0; start < newest.length; start += READ_AT_ONCE) {
     await Promise.all(
-      newest.slice(start, start + READ_AT_ONCE).map(async (file, offset) => {
+      newest.slice(start, start + READ_AT_ONCE).map(async ({ file, source }, offset) => {
         const kept = cache.get(file.path)
-        if (kept && kept.size === file.size && kept.mtime === file.mtime) {
+        // A name a CLI keeps apart (Codex's index) may change while the file does not.
+        if (kept && kept.size === file.size && kept.mtime === file.mtime && kept.title === file.side?.title) {
           sessions[start + offset] = kept.session
           return
         }
         let session: PastSession | null = null
         try {
-          session = parseTranscript({ ...file, ...(await readEnds(file.path, file.size)) })
+          session = source.parse({ ...file, ...(await readEnds(file.path, file.size)) })
         } catch {
           // Unreadable: left out.
         }
-        cache.set(file.path, { size: file.size, mtime: file.mtime, session })
+        cache.set(file.path, { size: file.size, mtime: file.mtime, title: file.side?.title, session })
         sessions[start + offset] = session
       }),
     )
   }
-  const live = new Set(newest.map(file => file.path))
+  const live = new Set(newest.map(({ file }) => file.path))
   for (const path of cache.keys()) if (!live.has(path)) cache.delete(path)
   return { total: found.length, sessions: sessions.filter((s): s is PastSession => s !== null) }
 }
@@ -228,8 +251,9 @@ export function searchSessions(sessions: readonly PastSession[], query: string, 
 const FRESH_MS = 3_000
 let recent: { dir: string; at: number; load: ReturnType<typeof loadSessions> } | null = null
 
-export async function sessionHistory(query: string, configDir = claudeConfigDir(), now = Date.now()): Promise<PastSessions> {
-  if (!recent || recent.dir !== configDir || now - recent.at > FRESH_MS) recent = { dir: configDir, at: now, load: loadSessions(configDir) }
+// `others`: the other CLIs' sources (agentHistory.ts agentSources), none by default.
+export async function sessionHistory(query: string, configDir = claudeConfigDir(), now = Date.now(), others: readonly Source[] = []): Promise<PastSessions> {
+  if (!recent || recent.dir !== configDir || now - recent.at > FRESH_MS) recent = { dir: configDir, at: now, load: loadFrom([claudeSource(configDir), ...others]) }
   const { total, sessions } = await recent.load
   return { total, sessions: searchSessions(sessions, typeof query === 'string' ? query.slice(0, 500) : '') }
 }
@@ -237,5 +261,5 @@ export async function sessionHistory(query: string, configDir = claudeConfigDir(
 // configDir: the folder the app's Claude terminals use (terminals.ts), read at each call so
 // `claude --resume` finds the same transcripts the list showed.
 export function registerSessionHistory(ipc: Ipc, configDir: () => string | undefined): void {
-  ipc.handle('sessions:history', (_e, query: string) => sessionHistory(query, configDir() || claudeConfigDir()))
+  ipc.handle('sessions:history', (_e, query: string) => sessionHistory(query, configDir() || claudeConfigDir(), Date.now(), agentSources(process.env)))
 }

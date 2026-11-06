@@ -139,6 +139,7 @@ describe('loadSessions', () => {
 describe('searchSessions', () => {
   const at = (id: string, updatedAt: number, fields: Partial<PastSession>): PastSession => ({
     id,
+    agent: 'claude',
     cwd: '',
     project: '',
     folder: '',

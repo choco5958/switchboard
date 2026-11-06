@@ -114,7 +114,7 @@ export function useTerminals({ onFolder, onOpened, slotFolder }: { onFolder: (cw
     const made =
       kind === 'claude' || kind === 'shell'
         ? await window.ide.termOpen(folder, kind === 'claude', cols, rows, slot, resume)
-        : await window.ide.termOpenAgent(folder, kind, cols, rows)
+        : await window.ide.termOpenAgent(folder, kind, cols, rows, resume)
     if ('error' in made) {
       setError(made.error)
       return null
@@ -139,11 +139,12 @@ export function useTerminals({ onFolder, onOpened, slotFolder }: { onFolder: (cw
   termsRef.current = terms
   useEffect(() => {
     const on = (event: Event) => {
-      const { cwd, session } = (event as CustomEvent<{ cwd: string; session: string }>).detail
+      // agent: the CLI the conversation was (agentHistory.ts); Claude Code when left out.
+      const { cwd, session, agent = 'claude' } = (event as CustomEvent<{ cwd: string; session: string; agent?: string }>).detail
       const earlier = resumed.current.get(session)
       const still = earlier && Date.now() - earlier.at < RESUME_WAIT_MS ? termsRef.current.find(term => term.id === earlier.term && term.alive) : undefined
       if (still) return latest.current.onOpened(still)
-      void openIn(cwd, 'claude', undefined, session).then(made => {
+      void openIn(cwd, agent, undefined, session).then(made => {
         if (made) resumed.current.set(session, { term: made.id, at: Date.now() })
       })
     }

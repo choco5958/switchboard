@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, geminiExtension, geminiLaunch, CUSTOM_AGENTS_KEY, PRESETS, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
+import { CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, resumableId, geminiExtension, geminiLaunch, CUSTOM_AGENTS_KEY, PRESETS, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
@@ -134,13 +134,18 @@ const TRUSTED_AHEAD = ['codex', 'copilot', 'cursor']
 const FOLLOWS = ['copilot', 'qwen', 'opencode', 'crush', 'codex']
 const PROMPTS = ['qwen', 'codex']
 
+// The CLIs a setting of the person's changes the run of: folder trust, and Gemini's extension.
+const SETTINGS_MATTER = [...TRUSTED_AHEAD, 'gemini']
+
 // A terminal running an agent CLI other than Claude Code (a preset or the person's own), with
 // the Switchboard MCP server attached to that run. The dock opens these, and so does a
-// scheduled prompt whose agent has no session to go to.
-export async function openAgentIn(call: Call, cwd: string, agentId: string, cols = 100, rows = 30): Promise<TermInfo | { error: string }> {
+// scheduled prompt whose agent has no session to go to. `resume`: a past conversation of the
+// CLI's to go on with (agentHistory.ts), for a preset that resumes by id.
+export async function openAgentIn(call: Call, cwd: string, agentId: string, cols = 100, rows = 30, resume?: string): Promise<TermInfo | { error: string }> {
   const preset = presetOf(String(agentId))
-  // The settings matter for a custom CLI, and for the CLIs whose folder trust the app records.
-  const state = !preset || TRUSTED_AHEAD.includes(preset.id) ? await call('GET', '/state') : null
+  if (resume !== undefined && (!preset?.resumeArgs || !resumableId(resume))) return { error: t('term.badResume') }
+  // The settings matter for a custom CLI, and for the CLIs SETTINGS_MATTER names.
+  const state = !preset || SETTINGS_MATTER.includes(preset.id) ? await call('GET', '/state') : null
   const settings = state?.proven ? (state.json.settings as Record<string, unknown> | undefined) : undefined
   const custom = checkedCustom(customAgents(settings?.[CUSTOM_AGENTS_KEY]), String(agentId))
   if (!preset && !custom) return { error: t('agents.unknown', { id: String(agentId) }) }
@@ -212,13 +217,13 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
         ...(cli ? ['usage'] : []),
       ]
       if (viaExtension) {
-        const launch = geminiLaunch(join(DIR, `${key}-gemini.toml`), relays ? ['turnEnd', 'activity', 'prompt'] : [])
+        const launch = geminiLaunch(join(DIR, `${key}-gemini.toml`), relays ? ['turnEnd', 'activity', 'prompt'] : [], process.platform, resume)
         writeFiles(launch)
         return { env: launch.env, line: launch.line }
       }
       const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli, abilities)
       const configFile = preset?.dataFolder ? join(dataFolderOf(DIR, preset.id, folder), `${preset.id}.json`) : join(DIR, `${key}-${id}.json`)
-      const launch = preset ? presetLaunch(preset, server, configFile, process.platform, hooked ? hook : undefined, version) : customLaunch(custom!, server, configFile)
+      const launch = preset ? presetLaunch(preset, server, configFile, process.platform, hooked ? hook : undefined, version, resume) : customLaunch(custom!, server, configFile)
       writeFiles(launch)
       return { env: launch.env, line: launch.line }
     },
@@ -230,5 +235,7 @@ export function registerAgentTerms(ipcMain: Ipc, call: Call): void {
 
   ipcMain.handle('agents:detect', (_e, force: boolean) => detect(force === true))
 
-  ipcMain.handle('term:openAgent', (_e, cwd: string, agentId: string, cols: number, rows: number) => openAgentIn(call, cwd, agentId, cols, rows))
+  ipcMain.handle('term:openAgent', (_e, cwd: string, agentId: string, cols: number, rows: number, resume?: string) =>
+    openAgentIn(call, cwd, agentId, cols, rows, typeof resume === 'string' ? resume : undefined),
+  )
 }

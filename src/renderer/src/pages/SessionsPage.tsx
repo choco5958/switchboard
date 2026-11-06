@@ -5,12 +5,13 @@ import { RESUME_SESSION } from '../parts'
 import { t } from '../../../shared/i18n'
 import { Icon } from '../Icons'
 import { Badge, Button, Card, EmptyState, Input, Notice } from '../ui'
+import { agentLabel } from '../../../shared/agents'
 
 // Asks again after a short pause in typing, not at every key.
 const TYPING_PAUSE_MS = 150
 
 function resume(session: PastSession) {
-  window.dispatchEvent(new CustomEvent(RESUME_SESSION, { detail: { cwd: session.cwd, session: session.id } }))
+  window.dispatchEvent(new CustomEvent(RESUME_SESSION, { detail: { cwd: session.cwd, session: session.id, agent: session.agent } }))
 }
 
 function SessionItem({ session, running }: { session: PastSession; running: boolean }) {
@@ -22,6 +23,7 @@ function SessionItem({ session, running }: { session: PastSession; running: bool
           <div className="past-session-title">{title}</div>
           {session.snippet && session.snippet !== session.title && <div className="past-session-snippet quiet small">{session.snippet}</div>}
           <div className="past-session-meta small quiet">
+            <Badge shape="pill">{agentLabel(session.agent)}</Badge>
             <span title={session.cwd || session.folder}>{session.project}</span>
             {session.branch && (
               <Badge mono className="past-session-branch">
@@ -40,7 +42,7 @@ function SessionItem({ session, running }: { session: PastSession; running: bool
           <Button
             size="sm"
             disabled={!session.cwd}
-            title={session.cwd ? t('sessions.resumeTitle', { cwd: session.cwd }) : t('sessions.noCwd')}
+            title={session.cwd ? t('sessions.resumeTitle', { cwd: session.cwd, agent: agentLabel(session.agent) }) : t('sessions.noCwd')}
             onClick={() => resume(session)}
           >
             <Icon name="dock" size="sm" />
@@ -52,7 +54,7 @@ function SessionItem({ session, running }: { session: PastSession; running: bool
   )
 }
 
-// Past Claude Code conversations on this computer, to find one and continue it in the dock
+// Past conversations on this computer (Claude Code's and the CLIs' that resume by id), to find one and continue it in the dock
 // (Dock.tsx handles RESUME_SESSION). running: ids of Claude Code sessions connected now, which
 // show as running instead of offering a second copy of the same conversation. Optional.
 export function SessionsPage({ running = [] }: { running?: readonly string[] }) {
@@ -111,7 +113,7 @@ export function SessionsPage({ running = [] }: { running?: readonly string[] }) 
           </p>
           <ul className="past-sessions">
             {sessions.map(session => (
-              <SessionItem key={session.id} session={session} running={running.includes(session.id)} />
+              <SessionItem key={`${session.agent}:${session.id}`} session={session} running={session.agent === 'claude' && running.includes(session.id)} />
             ))}
           </ul>
         </>

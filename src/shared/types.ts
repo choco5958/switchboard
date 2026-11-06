@@ -217,7 +217,7 @@ export type IdeApi = {
   termList: () => Promise<TermInfo[]>
   termOpen: (cwd: string, claude: boolean, cols: number, rows: number, slot?: number, resume?: string) => Promise<TermInfo | { error: string }>
   // Agent CLIs other than Claude Code: a terminal running one, and which ones are installed.
-  termOpenAgent: (cwd: string, agentId: string, cols: number, rows: number) => Promise<TermInfo | { error: string }>
+  termOpenAgent: (cwd: string, agentId: string, cols: number, rows: number, resume?: string) => Promise<TermInfo | { error: string }>
   detectAgents: (force?: boolean) => Promise<AgentDetect>
   termBuffer: (id: string) => Promise<{ data: string; seq: number }>
   termWrite: (id: string, data: string) => void
@@ -244,6 +244,7 @@ export type IdeApi = {
 // messages counts prompts and replies; approximate when only the ends of a long file were read.
 export type PastSession = {
   id: string
+  agent: string // the CLI it was: 'claude', or a preset's id (agents.ts) that resumes by id
   cwd: string
   project: string
   folder: string
