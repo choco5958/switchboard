@@ -263,7 +263,8 @@ export const PRESETS: AgentPreset[] = [
     id: 'opencode',
     label: 'OpenCode',
     bin: 'opencode',
-    install: 'npm i -g opencode-ai',
+    // opencode-ai on npm is OpenCode 1; OpenCode 2, which the relay and turn hooks need, is @opencode/cli.
+    install: 'npm i -g @opencode/cli',
     docs: 'https://opencode.ai/docs/mcp-servers/',
     how: 'agents.how.opencode',
     resumeArgs: id => ['--session', id],

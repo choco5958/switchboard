@@ -202,7 +202,7 @@ const SPECS: Record<string, Spec> = {
   },
   // OpenCode with an OpenAI-compatible provider and edits that ask (OpenCode 2's rules).
   opencode: {
-    npm: 'opencode-ai',
+    npm: '@opencode/cli',
     bin: 'opencode',
     tty: true,
     tool: file => ({ name: 'write', args: { path: file, content: 'hi' } }),
