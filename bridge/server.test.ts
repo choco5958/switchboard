@@ -685,6 +685,27 @@ describe('agent CLIs other than Claude Code', () => {
     assert.equal((bridge.db.prepare('select abilities from sessions where id = ?').get('ab-turn') as { abilities: string }).abilities, 'turnEnd,approvals')
   })
 
+  test('a turn end with no ids answers what went into the session before the turn started', async () => {
+    await call('POST', '/sessions', { id: 'te-ask', cwd: '/w/te' })
+    await call('POST', '/sessions', { id: 'te-cli', cwd: '/w/te', agent: 'copilot', abilities: ['turnEnd'] })
+    const sent = (await call('POST', '/messages', { sessionId: 'te-ask', to: ['te-cli'], text: '빌드 결과 알려 줘' })).json
+    // The app types it in (taken), then the person's prompt starts the turn.
+    await call('POST', '/deliveries/take', { sessionId: 'te-cli' })
+    const since = Date.now()
+    // A message that comes after the turn started is not this turn's.
+    const later = (await call('POST', '/messages', { sessionId: 'te-ask', to: ['te-cli'], text: '하나 더' })).json
+    await new Promise(r => setTimeout(r, 2100))
+    await call('POST', '/deliveries/take', { sessionId: 'te-cli' })
+    const end = (await call('POST', '/messages/turn-end', { sessionId: 'te-cli', answer: '빌드 통과', since })).json
+    assert.equal(end.relayed, 1)
+    const reply = (await call('POST', '/deliveries/take', { sessionId: 'te-ask' })).json.items as { text: string }[]
+    assert.equal(reply.length, 1)
+    assert.match(reply[0]!.text, /빌드 통과/)
+    // The later one waits for its own turn, and is answered at the next end.
+    assert.equal((await call('POST', '/messages/turn-end', { sessionId: 'te-cli', answer: '하나 더 끝' })).json.relayed, 1)
+    assert.notEqual(sent.ids[0], later.ids[0])
+  })
+
   test('with hold, a prompt command stays open until the caller closes it after typing', async () => {
     await call('POST', '/sessions', { id: 'cx4', cwd: '/work/cli-app', agent: 'codex' })
     const report = (await call('POST', '/commands', { sessionId: 'cx4', kind: 'report' })).json.id

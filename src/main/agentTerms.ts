@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PRESETS, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverride, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
+import { CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PRESETS, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverride, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
@@ -183,7 +183,15 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
       // what is found is a shim the server cannot start.
       const cli = preset?.id === 'codex' && process.platform !== 'win32' ? cliPath : undefined
       // What this run adds beyond the tools, for the bridge (bridge/server.ts ABILITIES).
-      const abilities = [...(hooked && hook ? ['approvals'] : []), ...(cli ? ['usage'] : [])]
+      // Copilot's, Qwen's and OpenCode's hooks follow the turn as well; Qwen adds to the prompt.
+      const attached = !!(hooked && hook && preset && hookAttaches(preset, hook, version))
+      const follows = attached && !!preset && ['copilot', 'qwen', 'opencode'].includes(preset.id)
+      const abilities = [
+        ...(attached ? ['approvals'] : []),
+        ...(follows ? ['turnEnd', 'activity'] : []),
+        ...(follows && preset?.id === 'qwen' ? ['prompt'] : []),
+        ...(cli ? ['usage'] : []),
+      ]
       const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli, abilities)
       const configFile = preset?.dataFolder ? join(dataFolderOf(DIR, preset.id, folder), `${preset.id}.json`) : join(DIR, `${key}-${id}.json`)
       const launch = preset ? presetLaunch(preset, server, configFile, process.platform, hooked ? hook : undefined, version) : customLaunch(custom!, server, configFile)

@@ -7,15 +7,15 @@ import { randomUUID } from 'node:crypto'
 import { request } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { mkdirSync, rmSync } from 'node:fs'
+import { closeSync, fstatSync, mkdirSync, openSync, readSync, rmSync } from 'node:fs'
 import { createServer, type Server } from 'node:net'
 import { createInterface } from 'node:readline'
 import { SESSION_HEADER, requestTarget, resolveEndpoint, startCommand, usesTcp } from '../bridge/endpoint.ts'
-import { takenText } from '../mod/hooks/batch.ts'
+import { pendingLine, takenText } from '../mod/hooks/batch.ts'
 import { langFromLocale, langOfState, osLocale, t, type Key, type Lang, type Vars } from '../mod/hooks/i18n.ts'
 import { waitApproval } from '../mod/hooks/approval.ts'
 import { codexArgv, watchCodexUsage } from './codexUsage.ts'
-import { HOOK_WAIT_MS, PASS, hookSocket, sameTerminal, type HookAnswer, type HookAsk, type HookRequest } from './permission.ts'
+import { HOOK_WAIT_MS, PASS, copilotAnswer, hookSocket, sameTerminal, type HookAnswer, type HookAsk, type HookEvent, type HookEventReply, type HookRequest } from './permission.ts'
 import { BROWSER_TOOLS, cancelText, openBody, openResultText, openToolDef, peersText, sentText, toolDefs, worktreeRoot, type Peer, type ToolDef } from '../mod/hooks/tools.ts'
 
 export { takenText }
@@ -391,11 +391,62 @@ export function createSession(options: Options, deps: Deps) {
     return PASS
   }
 
+  // The turn as the CLI's hooks tell it (docs/에이전트-대등하게.md), followed as the mod follows
+  // Claude Code's: working or idle and open tools (/sessions/activity), and at the end the turn's
+  // last answer for what went in with it (/messages/turn-end, which picks those out itself).
+  let turnAt = 0
+  let openTools = 0
+  const activity = () =>
+    void call('POST', '/sessions/activity', { sessionId, state: turnAt ? 'working' : 'idle', openTools }).catch(() => undefined)
+  // The questions of this session still waiting, for the prompt the turn starts with (as the mod's).
+  async function pendingContext(): Promise<string | undefined> {
+    const state = await deps.call('GET', '/state').catch(() => undefined)
+    if (!state?.ok) return undefined
+    lang = langOfState(state.json)
+    type Pending = { id: number; session_id: string; task_title: string; question: string; status: string; recommend: string; options: string }
+    const questions = ((state.json.questions ?? []) as Pending[]).filter(q => q.session_id === sessionId && q.status === 'pending')
+    return questions.length > 0 ? `${say('mod.pending')}\n${questions.map(q => pendingLine(q, lang)).join('\n')}` : undefined
+  }
+  async function onEvent(event: HookEvent): Promise<HookEventReply> {
+    if (!(await ready())) return {}
+    if (event.kind === 'turnStart') {
+      // Codex and Qwen tell it again within a turn; the turn started at the first.
+      if (!turnAt) {
+        turnAt = Date.now()
+        openTools = 0
+        activity()
+      }
+      const context = options.abilities.includes('prompt') ? await pendingContext() : undefined
+      return context ? { context } : {}
+    }
+    if (event.kind === 'toolStart' || event.kind === 'toolEnd') {
+      openTools = Math.max(0, openTools + (event.kind === 'toolStart' ? 1 : -1))
+      if (!turnAt) turnAt = Date.now()
+      activity()
+      return {}
+    }
+    // Only a Copilot session log is read for the answer, whatever path the event names. Copilot
+    // may call the hook before the turn's last message is in the file: read again a few times.
+    let answer = event.answer
+    const transcript = event.transcript && /[\\/]events\.jsonl$/.test(event.transcript) ? event.transcript : ''
+    for (let tries = 0; !answer && transcript && tries < 6; tries++) {
+      if (tries > 0) await new Promise(resolve => setTimeout(resolve, 300))
+      answer = copilotAnswer(tail(transcript))
+    }
+    const since = turnAt
+    turnAt = 0
+    openTools = 0
+    activity()
+    await call('POST', '/messages/turn-end', { sessionId, answer, aborted: event.aborted === true, ...(since ? { since } : {}) }).catch(() => undefined)
+    return {}
+  }
+
   return {
     sessionId,
     handle,
     ready,
     approve,
+    onEvent,
     // The plan usage the CLI reports (codexUsage.ts), for the usage bar and the limit hold.
     reportUsage: (usage: Record<string, unknown>) => void call('POST', '/sessions/usage', { sessionId, usage }).catch(() => undefined),
     lang: () => lang,
@@ -410,10 +461,33 @@ export function createSession(options: Options, deps: Deps) {
   }
 }
 
+// The last 2 MiB of a file the CLI named (its transcript), '' when it cannot be read.
+function tail(path: string, bytes = 2 * 1024 * 1024): string {
+  try {
+    const fd = openSync(path, 'r')
+    try {
+      const size = fstatSync(fd).size
+      const length = Math.min(size, bytes)
+      const buffer = Buffer.alloc(length)
+      readSync(fd, buffer, 0, length, size - length)
+      return buffer.toString('utf8')
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    return ''
+  }
+}
+
 // The socket the CLI's permission hook asks on (mcp/permission.ts): one request line and one
 // answer line per connection, from a hook that knows the terminal's key. A hook that goes away
 // (the CLI gave up on it, the person answered in the terminal) withdraws its ask.
-export function listenForHooks(path: string, terminal: string, approve: (ask: HookAsk, aborted: () => boolean) => Promise<HookAnswer>): Server {
+export function listenForHooks(
+  path: string,
+  terminal: string,
+  approve: (ask: HookAsk, aborted: () => boolean) => Promise<HookAnswer>,
+  onEvent: (event: HookEvent) => Promise<HookEventReply> = async () => ({}),
+): Server {
   const server = createServer(socket => {
     let data = ''
     let gone = false
@@ -433,9 +507,20 @@ export function listenForHooks(path: string, terminal: string, approve: (ask: Ho
         request = null
       }
       const ask = request?.ask
-      if (!request || typeof request.terminal !== 'string' || !sameTerminal(request.terminal, terminal) || !ask || typeof ask.tool !== 'string' || typeof ask.summary !== 'string') {
-        return void socket.end(`${JSON.stringify(PASS)}\n`)
+      const event = request?.event
+      if (!request || typeof request.terminal !== 'string' || !sameTerminal(request.terminal, terminal)) return void socket.end(`${JSON.stringify(PASS)}\n`)
+      if (!ask && event && ['turnStart', 'toolStart', 'toolEnd', 'turnEnd'].includes(event.kind)) {
+        const clean: HookEvent =
+          event.kind === 'turnEnd'
+            ? { kind: 'turnEnd', answer: typeof event.answer === 'string' ? event.answer : '', transcript: typeof event.transcript === 'string' ? event.transcript : undefined, aborted: event.aborted === true }
+            : { kind: event.kind }
+        return void onEvent(clean)
+          .catch(() => ({}))
+          .then(reply => {
+            if (!gone) socket.end(`${JSON.stringify(reply)}\n`)
+          })
       }
+      if (!ask || typeof ask.tool !== 'string' || typeof ask.summary !== 'string') return void socket.end(`${JSON.stringify(PASS)}\n`)
       const clean: HookAsk = {
         tool: ask.tool.slice(0, 200),
         summary: ask.summary,
@@ -496,7 +581,7 @@ if (import.meta.main) {
   })
   session.start()
   // A run the app opened has a terminal key, and its CLI's permission hook may ask here.
-  const hooks = options.terminal ? listenForHooks(hookSocket(options.home, options.terminal), options.terminal, session.approve) : null
+  const hooks = options.terminal ? listenForHooks(hookSocket(options.home, options.terminal), options.terminal, session.approve, session.onEvent) : null
   const stopUsage =
     options.agent === 'codex' && options.cli
       ? watchCodexUsage(codexArgv(options.cli), { ...process.env, HOME: options.home }, rateLimits => session.reportUsage({ rateLimits }))

@@ -233,6 +233,39 @@ describe('pieces of the MCP server', () => {
     assert.equal(((await answerLine('{"jsonrpc":"2.0","id":8,"method":"nope"}', session.handle)) as any).error.code, -32601)
   })
 
+  test('the turn as the hooks of a CLI tell it goes to the bridge as the mod sends it for Claude Code', async () => {
+    const calls: { method: string; path: string; body: any }[] = []
+    const session = createSession(
+      { agent: 'qwen', terminal: 'r-x', cwd: '/w', socket: '/none', home: '/none', cli: '', abilities: ['turnEnd', 'activity', 'prompt'] },
+      {
+        call: async (method, path, body) => {
+          calls.push({ method, path, body })
+          if (path === '/sessions') return { ok: true, status: 200, json: { id: 's', project: 'w', token: 't' } }
+          if (path === '/state') return { ok: true, status: 200, json: { questions: [{ id: 4, session_id: (body as any)?.x ?? session.sessionId, task_title: '결제', question: '어느 쪽?', status: 'pending', recommend: '', options: '[]' }] } }
+          return { ok: true, status: 200, json: {} }
+        },
+        startBridge: async () => false,
+        run: async () => ({ code: 1, stdout: '', stderr: '' }),
+        log: () => undefined,
+      },
+    )
+    const start = await session.onEvent({ kind: 'turnStart' })
+    // The questions still waiting go in with the prompt (the session has `prompt`).
+    assert.match(start.context ?? '', /Q4 \[결제\] 어느 쪽\?/)
+    await session.onEvent({ kind: 'toolStart' })
+    // Told again within the turn: the turn keeps its first start.
+    await session.onEvent({ kind: 'turnStart' })
+    await session.onEvent({ kind: 'toolEnd' })
+    await session.onEvent({ kind: 'turnEnd', answer: '끝났습니다' })
+    const activity = calls.filter(c => c.path === '/sessions/activity').map(c => `${c.body.state}:${c.body.openTools}`)
+    assert.deepEqual(activity, ['working:0', 'working:1', 'working:0', 'idle:0'])
+    const end = calls.find(c => c.path === '/messages/turn-end')!
+    assert.equal(end.body.answer, '끝났습니다')
+    assert.equal(end.body.aborted, false)
+    assert.equal(typeof end.body.since, 'number')
+    assert.equal(end.body.ids, undefined)
+  })
+
   test('a question or a message sent again after a lost connection carries the same key, so the bridge keeps one', async () => {
     const keys: Record<string, string[]> = { '/questions': [], '/messages': [] }
     let drop = true

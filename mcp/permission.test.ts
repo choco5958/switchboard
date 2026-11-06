@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, listen } from '../bridge/server.ts'
 import { askServer, runHook } from './hook.ts'
-import { ADAPTERS, PASS, hookSocket, opencodeAsk, sameTerminal } from './permission.ts'
+import { ADAPTERS, PASS, copilotAnswer, hookSocket, opencodeAsk, sameTerminal } from './permission.ts'
 import { bridgeCall, createSession, listenForHooks, type Reply } from './server.ts'
 
 // Short: a socket path has a limit of about 104 bytes, and the hook socket sits under HOME.
@@ -117,6 +117,34 @@ describe('Copilot adapter', () => {
   })
 })
 
+describe('turn events from hooks', () => {
+  test('Qwen and Codex use the Claude Code names; Copilot its own, with the answer in its event log', () => {
+    const qwen = ADAPTERS.qwen!
+    assert.deepEqual(qwen.event!({ hook_event_name: 'UserPromptSubmit', prompt: 'x' }), { kind: 'turnStart' })
+    assert.deepEqual(qwen.event!({ hook_event_name: 'PostToolUse' }), { kind: 'toolEnd' })
+    assert.deepEqual(qwen.event!({ hook_event_name: 'Stop', last_assistant_message: 'done' }), { kind: 'turnEnd', answer: 'done' })
+    assert.equal(qwen.event!({ hook_event_name: 'PermissionRequest' }), null)
+    // A turn's start takes the context as Codex and Qwen read it; other events print nothing.
+    assert.equal(qwen.eventReply!({ kind: 'turnStart' }, { context: 'Q1' }), JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'Q1' } }))
+    assert.equal(qwen.eventReply!({ kind: 'turnEnd', answer: '' }, {}), '')
+    const copilot = ADAPTERS.copilot!
+    assert.deepEqual(copilot.event!({ hookName: 'agentStop', transcriptPath: '/c/events.jsonl', stopReason: 'end_turn' }), { kind: 'turnEnd', answer: '', transcript: '/c/events.jsonl', aborted: false })
+    assert.deepEqual(copilot.event!({ hookName: 'preToolUse' }), { kind: 'toolStart' })
+    assert.equal(copilot.event!({ hookName: 'sessionStart' }), null)
+    assert.equal(copilot.eventReply, undefined)
+    const log = [
+      JSON.stringify({ type: 'assistant.message', data: { content: '작업 중' } }),
+      JSON.stringify({ type: 'assistant.message', data: { content: '다 했습니다', toolRequests: [] } }),
+      JSON.stringify({ type: 'assistant.message', data: { content: '' } }),
+      JSON.stringify({ type: 'assistant.turn_end', data: {} }),
+    ].join('\n')
+    assert.equal(copilotAnswer(`partial line}\n${log}\n`), '다 했습니다')
+    assert.equal(copilotAnswer(''), '')
+    // A new turn whose answer is not written yet gives nothing, not the turn before's.
+    assert.equal(copilotAnswer(`${log}\n${JSON.stringify({ type: 'user.message', data: { content: '다음' } })}\n`), '')
+  })
+})
+
 describe('OpenCode asks', () => {
   test('a file change carries its diff; a command stays in the terminal', () => {
     // As OpenCode 2.2.5 sends a new file.
@@ -154,6 +182,27 @@ describe('the hook socket', () => {
     listener.close()
     assert.deepEqual(await askServer(join(dir, 'none.sock'), 'r-right', ADAPTERS.codex!.ask(patch())!), PASS)
     assert.equal(await runHook('codex', JSON.stringify(patch()), { HOME: dir }), '')
+  })
+})
+
+describe('events through the hook command', () => {
+  test('each CLI event reaches the run server, also for a CLI with no reply to print', async () => {
+    const terminal = 'r-events'
+    const seen: string[] = []
+    const listener = listenForHooks(hookSocket(dir, terminal), terminal, async () => PASS, async event => {
+      seen.push(event.kind === 'turnEnd' ? `turnEnd:${event.transcript ?? event.answer}` : event.kind)
+      return event.kind === 'turnStart' ? { context: 'Q1 waits' } : {}
+    })
+    await new Promise(resolve => listener.once('listening', resolve))
+    const env = { HOME: dir, SWITCHBOARD_TERMINAL: terminal }
+    // Copilot names the event on the command line only (its input has no hookName but for permissionRequest).
+    assert.equal(await runHook('copilot', JSON.stringify({ sessionId: 's', prompt: 'hi' }), env, 'userPromptSubmitted'), '')
+    assert.equal(await runHook('copilot', JSON.stringify({ sessionId: 's', transcriptPath: '/c/events.jsonl' }), env, 'agentStop'), '')
+    // Qwen prints the context it was given for the prompt.
+    const qwen = await runHook('qwen', JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' }), env)
+    assert.equal(JSON.parse(qwen).hookSpecificOutput.additionalContext, 'Q1 waits')
+    assert.deepEqual(seen, ['turnStart', 'turnEnd:/c/events.jsonl', 'turnStart'])
+    listener.close()
   })
 })
 

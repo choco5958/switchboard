@@ -12,7 +12,17 @@ import { approvalSummary, approvalText } from '../mod/hooks/batch.ts'
 export type HookAsk = { tool: string; summary: string; complete: boolean; cwd: string; reason: string; requestKey: string }
 // 'ask': nothing decided, and the CLI asks in its terminal as it would without the hook.
 export type HookAnswer = { answer: 'allow' | 'deny' | 'ask'; message: string }
-export type HookRequest = { terminal: string; ask: HookAsk }
+// What else a CLI's hooks tell the run's server (docs/에이전트-대등하게.md): a turn starts (the
+// person's prompt went in), a tool starts or ends, a turn ends with its last answer (`answer`, or
+// the CLI's transcript to read it from).
+export type HookEvent =
+  | { kind: 'turnStart' }
+  | { kind: 'toolStart' }
+  | { kind: 'toolEnd' }
+  | { kind: 'turnEnd'; answer: string; transcript?: string; aborted?: boolean }
+// The server's answer to an event: text to add to the prompt the turn starts with, if any.
+export type HookEventReply = { context?: string }
+export type HookRequest = { terminal: string; ask?: HookAsk; event?: HookEvent }
 
 export const PASS: HookAnswer = { answer: 'ask', message: '' }
 
@@ -38,6 +48,29 @@ export type HookAdapter = {
   ask: (input: Json) => HookAsk | null
   // What the hook prints for an answer: '' prints nothing, and the CLI asks in its terminal.
   reply: (answer: HookAnswer) => string
+  // Another event of the CLI's, or null for one the server does not follow.
+  event?: (input: Json) => HookEvent | null
+  // What the hook prints after an event ('' for nothing): the context a turn starts with, where
+  // the CLI takes some.
+  eventReply?: (event: HookEvent, reply: HookEventReply) => string
+}
+
+// Claude Code's hook names, which Codex and Qwen use too: the person's prompt, a tool's start and
+// end, and the end of the turn with its last answer (learn.chatgpt.com/docs/hooks; Qwen Code 0.26.7,
+// tested).
+function claudeStyleEvent(input: Json): HookEvent | null {
+  const name = text(input.hook_event_name)
+  if (name === 'UserPromptSubmit') return { kind: 'turnStart' }
+  if (name === 'PreToolUse') return { kind: 'toolStart' }
+  if (name === 'PostToolUse' || name === 'PostToolUseFailure') return { kind: 'toolEnd' }
+  if (name === 'Stop') return { kind: 'turnEnd', answer: text(input.last_assistant_message) }
+  return null
+}
+
+// Added context for the prompt, in the hook output Codex and Qwen read for UserPromptSubmit.
+function claudeStyleContext(event: HookEvent, reply: HookEventReply): string {
+  if (event.kind !== 'turnStart' || !reply.context) return ''
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: reply.context } })
 }
 
 // Codex's PermissionRequest hook (Codex 0.166, learn.chatgpt.com/docs/hooks). A command Codex asks
@@ -65,6 +98,8 @@ const codex: HookAdapter = {
     const decision = answer.answer === 'allow' ? { behavior: 'allow' } : { behavior: 'deny', message: answer.message }
     return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } })
   },
+  event: claudeStyleEvent,
+  eventReply: claudeStyleContext,
 }
 
 // A summary only from the fields it shows: an input with any other field (one that could change
@@ -101,6 +136,8 @@ const qwen: HookAdapter = {
     }
   },
   reply: codex.reply,
+  event: claudeStyleEvent,
+  eventReply: claudeStyleContext,
 }
 
 // Copilot CLI's permissionRequest hook (1.0.105, tested; output in
@@ -135,6 +172,33 @@ const copilot: HookAdapter = {
     if (answer.answer === 'ask') return ''
     return JSON.stringify(answer.answer === 'allow' ? { behavior: 'allow' } : { behavior: 'deny', message: answer.message })
   },
+  // Copilot's own names (1.0.105, tested). agentStop gives no answer, only the session's event log
+  // (its last assistant.message, copilotAnswer below). userPromptSubmitted takes no added context.
+  event: input => {
+    const name = text(input.hookName)
+    if (name === 'userPromptSubmitted') return { kind: 'turnStart' }
+    if (name === 'preToolUse') return { kind: 'toolStart' }
+    if (name === 'postToolUse' || name === 'postToolUseFailure') return { kind: 'toolEnd' }
+    if (name === 'agentStop') return { kind: 'turnEnd', answer: '', transcript: text(input.transcriptPath), aborted: text(input.stopReason) === 'abort' }
+    return null
+  },
+}
+
+// The last answer in a Copilot session's event log (session-state/<id>/events.jsonl): the text of
+// its last assistant.message that has some, after the person's last message ('' when the turn's
+// answer is not in the file yet, never an earlier turn's). Only the end of a long log is read.
+export function copilotAnswer(log: string): string {
+  const lines = log.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const entry = JSON.parse(lines[i] ?? '') as { type?: unknown; data?: { content?: unknown } }
+      if (entry.type === 'user.message') return ''
+      if (entry.type === 'assistant.message' && typeof entry.data?.content === 'string' && entry.data.content.trim()) return entry.data.content
+    } catch {
+      // a line cut at the start of what was read, or not JSON
+    }
+  }
+  return ''
 }
 
 export const ADAPTERS: Record<string, HookAdapter> = { codex, qwen, copilot }

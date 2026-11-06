@@ -72,6 +72,8 @@ const tomlString = (value: string) => (/['\r\n]/.test(value) ? json(value) : `'$
 // the hook finds its run by the terminal's key in its environment. The timeout lets the hook's own
 // wait (mcp/permission.ts HOOK_WAIT_MS) end first.
 export const HOOK_TIMEOUT_S = 6 * 3600 + 120
+// A hook that only tells the server about the turn (mcp/hook.ts EVENT_WAIT_MS is under it).
+export const EVENT_TIMEOUT_S = 30
 export function hookCommand(hook: McpServer): string {
   return [hook.command, ...hook.args].map(word => shellWord(word, 'linux')).join(' ')
 }
@@ -105,7 +107,15 @@ export const QWEN_DEFAULTS_ENV = 'QWEN_CODE_SYSTEM_DEFAULTS_PATH'
 export function qwenHookSettings(hook: McpServer): unknown | null {
   const command = hookCommand(hook)
   if (command.includes('$')) return null
-  return { hooks: { PermissionRequest: [{ matcher: '*', hooks: [{ type: 'command', command, name: 'switchboard', timeout: HOOK_TIMEOUT_S * 1000 }] }] } }
+  // The same command follows the turn too (docs/에이전트-대등하게.md): the person's prompt, each tool
+  // and the turn's end, each with a short timeout (milliseconds as well).
+  const follow = (name: string) => [name, [{ matcher: '*', hooks: [{ type: 'command', command, name: 'switchboard', timeout: EVENT_TIMEOUT_S * 1000 }] }]]
+  return {
+    hooks: {
+      PermissionRequest: [{ matcher: '*', hooks: [{ type: 'command', command, name: 'switchboard', timeout: HOOK_TIMEOUT_S * 1000 }] }],
+      ...Object.fromEntries(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'].map(follow)),
+    },
+  }
 }
 
 // Where Qwen Code reads its system defaults when the env var does not say. A run that names its own
@@ -188,7 +198,20 @@ export const PRESETS: AgentPreset[] = [
         files: [
           { path: `${dir}/plugin.json`, value: { name: 'switchboard-approvals', version: '1.0.0', description: 'Switchboard: permission asks while you are away' } },
           // exec and args: Copilot runs the program itself, with no shell to quote for (Windows too).
-          { path: `${dir}/hooks.json`, value: { version: 1, hooks: { permissionRequest: [{ type: 'command', exec: hook.command, args: hook.args, timeoutSec: HOOK_TIMEOUT_S }] } } },
+          {
+            path: `${dir}/hooks.json`,
+            value: {
+              version: 1,
+              hooks: {
+                permissionRequest: [{ type: 'command', exec: hook.command, args: hook.args, timeoutSec: HOOK_TIMEOUT_S }],
+                // The turn, followed as the mod follows Claude Code's (docs/에이전트-대등하게.md).
+                ...Object.fromEntries(
+                  // Copilot names the event in its input only for permissionRequest, so the name goes as an argument.
+                  ['userPromptSubmitted', 'preToolUse', 'postToolUse', 'agentStop'].map(name => [name, [{ type: 'command', exec: hook.command, args: [...hook.args, name], timeoutSec: EVENT_TIMEOUT_S }]]),
+                ),
+              },
+            },
+          },
         ],
       }
     },
@@ -362,6 +385,14 @@ export function customConfig(server: McpServer): string {
 // `hook`: the permission hook's command, when this run sends asks away (src/main/agentTerms.ts).
 // The file a permission hook's settings go to, beside the run's config file.
 export const hookFileOf = (configFile: string) => configFile.replace(/(\.json)?$/, '-hook.json')
+
+// Whether a run of this preset gets its relay hook at all (the version, a command the CLI's config
+// cannot hold): what the run's server says it can do depends on it (src/main/agentTerms.ts).
+export function hookAttaches(preset: AgentPreset, hook: McpServer, version: string | null): boolean {
+  const injected = preset.mcp?.({ command: hook.command, args: [] }, '/sb/agents/run.json') ?? {}
+  const got = preset.permissionHook?.(hook, { hookFile: '/sb/agents/run-hook.json', injected, version }) ?? {}
+  return (got.args?.length ?? 0) > 0 || got.env !== undefined || got.file !== undefined || (got.files?.length ?? 0) > 0
+}
 
 export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform, hook?: McpServer, version: string | null = null): Launch {
   const got = preset.mcp?.(server, configFile) ?? {}

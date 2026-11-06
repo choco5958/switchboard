@@ -4,7 +4,7 @@
 // asks in its terminal as it would without the hook. Run with Node 24.
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
-import { ADAPTERS, HOOK_WAIT_MS, PASS, hookSocket, type HookAnswer, type HookAsk } from './permission.ts'
+import { ADAPTERS, HOOK_WAIT_MS, PASS, hookSocket, type HookAnswer, type HookAsk, type HookEvent, type HookEventReply } from './permission.ts'
 
 const LIMIT = 4 * 1024 * 1024
 
@@ -57,7 +57,45 @@ export function askServer(path: string, terminal: string, ask: HookAsk, waitMs =
   })
 }
 
-export async function runHook(agent: string, stdin: string, env: Record<string, string | undefined>): Promise<string> {
+// How long an event waits for the server: a turn's start waits for the context it adds, the rest
+// for nothing much. The CLI goes on without it after this.
+export const EVENT_WAIT_MS = 8000
+
+// One event and the server's reply ({} when there is none, or no server).
+export function tellServer(path: string, terminal: string, event: HookEvent, waitMs = EVENT_WAIT_MS): Promise<HookEventReply> {
+  return new Promise(resolve => {
+    let reply = ''
+    let done = false
+    const finish = (value: HookEventReply) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(value)
+    }
+    const socket = connect(path)
+    const timer = setTimeout(() => finish({}), waitMs)
+    socket.setEncoding('utf8')
+    socket.on('connect', () => socket.write(`${JSON.stringify({ terminal, event })}\n`))
+    socket.on('data', chunk => {
+      reply += chunk
+      const end = reply.indexOf('\n')
+      if (end < 0) return
+      try {
+        const parsed = JSON.parse(reply.slice(0, end)) as HookEventReply
+        finish(typeof parsed.context === 'string' && parsed.context ? { context: parsed.context } : {})
+      } catch {
+        finish({})
+      }
+    })
+    socket.on('error', () => finish({}))
+    socket.on('close', () => finish({}))
+  })
+}
+
+// `eventName`: the hook's event as its command line names it, for a CLI that leaves it out of the
+// input (Copilot, but for permissionRequest).
+export async function runHook(agent: string, stdin: string, env: Record<string, string | undefined>, eventName = ''): Promise<string> {
   const adapter = ADAPTERS[agent]
   const terminal = env.SWITCHBOARD_TERMINAL ?? ''
   if (!adapter || !terminal) return ''
@@ -68,13 +106,20 @@ export async function runHook(agent: string, stdin: string, env: Record<string, 
     return ''
   }
   if (input === null || typeof input !== 'object' || Array.isArray(input)) return ''
+  const named = input as Record<string, unknown>
+  if (eventName && named.hookName === undefined) named.hookName = eventName
+  const socket = hookSocket(env.HOME || homedir(), terminal)
   const ask = adapter.ask(input as Record<string, unknown>)
-  if (!ask) return ''
-  return adapter.reply(await askServer(hookSocket(env.HOME || homedir(), terminal), terminal, ask))
+  if (ask) return adapter.reply(await askServer(socket, terminal, ask))
+  const event = adapter.event?.(input as Record<string, unknown>)
+  if (!event) return ''
+  // Told first: `eventReply?.(…)` would skip its arguments, the telling with them, for a CLI without one.
+  const reply = await tellServer(socket, terminal, event)
+  return adapter.eventReply?.(event, reply) ?? ''
 }
 
 if (import.meta.main) {
-  const out = await runHook(String(process.argv[2] ?? ''), await readAll(process.stdin), process.env).catch(() => '')
+  const out = await runHook(String(process.argv[2] ?? ''), await readAll(process.stdin), process.env, String(process.argv[3] ?? '')).catch(() => '')
   if (out) process.stdout.write(`${out}\n`)
   process.exit(0)
 }

@@ -445,6 +445,9 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   addColumns('sessions', [['token', "text not null default ''"]])
   // What the session's client can do (ABILITIES), comma separated; '' for one from before.
   addColumns('sessions', [['abilities', "text not null default ''"]])
+  // When a message went into its session (acknowledged or taken), until the turn it went in with
+  // ends: /messages/turn-end without ids (a CLI's hooks do not know them) answers these.
+  addColumns('outbox', [['turn_wait', 'integer not null default 0']])
   // Whether a row came in with the app's key (POST /outbox): text without it may be any program
   // of the same user, another session's shell too (outboxText). Rows from before were all shown
   // as they are, and stay so.
@@ -1772,7 +1775,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const owner = stmt('select session_id from outbox where id = ?').get(id) as { session_id: string } | undefined
       if (owner && !asSession(owner.session_id)) return notYours(owner.session_id)
       holding.delete(id)
-      const result = db.prepare('update outbox set delivered = 1 where id = ? and delivered = 0').run(id)
+      const result = db.prepare('update outbox set delivered = 1, turn_wait = ? where id = ? and delivered = 0').run(now(), id)
       if (result.changes > 0) {
         const m = db.prepare('select * from outbox where id = ?').get(id) as {
           session_id: string
@@ -2229,7 +2232,13 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const answerText = str(body.answer).trim()
       const aborted = body.aborted === true
       if (!asSession(sessionId)) return notYours(sessionId)
-      const ids = Array.isArray(body.ids) ? body.ids.map(id => Number(str(id).replace(/^m/, ''))).filter(Boolean) : []
+      // No ids (a CLI's hooks, docs/에이전트-대등하게.md): what went into the session before the turn
+      // started (`since`, the hook's time of the person's prompt) and waits for a turn's end.
+      const since = typeof body.since === 'number' ? body.since + 2000 : now()
+      const ids = Array.isArray(body.ids)
+        ? body.ids.map(id => Number(str(id).replace(/^m/, ''))).filter(Boolean)
+        : (db.prepare('select id from outbox where session_id = ? and turn_wait > 0 and turn_wait <= ? order by id').all(sessionId, since) as { id: number }[]).map(r => r.id)
+      for (const id of ids) stmt('update outbox set turn_wait = 0 where id = ? and session_id = ?').run(id, sessionId)
       let relayed = 0
       for (const id of ids) {
         const row = db.prepare('select * from outbox where id = ? and session_id = ?').get(id, sessionId) as OutboxRow | undefined
@@ -2463,7 +2472,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
           logEvent(sessionId, '전달', say('bridge.event.answerInjected', { id: q.id }), q.task_title)
         }
         for (const m of messages) {
-          stmt('update outbox set delivered = 1 where id = ?').run(m.id)
+          stmt('update outbox set delivered = 1, turn_wait = ? where id = ?').run(now(), m.id)
           logEvent(sessionId, '전달', say('bridge.event.injected', { kind: eventKindLabel(m.kind, langNow()) }), m.task_title)
         }
         for (const c of marked) {

@@ -11,6 +11,8 @@ import {
   fillTemplate,
   presetLaunch,
   HOOK_TIMEOUT_S,
+  EVENT_TIMEOUT_S,
+  hookAttaches,
   hookCommand,
   codexHookOverride,
   presetOf,
@@ -70,6 +72,8 @@ describe('preset launch lines', () => {
     const entry = JSON.parse(launch.files[1]!.content).hooks.PermissionRequest[0].hooks[0]
     // Qwen reads a command hook timeout of 1000 or more as milliseconds.
     expect(entry).toEqual({ type: 'command', command: '/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs qwen', name: 'switchboard', timeout: HOOK_TIMEOUT_S * 1000 })
+    expect(Object.keys(JSON.parse(launch.files[1]!.content).hooks)).toEqual(['PermissionRequest', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'])
+    expect(hookAttaches(presetOf('qwen')!, { ...hook, command: '/o$x/node' }, null)).toBe(false)
     const odd = presetLaunch(presetOf('qwen')!, server, file, 'darwin', { ...hook, command: '/o$x/node' })
     expect([odd.env, odd.files.length]).toEqual([{}, 1])
   })
@@ -94,10 +98,13 @@ describe('preset launch lines', () => {
     expect(words(launch.line)).toEqual(['copilot', '--additional-mcp-config', `@${file}`, '--plugin-dir', dir])
     expect(launch.files.map(f => f.path)).toEqual([file, `${dir}/plugin.json`, `${dir}/hooks.json`])
     expect(JSON.parse(launch.files[1]!.content).name).toBe('switchboard-approvals')
-    expect(JSON.parse(launch.files[2]!.content)).toEqual({
-      version: 1,
-      hooks: { permissionRequest: [{ type: 'command', exec: '/n/node', args: ['/r/mcp/hook.mjs', 'copilot'], timeoutSec: HOOK_TIMEOUT_S }] },
-    })
+    const hooks = JSON.parse(launch.files[2]!.content).hooks
+    expect(hooks.permissionRequest).toEqual([{ type: 'command', exec: '/n/node', args: ['/r/mcp/hook.mjs', 'copilot'], timeoutSec: HOOK_TIMEOUT_S }])
+    // The turn too, with the same command and a short timeout.
+    for (const name of ['userPromptSubmitted', 'preToolUse', 'postToolUse', 'agentStop']) {
+      expect(hooks[name]).toEqual([{ type: 'command', exec: '/n/node', args: ['/r/mcp/hook.mjs', 'copilot', name], timeoutSec: EVENT_TIMEOUT_S }])
+    }
+    expect([hookAttaches(presetOf('copilot')!, hook, '1.0.105'), hookAttaches(presetOf('copilot')!, hook, '1.0.104')]).toEqual([true, false])
     // A Windows path: the folder beside the run's file, backslashes and all.
     const win = presetLaunch(presetOf('copilot')!, server, 'C:\\Users\\u\\.claude-ide\\agents\\k-copilot.json', 'win32', hook, '1.0.105')
     expect(win.files.map(f => f.path).slice(1)).toEqual(['C:\\Users\\u\\.claude-ide\\agents/copilot-plugin/plugin.json', 'C:\\Users\\u\\.claude-ide\\agents/copilot-plugin/hooks.json'])
