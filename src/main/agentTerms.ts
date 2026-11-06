@@ -153,7 +153,10 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   // hook (codexHook.ts); if it does not, the terminal opens without it and Codex asks there. Qwen's
   // always do, unless a system defaults file of the machine's would be hidden (qwenDefaultsFile),
   // and OpenCode 2's (its plugin, mcp/opencode/server.ts) and Copilot's from 1.0.105 (its plugin folder).
-  const hook = preset?.permissionHook && node && process.platform !== 'win32' ? { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), preset.id] } : undefined
+  // On Windows only Copilot's: its hook runs the program with no shell, and scripts/relay-check.ts
+  // checks it there (the Test workflow's relay job); the others' hooks are untried on Windows.
+  const relays = process.platform !== 'win32' || preset?.id === 'copilot'
+  const hook = preset?.permissionHook && node && relays ? { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), preset.id] } : undefined
   const hooked =
     hook && preset?.id === 'codex' && settings?.[CODEX_APPROVALS_KEY] === true && cliPath
       ? await trustCodexHook(

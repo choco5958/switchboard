@@ -137,7 +137,7 @@ Claude Code 通过 mod 连接，其他 CLI 通过应用只为该次运行附加�
 - Codex 的权限确认转发在 设置 > 权限与访问 中开启。开启后，打开 Codex 终端时会把 Switchboard 的一个权限钩子记录为 Codex 配置中受信任的钩子，离开时 Codex 关于修改文件和使用 MCP 工具的许可请求会发到应用和手机。要在沙箱外运行的命令仍只在终端中确认。支持 macOS 和 Linux。
 - 打开 Codex 会话时，账户面板也会显示 Codex 用量 (5 小时、每周)，达到上限的 Codex 会话会在重置后再收到回答和消息。
 - Qwen Code 和 OpenCode 2 无需设置即可转发权限确认：Qwen 通过只为该次运行生成的默认设置文件中的钩子，OpenCode 通过只为该次运行添加的插件。不会修改你自己的设置文件。OpenCode 的命令确认不包含要运行的完整脚本，因此命令只在终端中确认。Qwen 默认的 Auto 模式和 OpenCode 默认的规则很少询问，所以转发的确认也很少。支持 macOS 和 Linux。
-- Copilot CLI 1.0.105 及以上也无需设置即可转发权限确认：放在应用文件夹中的插件 (`--plugin-dir`) 的钩子把文件修改和命令执行的确认发送到应用和手机。要离开 Copilot 沙箱的命令无法由钩子允许，因此只在终端中确认。支持 macOS 和 Linux。
+- Copilot CLI 1.0.105 及以上也无需设置即可转发权限确认：放在应用文件夹中的插件 (`--plugin-dir`) 的钩子把文件修改和命令执行的确认发送到应用和手机。要离开 Copilot 沙箱的命令无法由钩子允许，因此只在终端中确认。支持 macOS、Linux 和 Windows，并在三个系统的 CI 中用真实的 Copilot 确认。
 - OpenCode 2 终端每次运行都使用自己的服务器 (`--standalone`)，即使在应用外也开着 OpenCode，每个终端也会单独连接。
 - Cursor CLI 通过放在应用文件夹中的插件 (`--plugin-dir`) 连接服务器。Cursor 每次调用 Switchboard 工具前都会在终端中询问是否运行；在那里把工具加入允许列表 (Allowlist) 后，之后的运行不再询问。已在 macOS 上确认。
 - Grok 1.0.77 没有文档中提到的 `--plugin-dir` 参数，`GROK_CONFIG` 也不接受连接服务器设置，因此只打开终端。
