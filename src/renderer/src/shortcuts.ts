@@ -63,6 +63,7 @@ export function shortcutGroups(mac: boolean, decisionKeysAnywhere: boolean): Sho
       title: 'keys.groupSidebar',
       items: [
         { keys: ['Delete'], label: 'keys.hideProject', source: 'ProjectList.tsx', needle: 'hide(p.name)' },
+        { keys: [alt], label: 'keys.foldAll', source: 'ProjectList.tsx', needle: 'event.altKey ? foldAll(' },
         { keys: ['F2'], label: 'keys.renameGroup', source: 'ProjectList.tsx', needle: "event.key === 'F2'" },
         { keys: ['Delete'], label: 'keys.removeGroup', source: 'ProjectList.tsx', needle: 'ungroup(folder)' },
       ],

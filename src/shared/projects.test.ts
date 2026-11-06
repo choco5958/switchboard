@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BridgeState } from './types'
-import { hiddenProjects, isRunning, removedProjects, stillRemoved, moveToFolder, restoreFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
+import { foldedAll, hiddenProjects, isRunning, removedProjects, stillRemoved, moveToFolder, restoreFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
 
 const state = {
   sessions: [
@@ -245,5 +245,13 @@ describe('removed projects', () => {
     expect(removedProjects({ alpha: 5, beta: 'x' })).toEqual({ alpha: 5 })
     expect(removedProjects(['alpha'])).toEqual({})
     expect(removedProjects(undefined)).toEqual({})
+  })
+})
+
+describe('foldedAll', () => {
+  it('folds or opens every listed project and leaves the ones off the list as they were', () => {
+    expect(foldedAll(['beta', 'old'], ['alpha', 'beta'], true)).toEqual(['old', 'alpha', 'beta'])
+    expect(foldedAll(['beta', 'old'], ['alpha', 'beta'], false)).toEqual(['old'])
+    expect(foldedAll([], [], true)).toEqual([])
   })
 })

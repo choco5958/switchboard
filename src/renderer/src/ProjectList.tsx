@@ -8,6 +8,7 @@ import {
   FOLDERS_KEY,
   HIDDEN_KEY,
   REMOVED_KEY,
+  foldedAll,
   hiddenProjects,
   moveToFolder,
   projectFolders,
@@ -21,7 +22,8 @@ import {
 } from '../../shared/projects'
 
 // The projects in the sidebar, each with its session rows under it (renderRows) and a button to
-// open a new session in it (renderAdd); a project opens and closes with a click. The folders the
+// open a new session in it (renderAdd); a project opens and closes with a click, and with ⌥
+// (Alt) held every project follows it, as does the ⋯ menu's fold-all item. The folders the
 // person sorts them into open and close too, and projects taken off the list. A project moves by
 // dragging it onto a folder or through its ⋯ menu (also on right-click). Keys: F2 renames a
 // focused folder and Delete (or Backspace) deletes it, Delete takes a focused project off the
@@ -57,9 +59,9 @@ export function ProjectList({ projects, hidden, folders, renderRows, renderAdd, 
   const toast = useToast()
   // Projects folded shut, kept per viewer.
   const [closed, setClosed] = useState<string[]>(loadClosed)
-  const fold = (name: string) =>
+  const saveClosed = (change: (current: string[]) => string[]) =>
     setClosed(current => {
-      const next = current.includes(name) ? current.filter(n => n !== name) : [...current, name]
+      const next = change(current)
       try {
         localStorage.setItem(CLOSED_KEY, JSON.stringify(next))
       } catch {
@@ -67,6 +69,10 @@ export function ProjectList({ projects, hidden, folders, renderRows, renderAdd, 
       }
       return next
     })
+  const fold = (name: string) => saveClosed(current => (current.includes(name) ? current.filter(n => n !== name) : [...current, name]))
+  // Every project on the list shut, or every one open; the ones taken off the list keep theirs.
+  const anyOpen = projects.some(p => !closed.includes(p.name))
+  const foldAll = (shut: boolean) => saveClosed(current => foldedAll(current, projects.map(p => p.name), shut))
   // `p:<name>` or `f:<id>`: whose ⋯ menu is open.
   const [menu, setMenu] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
@@ -177,7 +183,7 @@ export function ProjectList({ projects, hidden, folders, renderRows, renderAdd, 
             event.dataTransfer.effectAllowed = 'move'
           }}
           onDragEnd={() => setDropOn(null)}
-          onClick={() => fold(p.name)}
+          onClick={event => (event.altKey ? foldAll(!closed.includes(p.name)) : fold(p.name))}
           onContextMenu={openMenuAt(`p:${p.name}`)}
           onKeyDown={event => {
             if (event.key === 'Delete') {
@@ -212,6 +218,9 @@ export function ProjectList({ projects, hidden, folders, renderRows, renderAdd, 
             </MenuItem>
             {folder && <MenuItem onSelect={() => move(p.name, null)}>{t('sidebar.moveOut')}</MenuItem>}
             <MenuSeparator />
+            <MenuItem title={t('sidebar.foldAllTitle')} onSelect={() => foldAll(anyOpen)}>
+              {t(anyOpen ? 'sidebar.closeAll' : 'sidebar.openAll')}
+            </MenuItem>
             <MenuItem title={t('sidebar.hideTitle')} onSelect={() => hide(p.name)}>
               {t('sidebar.hide')}
             </MenuItem>

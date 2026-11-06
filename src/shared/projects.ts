@@ -124,6 +124,13 @@ export function restoreFolder(folders: readonly ProjectFolder[], folder: Project
   return [...rest.slice(0, at), folder, ...rest.slice(at)]
 }
 
+// The projects folded shut after folding every listed one (shut) or opening every one. Names not
+// listed (projects taken off the list) keep the state they had, for when they come back.
+export function foldedAll(closed: readonly string[], listed: readonly string[], shut: boolean): string[] {
+  const rest = closed.filter(name => !listed.includes(name))
+  return shut ? [...rest, ...listed] : rest
+}
+
 // Every project the IDE knows of: folders added by hand and ones sessions or
 // tasks name, the most recently active first so adding a folder never reorders
 // the list. The folder comes from the hand-added entry, else the newest session.
