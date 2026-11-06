@@ -69,13 +69,13 @@ Jump to any session, task or decision question. Gather projects into groups and 
 </table>
 
 <table>
-<tr><td width="26%">🤝 <b>Sessions working together</b></td><td>Ask another session and get its answer back. Collect answers from several sessions into one turn, and take back work you handed off.</td></tr>
+<tr><td width="26%">🤝 <b>Sessions working together</b></td><td>Ask another session and get its answer back. Hand work to another agent and a terminal of that agent opens for it. Collect answers from several sessions into one turn, and take back work you handed off.</td></tr>
 <tr><td width="26%">📱 <b>While you are away</b></td><td>Answer decisions and your agents' permission asks from your phone or Telegram, on any network.</td></tr>
 <tr><td width="26%">⏰ <b>Scheduled prompts</b></td><td>Send a prompt to a session daily, on weekdays, at an interval or once.</td></tr>
 <tr><td width="26%">🔍 <b>Fix what you see</b></td><td>Click an element in the in-app browser to leave a comment with its location, a screenshot and console errors. Sessions click through local pages to check their work.</td></tr>
 <tr><td width="26%">🖥️ <b>Terminals that keep going</b></td><td>On macOS and Linux, agents in the terminals keep working when you quit or update the app, and come back as they were when you reopen it.</td></tr>
 <tr><td width="26%">🔒 <b>Safe by default</b></td><td>Only signed updates install. Only the app and phones paired over HTTPS can allow permission asks, and sessions cannot pose as you.</td></tr>
-<tr><td width="26%">🎨 <b>Your look</b></td><td>14 themes and 4 languages. Claude usage sits at the bottom of the sidebar, context use in the account panel above it.</td></tr>
+<tr><td width="26%">🎨 <b>Your look</b></td><td>14 themes and 4 languages. Claude usage sits at the bottom of the sidebar, context use and Codex usage in the account panel above it.</td></tr>
 </table>
 
 <details>
@@ -87,10 +87,11 @@ Jump to any session, task or decision question. Gather projects into groups and 
 - **Home**: decisions and permission asks gather here to answer on the spot, with the sessions stalled mid-reply for over 5 minutes, at a usage limit or dropped, the ones working, and what finished today. Stalled sessions and lifted limits also come as notifications. A decision or permission notification leaves the notification center once you answer it anywhere: the phone, Telegram or the terminal.
 - **New question window**: when a question comes in while you look at another session, a small window in the bottom right answers it or opens its session. After answering, `Next` goes to the next question.
 - **Reopen a dropped session**: a Claude Code session that dropped because its terminal closed or the computer restarted opens again from `Resume in a terminal` on the session or task view. A new terminal continues the conversation with `claude --resume`, and the answers kept for it go in once it connects.
-- **Past sessions**: find earlier Claude Code conversations on this computer by title, text, folder or branch, and resume one in a terminal.
+- **Past sessions**: find earlier conversations of Claude Code, Codex, Gemini CLI, Qwen Code and Copilot CLI on this computer by title, text, folder or branch, and resume one in a terminal with that CLI's own resume command.
 
 #### Sessions working together
 - A session finds others with `list_sessions` and sends a request with `send_to_session`. If the receiver ends its turn without replying, its last answer comes back as the result.
+- `delegate` hands work to another agent: the app opens a new terminal of that agent in the same project and types the work in, and the result goes back to the session that handed it off. It needs the app open.
 - Answers to a question sent to several sessions are collected into one turn. After 15 minutes, the ones that arrived go first.
 - If the receiver drops or its turn is interrupted, the sender is told.
 - `cancel_request` takes back a request. Requests passed between sessions from one starting request are capped at 8 in total.
@@ -123,17 +124,24 @@ Jump to any session, task or decision question. Gather projects into groups and 
 
 ## Supported agents
 
-Claude Code connects through a mod; other CLIs connect through a server (MCP) the app attaches to that run only. Both use the same tools, so most features work whatever the agent.
+Claude Code connects through a mod; other CLIs connect through a server (MCP) and hooks the app attaches to that run only. Every agent uses the same tools, so task reports, decision questions, asking other sessions, handing off work and the browser tools work whatever the agent. Answers and messages are typed into the app terminal.
 
-| Feature | Claude Code | Codex, Gemini CLI, Qwen Code, Copilot CLI,<br>OpenCode, Goose, Amp, Crush, Cursor CLI | Grok, Kimi |
-| --- | :---: | :---: | :---: |
-| Task reports, decisions, asking other sessions, browser tools | ✅ | ✅ | Terminal only |
-| Receiving answers and messages | ✅ | ✅ typed into the app terminal | |
-| Scheduled prompts | ✅ | ✅ | |
-| Permission asks relayed while away | ✅ | Codex (turn on in Settings), Qwen Code, OpenCode 2, Copilot CLI 1.0.105 and later, Crush | |
-| Usage bars | ✅ | Codex | |
-| `/switchboard` pane | ✅ | | |
+| Agent | Connection | Last answer sent back | Permission asks while away | Resume past sessions | Usage |
+| --- | --- | :---: | :---: | :---: | :---: |
+| Claude Code | mod | ✅ | ✅ | ✅ | ✅ |
+| Codex | server, hooks | ✅ turn on in Settings | ✅ turn on in Settings | ✅ | ✅ |
+| Gemini CLI | extension (turn on in Settings) | ✅ | | ✅ | |
+| Qwen Code | server, hooks | ✅ | ✅ | ✅ | |
+| Copilot CLI | server, plugin | ✅ 1.0.105 and later | ✅ 1.0.105 and later | ✅ | |
+| OpenCode | server, plugin | ✅ 2 and later | ✅ 2 and later | | |
+| Crush | server, hooks | ✅ | ✅ | | |
+| Cursor CLI, Goose, Amp | server | | | | |
+| Grok, Kimi | terminal only | | | | |
 
+- **Last answer sent back**: when a turn ends, its last answer goes back on its own to another session's question, delegated work or a scheduled prompt. Without it, the agent has to answer with `send_to_session` itself, and a scheduled prompt gets no result. With it, the session shows as working while a tool runs, and stall detection and keeping the computer awake work too. Waiting decision questions are added to the prompt in Claude Code, Codex, Gemini and Qwen.
+- **Handing off work**: when a session calls `delegate`, the app opens a new terminal of that agent in the same project and types the work in. You can watch that terminal and step in; the result goes back to the session that handed it off. The sidebar row of the session that took it says which project handed it over.
+- Hooks attach on macOS and Linux. On Windows only Copilot CLI's do, checked with the real Copilot in CI on all three systems.
+- The `/switchboard` panel and subagent reports work with Claude Code only.
 - Turn on the Codex relay in Settings > Permissions and access. Opening a Codex terminal then records Switchboard's five hooks (the permission ask and the turn) as trusted in your Codex config, and while you are away Codex's asks to change files or use MCP tools go to the app and your phone. Commands that would run outside the sandbox are still asked in the terminal only. macOS and Linux.
 - While a Codex session is open, the account panel also shows Codex usage (5 hours, week), and a Codex session at its limit gets answers and messages after the reset.
 - Qwen Code and OpenCode 2 relay their asks with no setting: Qwen through a hook in a defaults file made for that run, OpenCode through a plugin added to that run. Your own settings files stay as they are. OpenCode's ask for a command does not hold the whole script, so commands are asked in its terminal only. Qwen's default Auto mode and OpenCode's default rules ask little, so few asks come up. macOS and Linux.
@@ -290,6 +298,7 @@ Text sent with this command reaches the session marked as input from a shell, ne
 | `node_worktree` | Makes an Orca worktree for a node, inside the session's folder only. |
 | `open_in_ide` | Opens a page or dev server in the in-app browser; a new command needs your OK in the app. |
 | `list_sessions`, `send_to_session` | Sees other sessions and sends them requests or information. |
+| `delegate` | Opens a terminal of another agent in the same project and hands it the work. |
 | `cancel_request` | Cancels a request the session made. |
 | `await_event`, `close_wait` | Opens and closes a wait for outside work such as a build or deploy. |
 | `routine_no_update`, `routine_report_failure` | Records that a scheduled run had nothing to report or failed. |
