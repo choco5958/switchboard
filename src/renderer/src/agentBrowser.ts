@@ -1,8 +1,9 @@
 // A session driving the in-app browser (browser_* tools, bridge POST /browser/act). It reads
 // the page as a short list of the things it can act on, each with a ref bound to that
 // reading: a ref from an older reading is refused, so the session never clicks a stale
-// element. Clicks and typing go in as real input events; a click on an element something
-// else covers is refused with what covers it. Only pages on this computer can be driven, and
+// element. Clicks and typing go in as real input events; a click on an element that is now
+// hidden, disabled or out of view, or that something else covers, is refused with why, so the
+// session never reads a click that went nowhere as one that worked. Only pages on this computer can be driven, and
 // pages on the private network too when the person allows it in Settings (BROWSER_LAN_KEY).
 
 export const ELEMENTS_MAX = 200
@@ -77,15 +78,22 @@ export function snapshotScript(rev: number): string {
 }
 
 // Runs in the page: the element of a ref scrolled into view and the point to press, or why not.
+// The element was shown and enabled when read, but the page may have changed since: a press
+// on a hidden element would land on whatever sits at the page's top left corner instead.
 export function pointScript(ref: string): string {
   return `(() => {
   const el = document.querySelector('[data-sb-ref="' + ${JSON.stringify(ref)} + '"]');
   if (!el) return { error: 'stale' };
+  if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return { error: 'disabled' };
   el.scrollIntoView({ block: 'center', inline: 'center' });
   const r = el.getBoundingClientRect();
+  const s = getComputedStyle(el);
+  if (r.width < 1 || r.height < 1 || s.visibility === 'hidden') return { error: 'hidden' };
   const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
+  if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return { error: 'outside' };
   const top = document.elementFromPoint(x, y);
-  if (top && top !== el && !el.contains(top) && !top.contains(el)) {
+  if (!top) return { error: 'outside' };
+  if (top !== el && !el.contains(top) && !top.contains(el)) {
     const what = (top.getAttribute('aria-label') || top.innerText || top.tagName).replace(/\\s+/g, ' ').trim().slice(0, 60);
     return { error: 'covered', by: top.tagName.toLowerCase() + ' "' + what + '"' };
   }
@@ -94,16 +102,31 @@ export function pointScript(ref: string): string {
 }
 
 // Runs in the page: focus the element of a ref and select what it holds, so typing replaces it.
+// A disabled or read-only field takes no typing, so that is refused rather than reported done.
 export function focusScript(ref: string): string {
   return `(() => {
   const el = document.querySelector('[data-sb-ref="' + ${JSON.stringify(ref)} + '"]');
   if (!el) return { error: 'stale' };
+  if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return { error: 'disabled' };
+  if (el.readOnly === true || el.getAttribute('aria-readonly') === 'true') return { error: 'readonly' };
   el.scrollIntoView({ block: 'center' });
   el.focus();
   if (typeof el.select === 'function') el.select();
   else if (el.isContentEditable) document.execCommand('selectAll');
   return { ok: true };
 })()`
+}
+
+// Why a press or typing on a ref was refused, for the session. Null when it can go ahead.
+export function refusal(result: { error?: string; by?: string } | undefined): string | null {
+  if (!result || result.error === 'stale') return 'that element is gone; call browser_snapshot again'
+  if (!result.error) return null
+  if (result.error === 'covered') return `the element is covered by ${result.by}`
+  if (result.error === 'disabled') return 'the element is disabled now; call browser_snapshot again'
+  if (result.error === 'readonly') return 'the field is read-only'
+  if (result.error === 'hidden') return 'the element is hidden now; call browser_snapshot again'
+  if (result.error === 'outside') return 'the element cannot be scrolled into view'
+  return result.error
 }
 
 // What the session reads: the address, the title, one line per element, then the text.

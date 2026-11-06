@@ -88,9 +88,9 @@ const KO = {
   browserSnapshot:
     'Switchboard 내장 브라우저에 지금 보이는 로컬 페이지를 읽는다: 주소, 제목, 누르거나 입력할 수 있는 요소 목록([ref] 역할 "이름"), 보이는 글. ' +
     '화면을 확인하거나 고친 결과를 검증할 때 쓴다. ref는 이번 읽기에서만 유효하다. 브라우저 탭이 앞으로 나와 사람이 볼 수 있다. 로컬 개발 서버만 다룬다.',
-  browserClick: 'browser_snapshot의 ref로 요소를 실제 마우스 입력으로 누른다. 다른 요소가 덮고 있으면 거절된다. 누른 뒤의 새 읽기를 돌려준다.',
+  browserClick: 'browser_snapshot의 ref로 요소를 실제 마우스 입력으로 누른다. 읽은 뒤 숨겨졌거나 비활성이 됐거나 다른 요소가 덮고 있으면 거절되고 이유를 돌려준다. 누른 뒤의 새 읽기를 돌려준다.',
   browserRef: 'browser_snapshot이 준 ref (예: 3:12)',
-  browserType: 'ref의 입력칸에 글을 넣는다(있던 내용은 바뀐다). submit이 true면 Enter를 누른다. 넣은 뒤의 새 읽기를 돌려준다.',
+  browserType: 'ref의 입력칸에 글을 넣는다(있던 내용은 바뀐다). 비활성이거나 읽기 전용인 칸은 거절된다. submit이 true면 Enter를 누른다. 넣은 뒤의 새 읽기를 돌려준다.',
   browserText: '넣을 글',
   browserSubmit: '넣은 뒤 Enter를 누를지',
   browserNavigate: '내장 브라우저로 이 컴퓨터의 주소(localhost, 127.0.0.1, ::1, 이름.localhost)를 연다. 사설망 주소와 이름.local은 사람이 설정에서 허용했을 때만 열린다. 열린 뒤의 읽기를 돌려준다.',
@@ -186,9 +186,9 @@ const EN: typeof KO = {
   browserSnapshot:
     'Reads the local page shown in the Switchboard in-app browser: address, title, the elements that can be pressed or typed into ([ref] role "name"), and the visible text. ' +
     'Use it to check a screen or verify a fix. A ref holds only for this reading. The browser tab comes to the front, so the person can watch. Local dev servers only.',
-  browserClick: 'Presses an element by its browser_snapshot ref, with real mouse input. Refused when another element covers it. Returns a fresh reading.',
+  browserClick: 'Presses an element by its browser_snapshot ref, with real mouse input. Refused, with the reason, when it has become hidden or disabled since the reading or another element covers it. Returns a fresh reading.',
   browserRef: 'A ref from browser_snapshot (e.g. 3:12)',
-  browserType: 'Puts text into the field of a ref (what was there is replaced). With submit true it presses Enter. Returns a fresh reading.',
+  browserType: 'Puts text into the field of a ref (what was there is replaced). Refused for a disabled or read-only field. With submit true it presses Enter. Returns a fresh reading.',
   browserText: 'The text to put in',
   browserSubmit: 'Whether to press Enter afterwards',
   browserNavigate: 'Opens an address on this computer (localhost, 127.0.0.1, ::1, name.localhost) in the in-app browser. Private network addresses and name.local open only when the person allowed them in settings. Returns the reading once it loaded.',

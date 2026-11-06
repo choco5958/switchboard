@@ -18,7 +18,7 @@ import { commentStatusLabel, commentStatusSlug, t, type Key } from '../../shared
 import { composing } from './ime'
 import { Badge, Button, Card, Chip, EmptyState, IconButton, Input, Select, cx } from './ui'
 import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
-import { focusScript, isLocalUrl, navigatedTo, pointScript, refRevision, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
+import { focusScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
 import type { PageSurface, SurfaceEvents } from './pageSurface'
 import { PageView } from './PageView'
 
@@ -379,16 +379,16 @@ export function BrowserView({
       }
       if (action === 'click') {
         const point = (await run(pointScript(element(args.ref)))) as { x?: number; y?: number; error?: string; by?: string } | undefined
-        if (!point || point.error === 'stale') throw new Error('that element is gone; call browser_snapshot again')
-        if (point.error === 'covered') throw new Error(`the element is covered by ${point.by}`)
-        const at = { x: point.x!, y: point.y! }
+        const refused = refusal(point)
+        if (refused) throw new Error(refused)
+        const at = { x: point!.x!, y: point!.y! }
         wv.click(at.x, at.y)
         await settle(600)
         return { text: await snapshot() }
       }
       if (action === 'type') {
-        const focused = (await run(focusScript(element(args.ref)))) as { error?: string } | undefined
-        if (!focused || focused.error) throw new Error('that element is gone; call browser_snapshot again')
+        const refused = refusal((await run(focusScript(element(args.ref)))) as { error?: string } | undefined)
+        if (refused) throw new Error(refused)
         await wv.insertText(String(args.text ?? ''))
         if (args.submit === true) wv.pressEnter()
         await settle(500)
