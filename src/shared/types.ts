@@ -13,6 +13,7 @@ export type Session = {
   usage: string // JSON of SessionUsage below
   agent?: string // the agent CLI: 'claude', 'codex', 'custom-...' (src/shared/agents.ts)
   terminal?: string // the app terminal it runs in, '' when outside the app (in the renderer: its dock id, or 'closed')
+  abilities?: string // what its client does beyond the tools, comma separated (bridge/server.ts ABILITIES); '' from before
 }
 
 export type SessionUsage = {

@@ -161,7 +161,7 @@ describe('the relay through the bridge', () => {
   test('away: the ask waits in the bridge, and the person allows or denies it', async () => {
     const terminal = 'r-relay'
     const session = createSession(
-      { agent: 'codex', terminal, cwd: '/w', socket: socketPath, home: dir, cli: '' },
+      { agent: 'codex', terminal, cwd: '/w', socket: socketPath, home: dir, cli: '', abilities: [] },
       { call: bridgeCall(socketPath), startBridge: async () => false, run: async () => ({ code: 1, stdout: '', stderr: '' }), log: () => undefined },
     )
     assert.ok(await session.ready())
@@ -208,7 +208,7 @@ describe('the relay through the bridge', () => {
       log: () => undefined,
     })
     const ask = ADAPTERS.codex!.ask(patch())!
-    const options = { agent: 'codex', terminal: 'r-x', cwd: '/w', socket: '/none', home: dir, cli: '' }
+    const options = { agent: 'codex', terminal: 'r-x', cwd: '/w', socket: '/none', home: dir, cli: '', abilities: [] }
     assert.deepEqual(await createSession(options, deps(false)).approve(ask, () => false), PASS)
     assert.deepEqual(await createSession(options, deps(true)).approve({ ...ask, complete: false }, () => false), PASS)
     assert.ok(!posted.includes('POST /approvals'))

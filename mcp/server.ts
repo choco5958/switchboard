@@ -28,7 +28,9 @@ const SEEN_MS = 20_000
 const ORCA = '/Applications/Orca.app/Contents/Resources/bin/orca'
 
 // `cli`: the agent CLI's own program, for what the server asks it (Codex's usage, codexUsage.ts).
-export type Options = { agent: string; terminal: string; cwd: string; socket: string; home: string; cli: string }
+// `abilities`: what the run's hooks and plugins add beyond the tools, as the app attached them
+// (src/main/agentTerms.ts); the bridge goes by these (bridge/server.ts ABILITIES).
+export type Options = { agent: string; terminal: string; cwd: string; socket: string; home: string; cli: string; abilities: string[] }
 
 // Flags first, since some CLIs pass MCP servers only a few env vars; env vars second.
 export function parseOptions(argv: readonly string[], env: Record<string, string | undefined>, cwd: string): Options {
@@ -42,6 +44,7 @@ export function parseOptions(argv: readonly string[], env: Record<string, string
     terminal: flag('terminal') || env.SWITCHBOARD_TERMINAL || '',
     cwd: flag('cwd') || cwd,
     cli: flag('cli') || '',
+    abilities: (flag('abilities') || env.SWITCHBOARD_ABILITIES || '').split(',').filter(Boolean),
     // Empty: Windows, where the bridge is on TCP and each call reads where (bridge/endpoint.ts).
     socket: flag('socket') || env.CLAUDE_IDE_SOCKET || (usesTcp(env) ? '' : join(home, '.claude-ide', 'bridge.sock')),
     home,
@@ -158,7 +161,7 @@ export function createSession(options: Options, deps: Deps) {
 
   const register = async (): Promise<boolean> => {
     // `token`: made with the session's row (a new database makes it anew) and handed over once.
-    const body = { id: sessionId, cwd: options.cwd, agent: options.agent, terminal: options.terminal, token: true }
+    const body = { id: sessionId, cwd: options.cwd, agent: options.agent, terminal: options.terminal, token: true, abilities: options.abilities }
     let reply = await deps.call('POST', '/sessions', body, own())
     if (reply.status === 0 && (await deps.startBridge())) reply = await deps.call('POST', '/sessions', body, own())
     if (!reply.ok) deps.log(say('mcp.registerFailed', { error: String(reply.json.error ?? reply.status) }))

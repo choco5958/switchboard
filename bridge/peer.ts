@@ -46,8 +46,8 @@ export type ForwardedQuestion = {
   reason: string
 }
 
-// `autoReply`: the recipient is a Claude Code session, whose mod sends its last answer when
-// the turn ends without a reply; other CLIs must reply themselves.
+// `autoReply`: the recipient's client sends its last answer back when the turn ends without a
+// reply (its `turnEnd` ability, bridge/server.ts ABILITIES); without it the session replies itself.
 // A fence made for one message: the text between its two lines cannot pose as a header of
 // ours (a request from the person, another message) since it cannot know the fence.
 export function newFence(): string {

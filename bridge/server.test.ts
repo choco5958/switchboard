@@ -666,6 +666,25 @@ describe('agent CLIs other than Claude Code', () => {
     assert.equal((await call('POST', '/deliveries/take', { sessionId: 'nobody' })).status, 404)
   })
 
+  test('the bridge goes by what a session says it can do, not by its agent', async () => {
+    // A Claude Code session from before abilities, an MCP session with none, and one whose hooks send the turn's end.
+    await call('POST', '/sessions', { id: 'ab-old', cwd: '/w/ab' })
+    await call('POST', '/sessions', { id: 'ab-none', cwd: '/w/ab', agent: 'qwen', abilities: [] })
+    await call('POST', '/sessions', { id: 'ab-turn', cwd: '/w/ab', agent: 'qwen', abilities: ['turnEnd', 'approvals', 'nonsense'] })
+    const row = bridge.db.prepare('select abilities from sessions where id = ?').get('ab-turn') as { abilities: string }
+    assert.equal(row.abilities, 'turnEnd,approvals')
+    const textFor = async (to: string) => {
+      await call('POST', '/messages', { sessionId: 'ab-old', to: [to], text: '상태 알려 줘' })
+      const items = (await call('POST', '/deliveries/take', { sessionId: to })).json.items as { text: string }[]
+      return items.map(i => i.text).join('\n')
+    }
+    assert.match(await textFor('ab-turn'), /마지막 답변이 그대로 결과로 전달됩니다/)
+    assert.doesNotMatch(await textFor('ab-none'), /마지막 답변이 그대로 결과로 전달됩니다/)
+    // Registering again without `abilities` keeps them (an older client says nothing).
+    await call('POST', '/sessions', { id: 'ab-turn', cwd: '/w/ab' })
+    assert.equal((bridge.db.prepare('select abilities from sessions where id = ?').get('ab-turn') as { abilities: string }).abilities, 'turnEnd,approvals')
+  })
+
   test('with hold, a prompt command stays open until the caller closes it after typing', async () => {
     await call('POST', '/sessions', { id: 'cx4', cwd: '/work/cli-app', agent: 'codex' })
     const report = (await call('POST', '/commands', { sessionId: 'cx4', kind: 'report' })).json.id

@@ -182,7 +182,9 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
       // Codex's usage comes from the codex the app found (mcp/codexUsage.ts); not on Windows, where
       // what is found is a shim the server cannot start.
       const cli = preset?.id === 'codex' && process.platform !== 'win32' ? cliPath : undefined
-      const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli)
+      // What this run adds beyond the tools, for the bridge (bridge/server.ts ABILITIES).
+      const abilities = [...(hooked && hook ? ['approvals'] : []), ...(cli ? ['usage'] : [])]
+      const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli, abilities)
       const configFile = preset?.dataFolder ? join(dataFolderOf(DIR, preset.id, folder), `${preset.id}.json`) : join(DIR, `${key}-${id}.json`)
       const launch = preset ? presetLaunch(preset, server, configFile, process.platform, hooked ? hook : undefined, version) : customLaunch(custom!, server, configFile)
       writeFiles(launch)

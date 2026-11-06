@@ -202,8 +202,10 @@ describe('the MCP server against a test bridge', () => {
 describe('pieces of the MCP server', () => {
   test('flags win over env vars, and the defaults come from HOME', () => {
     const env = { HOME: '/h', SWITCHBOARD_AGENT: 'qwen', SWITCHBOARD_TERMINAL: 'r-t1' }
-    assert.deepEqual(parseOptions(['--agent', 'Codex'], env, '/w'), { agent: 'codex', terminal: 'r-t1', cwd: '/w', socket: '/h/.claude-ide/bridge.sock', home: '/h', cli: '' })
+    assert.deepEqual(parseOptions(['--agent', 'Codex'], env, '/w'), { agent: 'codex', terminal: 'r-t1', cwd: '/w', socket: '/h/.claude-ide/bridge.sock', home: '/h', cli: '', abilities: [] })
     assert.equal(parseOptions([], env, '/w').agent, 'qwen')
+    // What the run's hooks add, as the app attached them (src/main/agentTerms.ts).
+    assert.deepEqual(parseOptions(['--abilities', 'turnEnd,approvals'], env, '/w').abilities, ['turnEnd', 'approvals'])
     assert.equal(parseOptions([], { HOME: '/h' }, '/w').agent, 'mcp')
   })
 
@@ -217,7 +219,7 @@ describe('pieces of the MCP server', () => {
 
   test('a line may be a batch; notifications get no reply; broken JSON a parse error', async () => {
     const session = createSession(
-      { agent: 'codex', terminal: '', cwd: '/w', socket: '/none', home: '/none', cli: '' },
+      { agent: 'codex', terminal: '', cwd: '/w', socket: '/none', home: '/none', cli: '', abilities: [] },
       { call: async () => ({ ok: false, status: 0, json: {} }), startBridge: async () => false, run: async () => ({ code: 1, stdout: '', stderr: '' }), log: () => undefined },
     )
     assert.equal((await answerLine('{', session.handle) as any).error.code, -32700)
@@ -235,7 +237,7 @@ describe('pieces of the MCP server', () => {
     const keys: Record<string, string[]> = { '/questions': [], '/messages': [] }
     let drop = true
     const session = createSession(
-      { agent: 'codex', terminal: '', cwd: '/w', socket: '/none', home: '/none', cli: '' },
+      { agent: 'codex', terminal: '', cwd: '/w', socket: '/none', home: '/none', cli: '', abilities: [] },
       {
         call: async (_method, path, body): Promise<Reply> => {
           const list = keys[path]
@@ -272,7 +274,7 @@ describe('pieces of the MCP server', () => {
     let up = false
     const calls: string[] = []
     const session = createSession(
-      { agent: 'codex', terminal: '', cwd: '/w', socket: '/none', home: '/none', cli: '' },
+      { agent: 'codex', terminal: '', cwd: '/w', socket: '/none', home: '/none', cli: '', abilities: [] },
       {
         call: async (method, path): Promise<Reply> => {
           calls.push(`${up ? 'up' : 'down'} ${path}`)
@@ -291,7 +293,7 @@ describe('pieces of the MCP server', () => {
   test('the token the bridge gives at registration goes with every later call, and with registering again', async () => {
     const seen: string[] = []
     const session = createSession(
-      { agent: 'codex', terminal: '', cwd: '/w', socket: '/none', home: '/none', cli: '' },
+      { agent: 'codex', terminal: '', cwd: '/w', socket: '/none', home: '/none', cli: '', abilities: [] },
       {
         call: async (_method, path, body, headers = {}): Promise<Reply> => {
           seen.push(`${path} ${headers['x-switchboard-session'] ?? '-'}${path === '/sessions' ? ` ${String((body as { token?: unknown }).token)}` : ''}`)

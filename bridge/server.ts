@@ -224,6 +224,15 @@ export const AGENT_KIND = /^[a-z0-9][a-z0-9:_-]{0,47}$/
 export const TERMINAL_ID = /^[A-Za-z0-9_-]{0,64}$/
 // Commands an agent without the mod can still follow: they become a prompt (mod/hooks/batch.ts commandPrompt).
 const PROMPT_COMMANDS = ['message', 'report', 'sync']
+// What a session's client can do beyond the tools, as it says when it registers (POST /sessions
+// `abilities`), so the bridge goes by that and not by which agent it is (docs/에이전트-대등하게.md):
+// turnEnd: it sends each turn's last answer back (/messages/turn-end); cancel: it follows cancel
+// commands; activity: it reports tool use (/sessions/activity); prompt: it adds what waits to the
+// person's prompts; usage: it reports usage; approvals: it relays permission asks; subagents: it
+// pauses, resumes and stops subagents and reads their transcripts.
+export const ABILITIES = ['turnEnd', 'cancel', 'activity', 'prompt', 'usage', 'approvals', 'subagents'] as const
+// A Claude Code session that registered before abilities existed: its mod does all of these.
+const MOD_ABILITIES: readonly string[] = ABILITIES
 // How long cancel_request waits for the recipient's mod to say whether it stopped the turn.
 const CANCEL_WAIT_MS = 3000
 // How long a message taken with `hold` counts as typed in before its acknowledgement comes.
@@ -434,6 +443,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   // The hash of the token a session took at registration (POST /sessions); '' for one that took
   // none (mods and MCP servers from before), whose routes stay open as they were.
   addColumns('sessions', [['token', "text not null default ''"]])
+  // What the session's client can do (ABILITIES), comma separated; '' for one from before.
+  addColumns('sessions', [['abilities', "text not null default ''"]])
   // Whether a row came in with the app's key (POST /outbox): text without it may be any program
   // of the same user, another session's shell too (outboxText). Rows from before were all shown
   // as they are, and stay so.
@@ -550,9 +561,14 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const row = stmt('select project from sessions where id = ?').get(id) as { project: string } | undefined
     return row ? `${row.project} (${id})` : id
   }
-  // A Claude Code session's mod sends the turn's last answer back when it did not reply itself.
-  const autoReplies = (id: string): boolean =>
-    ((stmt('select agent from sessions where id = ?').get(id) as { agent: string } | undefined)?.agent ?? 'claude') === 'claude'
+  // What a session's client said it can do; a Claude Code session from before abilities is its mod.
+  const abilitiesOf = (id: string): readonly string[] => {
+    const row = stmt('select agent, abilities from sessions where id = ?').get(id) as { agent: string; abilities: string } | undefined
+    if (row?.abilities) return row.abilities.split(',')
+    return (row?.agent ?? 'claude') === 'claude' ? MOD_ABILITIES : []
+  }
+  // A session that sends the turn's last answer back when it did not reply itself.
+  const autoReplies = (id: string): boolean => abilitiesOf(id).includes('turnEnd')
 
   // What a session reads for one outbox row: a message from another session, or a question
   // the person forwarded, gets its header in the reader's language; the rest is the text sent.
@@ -1583,6 +1599,10 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       const terminal = str(body.terminal).trim()
       if (agent && !AGENT_KIND.test(agent)) return send(res, 400, { error: say('bridge.badAgent') })
       if (!TERMINAL_ID.test(terminal)) return send(res, 400, { error: say('bridge.badTerminal') })
+      // Unknown abilities are dropped: a newer client may know more than this bridge.
+      const abilities = Array.isArray(body.abilities)
+        ? [...new Set(body.abilities.filter((a): a is string => typeof a === 'string' && (ABILITIES as readonly string[]).includes(a)))].join(',')
+        : null
       const known = db.prepare('select project from sessions where id = ?').get(id) as { project: string } | undefined
       // Registering again (every reconnect) takes the session's token: nobody else re-registers it
       // while it runs. One that is not running (no delivery stream open) may take a new token, so a
@@ -1597,13 +1617,14 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       // the row, and handed over this once: a session someone registered first without one (an
       // older mod) stays without one, so no other caller can bind it to a token of its own.
       const token = (!known || rebind) && body.token === true ? newToken() : ''
+      // `abilities` left out keeps what the session said before (an older client says nothing).
       db.prepare(
-        `insert into sessions (id, project, cwd, started_at, last_seen, agent, terminal, token)
-         values (?, ?, ?, ?, ?, coalesce(nullif(?, ''), 'claude'), ?, ?)
+        `insert into sessions (id, project, cwd, started_at, last_seen, agent, terminal, token, abilities)
+         values (?, ?, ?, ?, ?, coalesce(nullif(?, ''), 'claude'), ?, ?, coalesce(?, ''))
          on conflict (id) do update set project = excluded.project, cwd = excluded.cwd, last_seen = excluded.last_seen,
            agent = coalesce(nullif(?, ''), sessions.agent), terminal = coalesce(nullif(?, ''), sessions.terminal),
-           token = case when ? then excluded.token else sessions.token end`,
-      ).run(id, project, cwd, now(), now(), agent, terminal, token ? tokenHash(token) : '', agent, terminal, rebind ? 1 : 0)
+           token = case when ? then excluded.token else sessions.token end, abilities = coalesce(?, sessions.abilities)`,
+      ).run(id, project, cwd, now(), now(), agent, terminal, token ? tokenHash(token) : '', abilities, agent, terminal, rebind ? 1 : 0, abilities)
       changed('sessions')
       return send(res, 200, token ? { id, project, token } : { id, project })
     }
@@ -2136,7 +2157,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       // The mod drops what it holds and stops a turn made of these alone (it answers in a moment).
       const asked: { command: number; rows: OutboxRow[] }[] = []
       for (const [recipient, list] of byRecipient) {
-        if (!autoReplies(recipient) || !liveSessions().includes(recipient)) continue
+        if (!abilitiesOf(recipient).includes('cancel') || !liveSessions().includes(recipient)) continue
         const command = Number(
           db
             .prepare("insert into commands (session_id, kind, payload, created_at) values (?, 'cancel', ?, ?)")
