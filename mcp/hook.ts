@@ -110,8 +110,13 @@ export async function runHook(agent: string, stdin: string, env: Record<string, 
   if (eventName && named.hookName === undefined) named.hookName = eventName
   const socket = hookSocket(env.HOME || homedir(), terminal)
   const ask = adapter.ask(input as Record<string, unknown>)
-  if (ask) return adapter.reply(await askServer(socket, terminal, ask))
   const event = adapter.event?.(input as Record<string, unknown>)
+  if (ask) {
+    // A CLI whose ask comes from the hook a tool starts with (Crush): the tool starts once allowed.
+    const answer = await askServer(socket, terminal, ask)
+    if (event && answer.answer !== 'deny') await tellServer(socket, terminal, event)
+    return adapter.reply(answer)
+  }
   if (!event) return ''
   // Told first: `eventReply?.(…)` would skip its arguments, the telling with them, for a CLI without one.
   const reply = await tellServer(socket, terminal, event)

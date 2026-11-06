@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createBridge, listen } from '../bridge/server.ts'
 import { askServer, runHook } from './hook.ts'
-import { ADAPTERS, PASS, copilotAnswer, hookSocket, opencodeAsk, sameTerminal } from './permission.ts'
+import { ADAPTERS, PASS, copilotAnswer, crushSafe, hookSocket, opencodeAsk, sameTerminal } from './permission.ts'
 import { bridgeCall, createSession, listenForHooks, type Reply } from './server.ts'
 
 // Short: a socket path has a limit of about 104 bytes, and the hook socket sits under HOME.
@@ -117,6 +117,51 @@ describe('Copilot adapter', () => {
   })
 })
 
+describe('Crush adapter', () => {
+  const crush = ADAPTERS.crush!
+  // As Crush 0.99 sent them (tested).
+  const pre = (tool_name: string, tool_input: object, tool_use_id = 'call_1') => ({ event: 'PreToolUse', hook_event_name: 'PreToolUse', session_id: 's1', cwd: '/w', tool_name, tool_input, tool_use_id })
+
+  test('a command and a file change go away from PreToolUse, with what they do as the summary', () => {
+    const run = crush.ask(pre('bash', { command: 'npm test', description: 'Run tests', working_dir: '/w/app' }))!
+    assert.deepEqual([run.tool, run.summary, run.complete, run.cwd], ['bash', 'npm test\n# in /w/app\n# Run tests', true, '/w'])
+    assert.match(run.requestKey, /^s1:call_1:\d+$/)
+    assert.equal(crush.ask(pre('write', { file_path: '/w/a.txt', content: 'hi' }))!.summary, '/w/a.txt\nhi')
+    assert.equal(crush.ask(pre('edit', { file_path: '/w/a.txt', old_string: 'a', new_string: 'b' }))!.summary, '/w/a.txt\n- a\n+ b')
+    const multi = crush.ask(pre('multiedit', { file_path: '/w/a.txt', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'c', new_string: 'd', replace_all: true }] }))!
+    assert.equal(multi.summary, '/w/a.txt\n- a\n+ b\n(all)\n- c\n+ d')
+  })
+
+  test('what Crush runs without asking stays, and a field the summary leaves out shows whole', () => {
+    assert.equal(crush.ask(pre('bash', { command: 'git status' })), null)
+    assert.equal(crush.ask(pre('view', { file_path: '/w/a.txt' })), null)
+    assert.equal(crush.ask({ hook_event_name: 'TurnStart', session_id: 's1' }), null)
+    assert.match(crush.ask(pre('write', { file_path: '/w/a.txt', content: 'hi', mode: 'x' }))!.summary, /"mode": "x"/)
+    assert.match(crush.ask(pre('multiedit', { file_path: '/w/a.txt', edits: [{ old_string: 'a', new_string: 'b', at: 3 }] }))!.summary, /"at": 3/)
+    // A model that gives every call the same id: two asks, not one answer for both.
+    assert.notEqual(crush.ask(pre('write', { file_path: '/w/a.txt', content: 'hi' }))!.requestKey, '')
+    assert.equal(crush.reply({ answer: 'allow', message: '' }), '{"decision":"allow"}')
+    assert.equal(crush.reply({ answer: 'deny', message: 'no' }), '{"decision":"deny","reason":"no"}')
+    assert.equal(crush.reply(PASS), '')
+  })
+
+  test('its list of commands it runs without asking, as Crush reads it', () => {
+    for (const ok of ['ls', 'ls -la', 'git status', 'git log --oneline', 'echo hi > a.txt', 'PWD']) assert.ok(crushSafe(ok), ok)
+    for (const asks of ['ls; rm -rf /', 'git status && make', 'echo $(rm x)', 'lsof', 'git push', 'rm a', 'cat a | sh']) assert.ok(!crushSafe(asks), asks)
+  })
+
+  test('its turn: one of TurnEnd, Interrupt and StopFailure ends it', () => {
+    assert.deepEqual(crush.event!({ hook_event_name: 'TurnStart' }), { kind: 'turnStart' })
+    assert.deepEqual(crush.event!(pre('bash', { command: 'ls' })), { kind: 'toolStart' })
+    assert.deepEqual(crush.event!({ hook_event_name: 'PostToolUseFailure' }), { kind: 'toolEnd' })
+    assert.deepEqual(crush.event!({ hook_event_name: 'TurnEnd', last_assistant_message: 'done' }), { kind: 'turnEnd', answer: 'done' })
+    assert.deepEqual(crush.event!({ hook_event_name: 'Interrupt' }), { kind: 'turnEnd', answer: '', aborted: true })
+    assert.deepEqual(crush.event!({ hook_event_name: 'StopFailure', error: 'x' }), { kind: 'turnEnd', answer: '' })
+    assert.equal(crush.event!({ hook_event_name: 'PermissionRequest' }), null)
+    assert.equal(crush.eventReply, undefined)
+  })
+})
+
 describe('turn events from hooks', () => {
   test('Qwen and Codex use the Claude Code names; Copilot its own, with the answer in its event log', () => {
     const qwen = ADAPTERS.qwen!
@@ -202,6 +247,28 @@ describe('events through the hook command', () => {
     const qwen = await runHook('qwen', JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' }), env)
     assert.equal(JSON.parse(qwen).hookSpecificOutput.additionalContext, 'Q1 waits')
     assert.deepEqual(seen, ['turnStart', 'turnEnd:/c/events.jsonl', 'turnStart'])
+    listener.close()
+  })
+
+  test('an ask from the hook a tool starts with (Crush) starts the tool once it is not denied', async () => {
+    const terminal = 'r-crush'
+    const seen: string[] = []
+    let answer: 'allow' | 'deny' | 'ask' = 'allow'
+    const listener = listenForHooks(hookSocket(dir, terminal), terminal, async () => ({ answer, message: 'm' }), async event => {
+      seen.push(event.kind)
+      return {}
+    })
+    await new Promise(resolve => listener.once('listening', resolve))
+    const env = { HOME: dir, SWITCHBOARD_TERMINAL: terminal }
+    const write = JSON.stringify({ hook_event_name: 'PreToolUse', session_id: 's', tool_name: 'write', tool_input: { file_path: '/w/a', content: 'x' }, tool_use_id: 'c1' })
+    assert.equal(await runHook('crush', write, env), '{"decision":"allow"}')
+    answer = 'deny'
+    assert.equal(await runHook('crush', write, env), '{"decision":"deny","reason":"m"}')
+    answer = 'ask'
+    assert.equal(await runHook('crush', write, env), '')
+    // A tool it does not ask about only starts.
+    assert.equal(await runHook('crush', JSON.stringify({ hook_event_name: 'PreToolUse', session_id: 's', tool_name: 'view', tool_input: {} }), env), '')
+    assert.deepEqual(seen, ['toolStart', 'toolStart', 'toolStart'])
     listener.close()
   })
 })

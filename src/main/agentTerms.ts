@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PRESETS, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverride, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
+import { CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PRESETS, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
@@ -128,6 +128,10 @@ function headOf(path: string | undefined): Uint8Array | null {
 type Call = (method: string, path: string, body?: unknown) => Promise<Reply & { proven?: boolean }>
 
 const TRUSTED_AHEAD = ['codex', 'copilot', 'cursor']
+// The CLIs whose relay hooks also tell the run's server about the turn (docs/에이전트-대등하게.md),
+// and those that take added context with the person's prompt.
+const FOLLOWS = ['copilot', 'qwen', 'opencode', 'crush', 'codex']
+const PROMPTS = ['qwen', 'codex']
 
 // A terminal running an agent CLI other than Claude Code (a preset or the person's own), with
 // the Switchboard MCP server attached to that run. The dock opens these, and so does a
@@ -150,9 +154,10 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   if (preset && TRUSTED_AHEAD.includes(preset.id) && trustFolders(settings?.[TRUST_FOLDERS_KEY])) trustFolder(preset.id, folder, homedir())
   const cliPath = preset ? found.found[preset.bin] : undefined
   // Codex's permission asks go to the person while away once the relay is on and Codex trusts the
-  // hook (codexHook.ts); if it does not, the terminal opens without it and Codex asks there. Qwen's
+  // hooks (codexHook.ts); if it does not, the terminal opens without them and Codex asks there. Qwen's
   // always do, unless a system defaults file of the machine's would be hidden (qwenDefaultsFile),
-  // and OpenCode 2's (its plugin, mcp/opencode/server.ts) and Copilot's from 1.0.105 (its plugin folder).
+  // and OpenCode 2's (its plugin, mcp/opencode/server.ts), Copilot's from 1.0.105 (its plugin folder)
+  // and Crush's (the hooks of its project config).
   // On Windows only Copilot's: its hook runs the program with no shell, and scripts/relay-check.ts
   // checks it there (the Test workflow's relay job); the others' hooks are untried on Windows.
   const relays = process.platform !== 'win32' || preset?.id === 'copilot'
@@ -161,14 +166,14 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
     hook && preset?.id === 'codex' && settings?.[CODEX_APPROVALS_KEY] === true && cliPath
       ? await trustCodexHook(
           cliBins(cliPath, headOf(cliPath)).includes('node') && found.node ? [found.node, cliPath] : [cliPath],
-          codexHookOverride(hook),
+          codexHookOverrides(hook),
           hookCommand(hook),
           folder,
           terminalEnv(process.env),
         )
       : preset?.id === 'qwen'
         ? !process.env[QWEN_DEFAULTS_ENV] && !existsSync(qwenDefaultsFile(process.platform))
-        : preset?.id === 'opencode' || preset?.id === 'copilot'
+        : preset?.id === 'opencode' || preset?.id === 'copilot' || preset?.id === 'crush'
   const version = (preset?.versionArgs || hooked) && cliPath ? await versionOf(cliPath) : null
   return openTerminal({
     cwd,
@@ -183,13 +188,13 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
       // what is found is a shim the server cannot start.
       const cli = preset?.id === 'codex' && process.platform !== 'win32' ? cliPath : undefined
       // What this run adds beyond the tools, for the bridge (bridge/server.ts ABILITIES).
-      // Copilot's, Qwen's and OpenCode's hooks follow the turn as well; Qwen adds to the prompt.
+      // The hooks of these follow the turn as well; Qwen's and Codex's add to the prompt.
       const attached = !!(hooked && hook && preset && hookAttaches(preset, hook, version))
-      const follows = attached && !!preset && ['copilot', 'qwen', 'opencode'].includes(preset.id)
+      const follows = attached && !!preset && FOLLOWS.includes(preset.id)
       const abilities = [
         ...(attached ? ['approvals'] : []),
         ...(follows ? ['turnEnd', 'activity'] : []),
-        ...(follows && preset?.id === 'qwen' ? ['prompt'] : []),
+        ...(follows && PROMPTS.includes(preset!.id) ? ['prompt'] : []),
         ...(cli ? ['usage'] : []),
       ]
       const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli, abilities)

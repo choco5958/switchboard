@@ -14,7 +14,7 @@ import {
   EVENT_TIMEOUT_S,
   hookAttaches,
   hookCommand,
-  codexHookOverride,
+  codexHookOverrides,
   presetOf,
   QWEN_DEFAULTS_ENV,
   SWITCHBOARD_TOOLS,
@@ -48,17 +48,27 @@ describe('preset launch lines', () => {
     expect([launch.env, launch.files]).toEqual([{}, []])
   })
 
-  it('codex with the relay on also gets its PermissionRequest hook, the same command for every run', () => {
+  it('codex with the relay on also gets its hooks, the same command for every run', () => {
     const hook = { command: '/home/p/.claude-ide/bin/switchboard-node', args: ['/r/mcp/hook.mjs', 'codex'] }
     const launch = presetLaunch(presetOf('codex')!, server, file, 'darwin', hook)
     const got = words(launch.line)
-    expect(got.slice(-2)).toEqual([
+    const command = `command='/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs codex'`
+    // The permission ask, and the turn followed with a short timeout, each its own -c value.
+    expect(got.slice(-10)).toEqual([
       '-c',
-      `hooks.PermissionRequest=[{matcher="*",hooks=[{type="command",command='/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs codex',timeout=${HOOK_TIMEOUT_S}}]}]`,
+      `hooks.PermissionRequest=[{matcher="*",hooks=[{type="command",${command},timeout=${HOOK_TIMEOUT_S}}]}]`,
+      '-c',
+      `hooks.UserPromptSubmit=[{hooks=[{type="command",${command},timeout=${EVENT_TIMEOUT_S}}]}]`,
+      '-c',
+      `hooks.PreToolUse=[{matcher="*",hooks=[{type="command",${command},timeout=${EVENT_TIMEOUT_S}}]}]`,
+      '-c',
+      `hooks.PostToolUse=[{matcher="*",hooks=[{type="command",${command},timeout=${EVENT_TIMEOUT_S}}]}]`,
+      '-c',
+      `hooks.Stop=[{hooks=[{type="command",${command},timeout=${EVENT_TIMEOUT_S}}]}]`,
     ])
     expect(hookCommand(hook)).toBe('/home/p/.claude-ide/bin/switchboard-node /r/mcp/hook.mjs codex')
     // A quote in the path: a TOML basic string, which holds the shell's own quoting.
-    expect(codexHookOverride({ command: "/o'dd/node", args: ['/r/hook.mjs', 'codex'] })).toContain(`command=${JSON.stringify("'/o'\\''dd/node' /r/hook.mjs codex")}`)
+    expect(codexHookOverrides({ command: "/o'dd/node", args: ['/r/hook.mjs', 'codex'] })[0]).toContain(`command=${JSON.stringify("'/o'\\''dd/node' /r/hook.mjs codex")}`)
     // Gemini has no hook: the same line as without one.
     expect(presetLaunch(presetOf('gemini')!, server, file, 'darwin', hook).line).toBe('gemini')
   })
@@ -165,6 +175,29 @@ describe('preset launch lines', () => {
     for (const odd of [{ ...server, command: '/o$x/node' }, { ...server, command: 'C:\\node\\node.exe' }]) {
       expect(presetLaunch(presetOf('crush')!, odd, `${folder}/crush.json`)).toEqual({ line: 'crush', env: {}, files: [] })
     }
+  })
+
+  it('crush with the relay gets its hooks in the same crush.json, a shell line with nothing of a run', () => {
+    const folder = '/home/u/.claude-ide/agents/crush/0123456789abcdef'
+    const hook = { command: '/home/p/node', args: ['/r/mcp/hook.mjs', 'crush'] }
+    const launch = presetLaunch(presetOf('crush')!, server, `${folder}/crush.json`, 'darwin', hook)
+    expect(words(launch.line)).toEqual(['crush', '-D', folder])
+    expect(launch.files.map(f => f.path)).toEqual([`${folder}/crush.json`])
+    const config = JSON.parse(launch.files[0]!.content)
+    expect(config.mcp.switchboard.command).toBe(server.command)
+    const one = (timeout: number) => [{ name: 'switchboard', command: '/home/p/node /r/mcp/hook.mjs crush', timeout }]
+    expect(config.hooks).toEqual({
+      PreToolUse: one(HOOK_TIMEOUT_S),
+      PostToolUse: one(EVENT_TIMEOUT_S),
+      PostToolUseFailure: one(EVENT_TIMEOUT_S),
+      TurnStart: one(EVENT_TIMEOUT_S),
+      TurnEnd: one(EVENT_TIMEOUT_S),
+      Interrupt: one(EVENT_TIMEOUT_S),
+      StopFailure: one(EVENT_TIMEOUT_S),
+    })
+    expect(hookAttaches(presetOf('crush')!, hook, null)).toBe(true)
+    // A server Crush could not be given: no hooks either.
+    expect(presetLaunch(presetOf('crush')!, { ...server, command: '/o$x/node' }, `${folder}/crush.json`, 'darwin', hook).files).toEqual([])
   })
 
   it('the tools a CLI is told to allow are the server\'s tools', () => {

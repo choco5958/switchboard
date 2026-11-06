@@ -1,7 +1,7 @@
 // Codex runs a hook only once its exact definition is recorded as trusted (hooks.state in
 // ~/.codex/config.toml, keyed by where the hook came from and hashed by Codex). With the relay
 // turned on (agents.ts CODEX_APPROVALS_KEY), the app has Codex itself record Switchboard's
-// permission hook before it opens a Codex terminal: `codex app-server` with the same -c value
+// hooks (the permission ask and the turn's events) before it opens a Codex terminal: `codex app-server` with the same -c value
 // lists the hook with its hash (hooks/list) and writes the trust (config/batchWrite), as Codex's
 // own /hooks review does. Nothing else in the file changes, and no hook runs untrusted
 // (--dangerously-bypass-hook-trust would let every hook of the run do so).
@@ -11,23 +11,27 @@ import { createInterface } from 'node:readline'
 type Json = Record<string, unknown>
 const object = (value: unknown): Json => (value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : {})
 
-// From the hooks/list reply: true when Switchboard's hook is trusted already, the hooks.state
-// value to write when it is not, null when the list does not hold it (Codex changed, or the
-// relay cannot be set up: the terminal then opens without the hook).
+// Switchboard's hooks as hooks/list names their events (agents.ts CODEX_EVENTS; 0.166, tested).
+export const CODEX_HOOK_EVENTS = ['permissionRequest', 'userPromptSubmit', 'preToolUse', 'postToolUse', 'stop']
+
+// From the hooks/list reply: true when Switchboard's hooks are all trusted already, the hooks.state
+// values to write for those that are not, null when the list does not hold one of them (Codex
+// changed, or the relay cannot be set up: the terminal then opens without the hooks).
 export function planTrust(list: unknown, command: string): true | Json | null {
   const data = object(list).data
   const hooks = Array.isArray(data) ? data.flatMap(entry => (Array.isArray(object(entry).hooks) ? (object(entry).hooks as unknown[]) : [])) : []
-  const mine = hooks.map(object).find(h => h.source === 'sessionFlags' && h.eventName === 'permissionRequest' && h.command === command)
-  if (!mine || typeof mine.key !== 'string' || typeof mine.currentHash !== 'string') return null
-  if (mine.trustStatus === 'trusted') return true
-  return { [mine.key]: { trusted_hash: mine.currentHash } }
+  const mine = CODEX_HOOK_EVENTS.map(event => hooks.map(object).find(h => h.source === 'sessionFlags' && h.eventName === event && h.command === command))
+  if (mine.some(h => !h || typeof h.key !== 'string' || typeof h.currentHash !== 'string')) return null
+  const untrusted = (mine as Json[]).filter(h => h.trustStatus !== 'trusted')
+  if (untrusted.length === 0) return true
+  return Object.fromEntries(untrusted.map(h => [h.key as string, { trusted_hash: h.currentHash }]))
 }
 
 // `codex`: how to start it (agentDetect.ts cliBins: an npm-installed one runs with node).
-export function trustCodexHook(codex: string[], override: string, command: string, cwd: string, env: NodeJS.ProcessEnv, timeoutMs = 20_000): Promise<boolean> {
+export function trustCodexHook(codex: string[], overrides: string[], command: string, cwd: string, env: NodeJS.ProcessEnv, timeoutMs = 20_000): Promise<boolean> {
   return new Promise(resolve => {
     let settled = false
-    const child = spawn(codex[0]!, [...codex.slice(1), 'app-server', '-c', override], { cwd, env, stdio: ['pipe', 'pipe', 'ignore'] })
+    const child = spawn(codex[0]!, [...codex.slice(1), 'app-server', ...overrides.flatMap(value => ['-c', value])], { cwd, env, stdio: ['pipe', 'pipe', 'ignore'] })
     const finish = (ok: boolean) => {
       if (settled) return
       settled = true

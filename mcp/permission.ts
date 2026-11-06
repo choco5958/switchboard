@@ -201,7 +201,79 @@ export function copilotAnswer(log: string): string {
   return ''
 }
 
-export const ADAPTERS: Record<string, HookAdapter> = { codex, qwen, copilot }
+// The bash commands Crush runs without asking (internal/agent/tools/safe.go, 0.99): one with no
+// chaining that starts with one of these. They are not sent away, as Crush would not ask about them.
+const CRUSH_SAFE = [
+  'cal', 'date', 'df', 'du', 'echo', 'env', 'free', 'groups', 'hostname', 'id', 'kill', 'killall', 'ls', 'nice', 'nohup',
+  'printenv', 'ps', 'pwd', 'set', 'time', 'timeout', 'top', 'type', 'uname', 'unset', 'uptime', 'whatis', 'whereis', 'which',
+  'whoami', 'git blame', 'git branch', 'git config --get', 'git config --list', 'git describe', 'git diff', 'git grep', 'git log',
+  'git ls-files', 'git ls-remote', 'git remote', 'git rev-parse', 'git shortlog', 'git show', 'git status', 'git tag',
+]
+export function crushSafe(command: string): boolean {
+  if ([';', '|', '&&', '$(', '`'].some(c => command.includes(c))) return false
+  const lower = command.toLowerCase()
+  return CRUSH_SAFE.some(safe => lower.startsWith(safe) && (lower.length === safe.length || lower[safe.length] === ' ' || lower[safe.length] === '-'))
+}
+
+// Crush's hooks (0.99, docs/hooks): its PermissionRequest only watches, so the ask goes away from
+// PreToolUse, which runs before Crush's own check and whose allow skips Crush's prompt. Only what
+// Crush asks about is sent: a command not on its list above and a file change. A tool the person
+// allowed in their own config (allowed_tools) is asked about here as well. Crush runs commands on
+// the machine as Claude Code's Bash does, so a command is answered away whole.
+const crush: HookAdapter = {
+  ask: input => {
+    if (input.hook_event_name !== 'PreToolUse') return null
+    const tool = text(input.tool_name)
+    const v = object(input.tool_input)
+    const edit = (e: Json) => `- ${text(e.old_string)}\n+ ${text(e.new_string)}`
+    const edits = Array.isArray(v.edits) ? v.edits.map(object) : []
+    const view =
+      tool === 'bash'
+        ? crushSafe(text(v.command))
+          ? null
+          : shown(v, ['command', 'description', 'working_dir', 'run_in_background', 'auto_background_after'], () =>
+              [text(v.command), ...(text(v.working_dir) ? [`# in ${text(v.working_dir)}`] : []), ...(text(v.description) ? [`# ${text(v.description)}`] : [])].join('\n'),
+            )
+        : tool === 'write'
+          ? shown(v, ['file_path', 'content'], () => `${text(v.file_path)}\n${text(v.content)}`)
+          : tool === 'edit'
+            ? shown(v, ['file_path', 'old_string', 'new_string', 'replace_all'], () => `${text(v.file_path)}${v.replace_all === true ? ' (all)' : ''}\n${edit(v)}`)
+            : tool === 'multiedit' && edits.every(e => Object.keys(e).every(key => ['old_string', 'new_string', 'replace_all'].includes(key)))
+              ? shown(v, ['file_path', 'edits'], () => [text(v.file_path), ...edits.map(e => `${e.replace_all === true ? '(all)\n' : ''}${edit(e)}`)].join('\n'))
+              : tool === 'multiedit'
+                ? approvalText(JSON.stringify(v, null, 1))
+                : null
+    if (!view) return null
+    return {
+      tool,
+      summary: view.summary,
+      complete: view.complete,
+      cwd: text(input.cwd),
+      reason: '',
+      // Crush calls the hook once a call; a model that gives every call the same id (some local
+      // ones do) must not find an earlier answer, so the time keeps two asks apart.
+      requestKey: `${text(input.session_id)}:${text(input.tool_use_id)}:${Date.now()}`,
+    }
+  },
+  reply: answer => {
+    if (answer.answer === 'ask') return ''
+    return JSON.stringify(answer.answer === 'allow' ? { decision: 'allow' } : { decision: 'deny', reason: answer.message })
+  },
+  // One of TurnEnd, Interrupt and StopFailure ends each turn (internal/agent/turn_hooks.go). Its
+  // TurnStart takes no added context.
+  event: input => {
+    const name = text(input.hook_event_name)
+    if (name === 'TurnStart') return { kind: 'turnStart' }
+    if (name === 'PreToolUse') return { kind: 'toolStart' }
+    if (name === 'PostToolUse' || name === 'PostToolUseFailure') return { kind: 'toolEnd' }
+    if (name === 'TurnEnd') return { kind: 'turnEnd', answer: text(input.last_assistant_message) }
+    if (name === 'Interrupt') return { kind: 'turnEnd', answer: '', aborted: true }
+    if (name === 'StopFailure') return { kind: 'turnEnd', answer: '' }
+    return null
+  },
+}
+
+export const ADAPTERS: Record<string, HookAdapter> = { codex, qwen, copilot, crush }
 
 // An ask of OpenCode 2 (its permission.asked event: packages/schema/src/permission.ts), which the
 // run's plugin (mcp/opencode/server.ts) sends here. A file change carries a diff of each file

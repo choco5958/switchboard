@@ -15,8 +15,9 @@ export type McpServer = { command: string; args: string[] }
 // the shell, and files to write first (paths the main process chose, in ~/.claude-ide).
 export type Launch = { line: string; env: Record<string, string>; files: { path: string; content: string }[] }
 
-// `files`: more files of the run, at the paths given (a plugin folder, for one).
-type Injection = { args?: string[]; env?: Record<string, string>; file?: unknown; files?: { path: string; value: unknown }[] }
+// `files`: more files of the run, at the paths given (a plugin folder, for one). `config`, from a
+// permission hook: the run's config file whole, in place of what `mcp` wrote there.
+type Injection = { args?: string[]; env?: Record<string, string>; file?: unknown; files?: { path: string; value: unknown }[]; config?: unknown }
 
 export type AgentPreset = {
   id: string // the agent kind its sessions carry
@@ -77,8 +78,15 @@ export const EVENT_TIMEOUT_S = 30
 export function hookCommand(hook: McpServer): string {
   return [hook.command, ...hook.args].map(word => shellWord(word, 'linux')).join(' ')
 }
-export function codexHookOverride(hook: McpServer): string {
-  return `hooks.PermissionRequest=[{matcher="*",hooks=[{type="command",command=${tomlString(hookCommand(hook))},timeout=${HOOK_TIMEOUT_S}}]}]`
+// The same command follows the turn as well (docs/에이전트-대등하게.md), each event its own -c value
+// so the person's other hooks and hooks.state stay. Codex trusts each hook apart.
+export const CODEX_EVENTS = ['PermissionRequest', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'] as const
+export function codexHookOverrides(hook: McpServer): string[] {
+  const command = tomlString(hookCommand(hook))
+  return CODEX_EVENTS.map(name => {
+    const matcher = name === 'UserPromptSubmit' || name === 'Stop' ? '' : 'matcher="*",'
+    return `hooks.${name}=[{${matcher}hooks=[{type="command",command=${command},timeout=${name === 'PermissionRequest' ? HOOK_TIMEOUT_S : EVENT_TIMEOUT_S}}]}]`
+  })
 }
 
 // The folder a file of the app's is in, with a Windows path's backslashes as well.
@@ -141,7 +149,7 @@ export const PRESETS: AgentPreset[] = [
     mcp: server => ({
       args: ['-c', `mcp_servers.${MCP_NAME}.command=${tomlString(server.command)}`, '-c', `mcp_servers.${MCP_NAME}.args=[${server.args.map(tomlString).join(',')}]`],
     }),
-    permissionHook: hook => ({ args: ['-c', codexHookOverride(hook)] }),
+    permissionHook: hook => ({ args: codexHookOverrides(hook).flatMap(value => ['-c', value]) }),
   },
   {
     id: 'gemini',
@@ -327,6 +335,20 @@ export const PRESETS: AgentPreset[] = [
         },
       }
     },
+    // Crush's hooks go in the same file (docs/hooks, 0.99): its shell runs the command, so it is a
+    // shell line. The command holds nothing of a run, as the file is the project's: the hook finds
+    // its run by SWITCHBOARD_TERMINAL, which Crush hands its hooks. PreToolUse asks while away
+    // (mcp/permission.ts), so it may wait as long as the other CLIs' permission hooks.
+    permissionHook: (hook, { injected }) => {
+      if (injected.file === undefined) return {}
+      const command = hookCommand(hook)
+      const follow = (timeout: number) => [{ name: 'switchboard', command, timeout }]
+      const hooks = {
+        PreToolUse: follow(HOOK_TIMEOUT_S),
+        ...Object.fromEntries(['PostToolUse', 'PostToolUseFailure', 'TurnStart', 'TurnEnd', 'Interrupt', 'StopFailure'].map(name => [name, follow(EVENT_TIMEOUT_S)])),
+      }
+      return { config: { ...(injected.file as object), hooks } }
+    },
   },
 ]
 
@@ -391,7 +413,7 @@ export const hookFileOf = (configFile: string) => configFile.replace(/(\.json)?$
 export function hookAttaches(preset: AgentPreset, hook: McpServer, version: string | null): boolean {
   const injected = preset.mcp?.({ command: hook.command, args: [] }, '/sb/agents/run.json') ?? {}
   const got = preset.permissionHook?.(hook, { hookFile: '/sb/agents/run-hook.json', injected, version }) ?? {}
-  return (got.args?.length ?? 0) > 0 || got.env !== undefined || got.file !== undefined || (got.files?.length ?? 0) > 0
+  return (got.args?.length ?? 0) > 0 || got.env !== undefined || got.file !== undefined || got.config !== undefined || (got.files?.length ?? 0) > 0
 }
 
 export function presetLaunch(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform, hook?: McpServer, version: string | null = null): Launch {
@@ -404,7 +426,7 @@ export function presetLaunch(preset: AgentPreset, server: McpServer, configFile:
     line: words.join(' '),
     env: { ...got.env, ...hooked.env },
     files: [
-      ...(got.file === undefined ? [] : [{ path: configFile, content: `${json(got.file)}\n` }]),
+      ...((hooked.config ?? got.file) === undefined ? [] : [{ path: configFile, content: `${json(hooked.config ?? got.file)}\n` }]),
       ...(hooked.file === undefined ? [] : [{ path: hookFile, content: `${json(hooked.file)}\n` }]),
       ...[...(got.files ?? []), ...(hooked.files ?? [])].map(f => ({ path: f.path, content: `${json(f.value)}\n` })),
     ],
