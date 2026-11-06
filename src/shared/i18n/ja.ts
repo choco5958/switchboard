@@ -1204,10 +1204,10 @@ export const ja: Dict = {
   'mobile.page.more': '詳しく',
   'mobile.page.less': '閉じる',
   // Past sessions page (pages/SessionsPage.tsx)
-  'sessions.intro': 'このコンピューターに残っている Claude Code、Codex、Gemini CLI、Qwen Code、Copilot CLI の会話を探し、アプリのターミナルで続きから開きます。会話記録のファイルは読むだけで、どこにも送りません。',
+  'sessions.intro': 'このコンピューターに残っている Claude Code、Codex、Gemini CLI、Qwen Code、Copilot CLI、OpenCode、Cursor CLI、Crush の会話を探し、アプリのターミナルで続きから開きます。会話記録のファイルは読むだけで、どこにも送りません。',
   'sessions.search': 'タイトル、内容、フォルダー、ブランチで検索',
   'sessions.loading': '会話記録を読み込んでいます。',
-  'sessions.none': 'このコンピューターに会話記録が見つかりません。Claude Code、Codex、Gemini CLI、Qwen Code、Copilot CLI で会話するとここに表示されます。',
+  'sessions.none': 'このコンピューターに会話記録が見つかりません。Claude Code、Codex、Gemini CLI、Qwen Code、Copilot CLI、OpenCode、Cursor CLI、Crush で会話するとここに表示されます。',
   'sessions.noMatch': '"{query}" に一致する会話はありません。',
   'sessions.shown': '会話 {total}件中 {shown}件',
   'sessions.untitled': 'タイトルのない会話',

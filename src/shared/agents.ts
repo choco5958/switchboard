@@ -242,6 +242,7 @@ export const PRESETS: AgentPreset[] = [
     install: 'npm i -g opencode-ai',
     docs: 'https://opencode.ai/docs/mcp-servers/',
     how: 'agents.how.opencode',
+    resumeArgs: id => ['--session', id],
     // OpenCode 2 runs every TUI on one background service, started by the first: a second terminal's
     // env never reached it, so it had no server of its own. --standalone gives the run a private
     // server with this env (OpenCode 2.2.5, tested); OpenCode 1 has no such flag and no service.
@@ -284,6 +285,7 @@ export const PRESETS: AgentPreset[] = [
     install: 'curl https://cursor.com/install -fsS | bash',
     docs: 'https://cursor.com/docs/cli/reference/parameters',
     how: 'agents.how.cursor',
+    resumeArgs: id => ['--resume', id],
     // A plugin (--plugin-dir) holding the server: Cursor starts a plugin's MCP servers with no
     // approval and without --approve-mcps, which would also approve a cloned repo's own servers
     // (cursor-agent 2026.11.05, tested). Cursor names the server after the plugin's folder, so every
@@ -326,6 +328,7 @@ export const PRESETS: AgentPreset[] = [
     install: 'brew install charmbracelet/tap/crush',
     docs: 'https://github.com/charmbracelet/crush',
     how: 'agents.how.crush',
+    resumeArgs: id => ['--session', id],
     dataFolder: true,
     // -D names Crush's data folder, whose crush.json Crush merges over the person's own config (an
     // array adds to theirs, so allowed_tools does not replace their list); the login stays in Crush's
@@ -583,10 +586,10 @@ export function isClaude(kind: string | undefined): boolean {
   return !kind || kind === 'claude'
 }
 
-// A Claude Code session id as `claude --resume` takes it (a UUID). The app types it into a
+// A session id as a CLI's resume takes it (a UUID, or OpenCode's ses_…). The app types it into a
 // shell line as is, so an id with any other character is never resumed.
 export function resumableId(id: unknown): id is string {
-  return typeof id === 'string' && /^[0-9A-Za-z][0-9A-Za-z-]{0,63}$/.test(id)
+  return typeof id === 'string' && /^[0-9A-Za-z][0-9A-Za-z_-]{0,63}$/.test(id)
 }
 
 // Session id to agent kind, for badges. Empty while every session is Claude Code:

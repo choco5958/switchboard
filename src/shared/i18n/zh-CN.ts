@@ -1204,10 +1204,10 @@ export const zhCN: Dict = {
   'mobile.page.more': '详细',
   'mobile.page.less': '收起',
   // Past sessions page (pages/SessionsPage.tsx)
-  'sessions.intro': '查找这台电脑上留下的 Claude Code、Codex、Gemini CLI、Qwen Code 和 Copilot CLI 对话，并在应用终端中继续。只读取对话记录文件，不会发送到任何地方。',
+  'sessions.intro': '查找这台电脑上留下的 Claude Code、Codex、Gemini CLI、Qwen Code、Copilot CLI、OpenCode、Cursor CLI 和 Crush 对话，并在应用终端中继续。只读取对话记录文件，不会发送到任何地方。',
   'sessions.search': '按标题、内容、文件夹或分支搜索',
   'sessions.loading': '正在读取对话记录。',
-  'sessions.none': '在这台电脑上没有找到对话记录。与 Claude Code、Codex、Gemini CLI、Qwen Code 或 Copilot CLI 对话后会显示在这里。',
+  'sessions.none': '在这台电脑上没有找到对话记录。与 Claude Code、Codex、Gemini CLI、Qwen Code、Copilot CLI、OpenCode、Cursor CLI 或 Crush 对话后会显示在这里。',
   'sessions.noMatch': '没有与 "{query}" 匹配的对话。',
   'sessions.shown': '共 {total} 个对话，显示 {shown} 个',
   'sessions.untitled': '无标题对话',

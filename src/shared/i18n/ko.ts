@@ -1203,10 +1203,10 @@ export const ko = {
   'mobile.page.more': '자세히',
   'mobile.page.less': '접기',
   // Past sessions page (pages/SessionsPage.tsx)
-  'sessions.intro': '이 컴퓨터에 남은 Claude Code, Codex, Gemini CLI, Qwen Code, Copilot CLI 대화를 찾아 앱 터미널에서 이어서 엽니다. 대화 기록 파일을 읽기만 하고 어디에도 보내지 않습니다.',
+  'sessions.intro': '이 컴퓨터에 남은 Claude Code, Codex, Gemini CLI, Qwen Code, Copilot CLI, OpenCode, Cursor CLI, Crush 대화를 찾아 앱 터미널에서 이어서 엽니다. 대화 기록 파일을 읽기만 하고 어디에도 보내지 않습니다.',
   'sessions.search': '제목, 내용, 폴더, 브랜치로 찾기',
   'sessions.loading': '대화 기록을 읽는 중입니다.',
-  'sessions.none': '이 컴퓨터에서 대화 기록을 찾지 못했습니다. Claude Code, Codex, Gemini CLI, Qwen Code, Copilot CLI로 대화를 하면 여기에 나타납니다.',
+  'sessions.none': '이 컴퓨터에서 대화 기록을 찾지 못했습니다. Claude Code, Codex, Gemini CLI, Qwen Code, Copilot CLI, OpenCode, Cursor CLI, Crush로 대화를 하면 여기에 나타납니다.',
   'sessions.noMatch': '"{query}"에 맞는 대화가 없습니다.',
   'sessions.shown': '대화 {total}개 중 {shown}개',
   'sessions.untitled': '제목 없는 대화',

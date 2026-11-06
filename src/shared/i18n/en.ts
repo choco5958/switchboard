@@ -1204,10 +1204,10 @@ export const en: Dict = {
   'mobile.page.more': 'More',
   'mobile.page.less': 'Less',
   // Past sessions page (pages/SessionsPage.tsx)
-  'sessions.intro': 'Find the conversations of Claude Code, Codex, Gemini CLI, Qwen Code and Copilot CLI left on this computer and continue one in an app terminal. The transcript files are only read, never sent anywhere.',
+  'sessions.intro': 'Find the conversations of Claude Code, Codex, Gemini CLI, Qwen Code, Copilot CLI, OpenCode, Cursor CLI and Crush left on this computer and continue one in an app terminal. The transcript files are only read, never sent anywhere.',
   'sessions.search': 'Search by title, text, folder or branch',
   'sessions.loading': 'Reading the transcripts.',
-  'sessions.none': 'No transcripts found on this computer. Conversations show up here once you talk with Claude Code, Codex, Gemini CLI, Qwen Code or Copilot CLI.',
+  'sessions.none': 'No transcripts found on this computer. Conversations show up here once you talk with Claude Code, Codex, Gemini CLI, Qwen Code, Copilot CLI, OpenCode, Cursor CLI or Crush.',
   'sessions.noMatch': 'No conversation matches "{query}".',
   'sessions.shown': '{shown} of {total} conversations',
   'sessions.untitled': 'Untitled conversation',

@@ -87,7 +87,7 @@ Jump to any session, task or decision question. Gather projects into groups and 
 - **Home**: decisions and permission asks gather here to answer on the spot, with the sessions stalled mid-reply for over 5 minutes, at a usage limit or dropped, the ones working, and what finished today. Stalled sessions and lifted limits also come as notifications. A decision or permission notification leaves the notification center once you answer it anywhere: the phone, Telegram or the terminal.
 - **New question window**: when a question comes in while you look at another session, a small window in the bottom right answers it or opens its session. After answering, `Next` goes to the next question.
 - **Reopen a dropped session**: a Claude Code session that dropped because its terminal closed or the computer restarted opens again from `Resume in a terminal` on the session or task view. A new terminal continues the conversation with `claude --resume`, and the answers kept for it go in once it connects.
-- **Past sessions**: find earlier conversations of Claude Code, Codex, Gemini CLI, Qwen Code and Copilot CLI on this computer by title, text, folder or branch, and resume one in a terminal with that CLI's own resume command.
+- **Past sessions**: find earlier conversations of Claude Code, Codex, Gemini CLI, Qwen Code, Copilot CLI, OpenCode, Cursor CLI and Crush on this computer by title, text, folder or branch, and resume one in a terminal with that CLI's own resume command.
 
 #### Sessions working together
 - A session finds others with `list_sessions` and sends a request with `send_to_session`. If the receiver ends its turn without replying, its last answer comes back as the result.
@@ -133,9 +133,10 @@ Claude Code connects through a mod; other CLIs connect through a server (MCP) an
 | Gemini CLI | extension (turn on in Settings) | ✅ | | ✅ | |
 | Qwen Code | server, hooks | ✅ | ✅ | ✅ | |
 | Copilot CLI | server, plugin | ✅ 1.0.105 and later | ✅ 1.0.105 and later | ✅ | |
-| OpenCode | server, plugin | ✅ 2 and later | ✅ 2 and later | | |
-| Crush | server, hooks | ✅ | ✅ | | |
-| Cursor CLI, Goose, Amp | server | | | | |
+| OpenCode | server, plugin | ✅ 2 and later | ✅ 2 and later | ✅ 2 and later | |
+| Crush | server, hooks | ✅ | ✅ | ✅ opened in the app | |
+| Cursor CLI | server, plugin | | | ✅ by name | |
+| Goose, Amp | server | | | | |
 | Grok, Kimi | terminal only | | | | |
 
 - **Last answer sent back**: when a turn ends, its last answer goes back on its own to another session's question, delegated work or a scheduled prompt. Without it, the agent has to answer with `send_to_session` itself, and a scheduled prompt gets no result. With it, the session shows as working while a tool runs, and stall detection and keeping the computer awake work too. Waiting decision questions are added to the prompt in Claude Code, Codex, Gemini and Qwen.

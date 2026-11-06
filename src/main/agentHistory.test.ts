@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
-import { agentSources, codexNames, parseCodex, parseCopilot, parseGemini, parseQwen } from './agentHistory'
+import { DatabaseSync } from 'node:sqlite'
+import { agentSources, codexNames, crushSessions, cursorSessions, opencodeSessions, parseCodex, parseCopilot, parseGemini, parseQwen } from './agentHistory'
 import { loadFrom } from './sessionHistory'
 import { presetLaunch, presetOf } from '../shared/agents'
 
@@ -94,5 +95,58 @@ describe('finding them on disk', () => {
     })
     // CODEX_HOME and GEMINI_CLI_HOME stand for their folders.
     expect((await loadFrom(agentSources({ CODEX_HOME: join(home, 'none') }, home))).sessions.some(s => s.agent === 'codex')).toBe(false)
+  })
+})
+
+describe('the CLIs that keep a database', () => {
+  let home = ''
+  afterEach(() => rmSync(home, { recursive: true, force: true }))
+  const db = (path: string, sql: string) => {
+    mkdirSync(join(path, '..'), { recursive: true })
+    const d = new DatabaseSync(path)
+    d.exec(sql)
+    d.close()
+  }
+
+  test('OpenCode 2: top sessions with their words; a subagent or archived one is left out', () => {
+    home = mkdtempSync(join(tmpdir(), 'sb-oc-'))
+    const path = join(home, 'opencode.db')
+    db(path, `create table session_v2 (id text, parent_id text, directory text, title text, time_updated integer, time_archived integer);
+      create table session_message (id text, session_id text, type text, seq integer, data text);
+      insert into session_v2 values ('ses_abc', null, '/w/oc', 'Fix tests', 7, null), ('ses_kid', 'ses_abc', '/w/oc', 'sub', 8, null), ('ses_old', null, '/w/oc', 'old', 9, 5);
+      insert into session_message values ('m1', 'ses_abc', 'user', 1, '{"text":"run the tests"}'), ('m2', 'ses_abc', 'assistant', 2, '{"content":[{"type":"text","text":"All pass."}]}'), ('m3', 'ses_abc', 'idle', 3, '{}');`)
+    const found = opencodeSessions(path)
+    expect(found.map(f => f.ready)).toMatchObject([{ id: 'ses_abc', agent: 'opencode', cwd: '/w/oc', title: 'Fix tests', snippet: 'All pass.', messages: 2, updatedAt: 7 }])
+    expect(opencodeSessions(join(home, 'none.db'))).toEqual([])
+  })
+
+  test('Cursor: a chat that said something, by its name; Crush: the app data folders that know their project', async () => {
+    home = mkdtempSync(join(tmpdir(), 'sb-cu-'))
+    const chat = join(home, 'chats', 'ws1', '24bb23ff-45a8-45c6-b9e1-dca6491116a5')
+    db(join(chat, 'store.db'), `create table meta (key text, value text); insert into meta values ('0', '${Buffer.from(JSON.stringify({ name: 'Refactor login', createdAt: 1 })).toString('hex')}');`)
+    writeFileSync(join(chat, 'meta.json'), JSON.stringify({ cwd: '/w/cu', hasConversation: true, updatedAtMs: 11 }))
+    const empty = join(home, 'chats', 'ws1', '00000000-0000-0000-0000-000000000000')
+    mkdirSync(empty, { recursive: true })
+    writeFileSync(join(empty, 'meta.json'), JSON.stringify({ cwd: '/w/cu', hasConversation: false, updatedAtMs: 12 }))
+    expect((await cursorSessions(join(home, 'chats'))).map(f => f.ready)).toMatchObject([{ agent: 'cursor', cwd: '/w/cu', title: 'Refactor login', messages: 0, updatedAt: 11 }])
+    const folder = join(home, 'agents', 'crush', '0123456789abcdef')
+    db(join(folder, 'crush.db'), `create table sessions (id text, parent_session_id text, title text, message_count integer, updated_at integer);
+      create table messages (id text, session_id text, role text, parts text, created_at integer);
+      insert into sessions values ('d3aaff7d-8ced-47d7-9b8d-b89c6687df37', null, 'Write hello', 4, 100);
+      insert into messages values ('x', 'd3aaff7d-8ced-47d7-9b8d-b89c6687df37', 'assistant', '[{"type":"text","data":{"text":"Done."}},{"type":"finish","data":{}}]', 99);`)
+    // No record of the project yet (a folder from before it was kept): left out.
+    expect(await crushSessions(join(home, 'agents', 'crush'))).toEqual([])
+    writeFileSync(join(folder, 'cwd'), '/w/cr')
+    expect((await crushSessions(join(home, 'agents', 'crush'))).map(f => f.ready)).toMatchObject([{ agent: 'crush', cwd: '/w/cr', title: 'Write hello', snippet: 'Done.', messages: 4, updatedAt: 100_000 }])
+    // Through the sources, as the past sessions page reads them.
+    const all = await loadFrom(agentSources({ XDG_DATA_HOME: join(home, 'none') }, join(home, 'nohome'), join(home, 'agents')))
+    expect(all.sessions.map(s => s.agent)).toEqual(['crush'])
+  })
+
+  test('their resume flags', () => {
+    const server = { command: 'node', args: ['/s.mjs'] }
+    expect(presetLaunch(presetOf('opencode')!, server, '/a/x.json', 'darwin', undefined, '2.2.5', 'ses_abc').line).toBe('opencode --session ses_abc --standalone')
+    expect(presetLaunch(presetOf('cursor')!, server, '/a/x.json', 'darwin', undefined, null, 'abc').line).toMatch(/^cursor-agent --resume abc /)
+    expect(presetLaunch(presetOf('crush')!, server, '/a/crush.json', 'darwin', undefined, null, 'abc').line).toMatch(/^crush --session abc -D /)
   })
 })

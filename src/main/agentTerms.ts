@@ -223,6 +223,9 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
       }
       const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli, abilities)
       const configFile = preset?.dataFolder ? join(dataFolderOf(DIR, preset.id, folder), `${preset.id}.json`) : join(DIR, `${key}-${id}.json`)
+      // A data folder is named by a hash of the project's: it keeps the project's folder too, for
+      // its past conversations (agentHistory.ts).
+      if (preset?.dataFolder) writeFiles({ line: '', env: {}, files: [{ path: join(dataFolderOf(DIR, preset.id, folder), 'cwd'), content: folder }] })
       const launch = preset ? presetLaunch(preset, server, configFile, process.platform, hooked ? hook : undefined, version, resume) : customLaunch(custom!, server, configFile)
       writeFiles(launch)
       return { env: launch.env, line: launch.line }

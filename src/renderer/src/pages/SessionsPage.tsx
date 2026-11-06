@@ -31,7 +31,7 @@ function SessionItem({ session, running }: { session: PastSession; running: bool
               </Badge>
             )}
             <span>{ago(session.updatedAt)}</span>
-            <span>{t(session.approximate ? 'sessions.messagesApprox' : 'sessions.messages', { n: session.messages })}</span>
+            {session.messages > 0 && <span>{t(session.approximate ? 'sessions.messagesApprox' : 'sessions.messages', { n: session.messages })}</span>}
           </div>
         </div>
         {running ? (

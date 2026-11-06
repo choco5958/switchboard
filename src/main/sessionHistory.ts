@@ -131,7 +131,8 @@ export function parseTranscript(input: { id: string; folder: string; head: strin
 }
 
 // `side`: what the listing learned besides the file (a name a CLI keeps apart, its project folder).
-export type Found = { path: string; id: string; folder: string; size: number; mtime: number; side?: { title?: string; cwd?: string } }
+// `ready`: a conversation read already, from a database (agentHistory.ts), with no file to read.
+export type Found = { path: string; id: string; folder: string; size: number; mtime: number; side?: { title?: string; cwd?: string }; ready?: PastSession }
 export type Ends = { head: string; tail: string; whole: boolean }
 // Where one CLI keeps its conversations, and how one reads.
 export type Source = { files: () => Promise<Found[]>; parse: (input: Found & Ends) => PastSession | null }
@@ -221,7 +222,7 @@ export async function loadFrom(sources: readonly Source[]): Promise<{ total: num
         }
         let session: PastSession | null = null
         try {
-          session = source.parse({ ...file, ...(await readEnds(file.path, file.size)) })
+          session = file.ready ?? source.parse({ ...file, ...(await readEnds(file.path, file.size)) })
         } catch {
           // Unreadable: left out.
         }
