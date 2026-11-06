@@ -37,7 +37,9 @@ function certificate(dir: string): { key: string; cert: string } {
   return { key, cert }
 }
 
-// The processes of the app at `app`, by system.
+// The processes of the app at `app`, by system: the app's own executable only. On macOS its
+// helper switchboard-node sits beside it in Contents/MacOS and outlives the app quitting, so
+// counting it would read the helper as the updated app before the swap has put the new one in.
 function appPids(app: string): number[] {
   if (PLATFORM === 'win32') {
     const listed = spawnSync('powershell.exe', ['-NoProfile', '-Command', "Get-Process switchboard -ErrorAction SilentlyContinue | ForEach-Object { '{0} {1}' -f $_.Id, $_.Path }"], { encoding: 'utf8' }).stdout
@@ -65,7 +67,7 @@ function appPids(app: string): number[] {
   return listed
     .split('\n')
     .map(line => /^\s*(\d+) (.+)$/.exec(line))
-    .filter(match => match && match[2]!.startsWith(`${app}/Contents/MacOS/`))
+    .filter(match => match && match[2] === `${app}/Contents/MacOS/switchboard`)
     .map(match => Number(match![1]))
 }
 
