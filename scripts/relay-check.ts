@@ -342,8 +342,11 @@ async function main(): Promise<number> {
       delete own.env.OPENCODE_EXTRA
     }
 
-    // PWD too: OpenCode takes its project from it, not from the working folder.
-    const childEnv = { ...env, ...runEnv, ...own.env, SWITCHBOARD_TERMINAL: terminal, PWD: project }
+    // PWD too: OpenCode takes its project from it, not from the working folder. Without GITHUB_SHA,
+    // which turns on Gemini's strict environment filter (made for GitHub Actions) and takes
+    // SWITCHBOARD_TERMINAL from its servers and hooks: the app never runs there.
+    const childEnv: Record<string, string | undefined> = { ...env, ...runEnv, ...own.env, SWITCHBOARD_TERMINAL: terminal, PWD: project }
+    delete childEnv.GITHUB_SHA
     let output = ''
     let exit: number | null | undefined
     // A terminal's screen, as the app's terminal would show it, for the failure message.
@@ -417,9 +420,13 @@ async function main(): Promise<number> {
   } finally {
     for (const child of started.reverse()) if (child.running()) child.kill()
     model.close()
-    // Windows keeps a file a stopped process held for a moment.
+    // Windows keeps a file a stopped process held for a moment; one still held stays behind.
     await new Promise(r => setTimeout(r, 1500))
-    rmSync(work, { recursive: true, force: true, maxRetries: 5 })
+    try {
+      rmSync(work, { recursive: true, force: true, maxRetries: 5 })
+    } catch (error) {
+      console.log(`left behind: ${error instanceof Error ? error.message : error}`)
+    }
   }
   if (failed) console.log(`FAILED: ${failed}`)
   return failed ? 1 : 0

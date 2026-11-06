@@ -72,7 +72,8 @@ jobs:
           - { agent: copilot, package: '@github/copilot@1.0.105' }
           - { agent: qwen, package: '@qwen-code/qwen-code@0.26.7' }
           - { agent: crush, package: '@charmland/crush@0.99.0' }
-          - { agent: opencode, package: 'opencode-ai@2.2.5' }
+          # OpenCode 2 is not on npm (opencode-ai there is OpenCode 1): its release's build, below.
+          - { agent: opencode, package: '' }
           - { agent: codex, package: '@openai/codex@0.166.0' }
           - { agent: gemini, package: '@google/gemini-cli@0.67.0' }
     runs-on: ${{ matrix.os }}
@@ -87,6 +88,24 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: node scripts/build-node.ts
-      - run: npm install -g ${{ matrix.package }}
+      - if: matrix.package != ''
+        run: npm install -g ${{ matrix.package }}
+      # The archive's SHA-256 is written here, not read from the same release.
+      - if: matrix.agent == 'opencode'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "${{ runner.os }}" in
+            Linux) asset=opencode-linux-x64.tar.gz; sum=09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e; bin=opencode ;;
+            macOS) asset=opencode-darwin-arm64.zip; sum=25ba9908979fa7d764792c82589b4b5768ab1511154e0317d98aa77d216ce767; bin=opencode ;;
+            Windows) asset=opencode-windows-x64.zip; sum=2f3bfd6b3527c60c2a882557b20ddc9ba6bdff4b5a8fe61c853da8fcfb3076e8; bin=opencode.exe ;;
+          esac
+          dir="$RUNNER_TEMP/opencode"
+          mkdir -p "$dir" && cd "$dir"
+          gh release download v2.2.5 --repo anomalyco/opencode --pattern "$asset"
+          node -e 'const h=require("crypto").createHash("sha256").update(require("fs").readFileSync(process.argv[1])).digest("hex");if(h!==process.argv[2]){console.error("sha256 "+h);process.exit(1)}' "$asset" "$sum"
+          case "$asset" in *.zip) unzip -q "$asset" ;; *) tar xzf "$asset" ;; esac
+          echo "AGENT_COMMAND=$dir/$bin" >> "$GITHUB_ENV"
       # jiti reads the app's TypeScript as it is (imports without extensions); it is not a dependency.
-      - run: npx -y jiti@2.6.1 scripts/relay-check.ts ${{ matrix.agent }}
+      - run: npx -y jiti@2.6.1 scripts/relay-check.ts ${{ matrix.agent }} ${{ env.AGENT_COMMAND }}
