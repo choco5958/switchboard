@@ -162,6 +162,20 @@ describe('Crush adapter', () => {
   })
 })
 
+describe('Gemini adapter', () => {
+  const gemini = ADAPTERS.gemini!
+  test('its turn only: no ask goes away, and the prompt takes added context', () => {
+    assert.equal(gemini.ask({ hook_event_name: 'BeforeTool', tool_name: 'write_file', tool_input: {} }), null)
+    assert.deepEqual(gemini.event!({ hook_event_name: 'BeforeAgent', prompt: 'hi' }), { kind: 'turnStart' })
+    assert.deepEqual(gemini.event!({ hook_event_name: 'BeforeTool' }), { kind: 'toolStart' })
+    assert.deepEqual(gemini.event!({ hook_event_name: 'AfterTool' }), { kind: 'toolEnd' })
+    assert.deepEqual(gemini.event!({ hook_event_name: 'AfterAgent', prompt_response: 'done' }), { kind: 'turnEnd', answer: 'done' })
+    assert.equal(gemini.event!({ hook_event_name: 'SessionStart' }), null)
+    assert.equal(gemini.eventReply!({ kind: 'turnStart' }, { context: 'Q1' }), JSON.stringify({ hookSpecificOutput: { hookEventName: 'BeforeAgent', additionalContext: 'Q1' } }))
+    assert.equal(gemini.eventReply!({ kind: 'turnEnd', answer: '' }, {}), '')
+  })
+})
+
 describe('turn events from hooks', () => {
   test('Qwen and Codex use the Claude Code names; Copilot its own, with the answer in its event log', () => {
     const qwen = ADAPTERS.qwen!
@@ -247,6 +261,11 @@ describe('events through the hook command', () => {
     const qwen = await runHook('qwen', JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' }), env)
     assert.equal(JSON.parse(qwen).hookSpecificOutput.additionalContext, 'Q1 waits')
     assert.deepEqual(seen, ['turnStart', 'turnEnd:/c/events.jsonl', 'turnStart'])
+    // Gemini's hooks come with its extension in every run: only one the app opened through it counts.
+    assert.equal(await runHook('gemini', JSON.stringify({ hook_event_name: 'BeforeAgent', prompt: 'hi' }), env), '')
+    const gemini = await runHook('gemini', JSON.stringify({ hook_event_name: 'BeforeAgent', prompt: 'hi' }), { ...env, SWITCHBOARD_EXTENSION: '1' })
+    assert.equal(JSON.parse(gemini).hookSpecificOutput.additionalContext, 'Q1 waits')
+    assert.deepEqual(seen, ['turnStart', 'turnEnd:/c/events.jsonl', 'turnStart', 'turnStart'])
     listener.close()
   })
 

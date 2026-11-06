@@ -15,6 +15,8 @@ import {
   hookAttaches,
   hookCommand,
   codexHookOverrides,
+  geminiExtension,
+  geminiLaunch,
   presetOf,
   QWEN_DEFAULTS_ENV,
   SWITCHBOARD_TOOLS,
@@ -198,6 +200,28 @@ describe('preset launch lines', () => {
     expect(hookAttaches(presetOf('crush')!, hook, null)).toBe(true)
     // A server Crush could not be given: no hooks either.
     expect(presetLaunch(presetOf('crush')!, { ...server, command: '/o$x/node' }, `${folder}/crush.json`, 'darwin', hook).files).toEqual([])
+  })
+
+  it('gemini through its extension: the server and hooks hold nothing of a run, and the run gets a policy', () => {
+    const shared = { command: '/opt/node', args: ['/app/mcp/server.mjs', '--agent', 'gemini', '--terminal', '', '--socket', '/h/b.sock', '--abilities', 'turnEnd'] }
+    const files = geminiExtension(shared, { command: '/opt/node', args: ['/app/mcp/hook.mjs', 'gemini'] }, '/h/.claude-ide/agents/gemini-extension')
+    expect(files.map(f => f.path)).toEqual(['/h/.claude-ide/agents/gemini-extension/gemini-extension.json', '/h/.claude-ide/agents/gemini-extension/hooks/hooks.json'])
+    expect(files[0]!.value).toEqual({
+      name: 'switchboard',
+      version: '1.0.0',
+      description: 'Switchboard',
+      mcpServers: { switchboard: { command: '/opt/node', args: ['/app/mcp/server.mjs', '--agent', 'gemini', '--socket', '/h/b.sock', '--app-only'] } },
+    })
+    const hooks = (files[1]!.value as { hooks: Record<string, { hooks: { command: string; timeout: number }[] }[]> }).hooks
+    expect(Object.keys(hooks)).toEqual(['BeforeAgent', 'BeforeTool', 'AfterTool', 'AfterAgent'])
+    expect(hooks.AfterAgent![0]!.hooks[0]).toMatchObject({ command: '/opt/node /app/mcp/hook.mjs gemini', timeout: EVENT_TIMEOUT_S * 1000 })
+    // Without hooks (Windows), or a command Gemini would fill ${…} in: none.
+    expect(geminiExtension(shared, undefined, '/x')[1]!.value).toEqual({ hooks: {} })
+    expect(geminiExtension(shared, { command: '/o${x}/node', args: [] }, '/x')[1]!.value).toEqual({ hooks: {} })
+    const launch = geminiLaunch('/h/.claude-ide/agents/k1-gemini.toml', ['turnEnd', 'activity', 'prompt'], 'darwin')
+    expect(launch.line).toBe('gemini --policy /h/.claude-ide/agents/k1-gemini.toml')
+    expect(launch.env).toEqual({ SWITCHBOARD_ABILITIES: 'turnEnd,activity,prompt', SWITCHBOARD_EXTENSION: '1' })
+    expect(launch.files[0]!.content).toBe('[[rule]]\ntoolName = "*"\nmcpName = "switchboard"\ndecision = "allow"\npriority = 100\n')
   })
 
   it('the tools a CLI is told to allow are the server\'s tools', () => {

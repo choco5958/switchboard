@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PRESETS, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
+import { CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, geminiExtension, geminiLaunch, CUSTOM_AGENTS_KEY, PRESETS, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, hookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
@@ -15,6 +15,7 @@ import { nodeEntry, nodeLauncher } from './runtime'
 import { loginShell } from './shell'
 import { trustFolder } from './agentTrust'
 import { trustCodexHook } from './codexHook'
+import { linkGeminiExtension } from './geminiExtension'
 
 // Terminals for agent CLIs other than Claude Code: which ones are installed (on the
 // login-shell PATH the terminals get) and opening one with the Switchboard MCP server.
@@ -173,8 +174,21 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
         )
       : preset?.id === 'qwen'
         ? !process.env[QWEN_DEFAULTS_ENV] && !existsSync(qwenDefaultsFile(process.platform))
-        : preset?.id === 'opencode' || preset?.id === 'copilot' || preset?.id === 'crush'
+        : ['opencode', 'copilot', 'crush'].includes(preset?.id ?? '')
   const version = (preset?.versionArgs || hooked) && cliPath ? await versionOf(cliPath) : null
+  // Gemini through Switchboard's extension once the setting is on and the link holds
+  // (geminiExtension.ts): its server, and on macOS and Linux its hooks, which follow the turn.
+  const extension = join(DIR, 'gemini-extension')
+  const viaExtension =
+    preset?.id === 'gemini' && settings?.[GEMINI_EXTENSION_KEY] === true && node && cliPath
+      ? await (() => {
+          const shared = serverFor(node, nodeEntry(nodeRoot(), 'mcp/server'), 'gemini', '', process.env.CLAUDE_IDE_SOCKET)
+          const events = relays ? { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), 'gemini'] } : undefined
+          writeFiles({ line: '', env: {}, files: geminiExtension(shared, events, extension).map(f => ({ path: f.path, content: `${JSON.stringify(f.value)}\n` })) })
+          const gemini = cliBins(cliPath, headOf(cliPath)).includes('node') && found.node ? [found.node, cliPath] : [cliPath]
+          return linkGeminiExtension(gemini, extension, terminalEnv(process.env))
+        })()
+      : false
   return openTerminal({
     cwd,
     cols,
@@ -197,6 +211,11 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
         ...(follows && PROMPTS.includes(preset!.id) ? ['prompt'] : []),
         ...(cli ? ['usage'] : []),
       ]
+      if (viaExtension) {
+        const launch = geminiLaunch(join(DIR, `${key}-gemini.toml`), relays ? ['turnEnd', 'activity', 'prompt'] : [])
+        writeFiles(launch)
+        return { env: launch.env, line: launch.line }
+      }
       const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli, abilities)
       const configFile = preset?.dataFolder ? join(dataFolderOf(DIR, preset.id, folder), `${preset.id}.json`) : join(DIR, `${key}-${id}.json`)
       const launch = preset ? presetLaunch(preset, server, configFile, process.platform, hooked ? hook : undefined, version) : customLaunch(custom!, server, configFile)

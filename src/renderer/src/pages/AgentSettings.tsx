@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AgentDetect } from '../../../shared/types'
-import { CLOSE_TERMINALS_KEY, CODEX_APPROVALS_KEY, CUSTOM_AGENTS_KEY, PLACEHOLDERS, PRESETS, SHOW_OTHER_AGENTS_KEY, TRUST_FOLDERS_KEY, customAgents, showOtherAgents, trustFolders, validateCustom } from '../../../shared/agents'
+import { CLOSE_TERMINALS_KEY, CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, CUSTOM_AGENTS_KEY, PLACEHOLDERS, PRESETS, SHOW_OTHER_AGENTS_KEY, TRUST_FOLDERS_KEY, customAgents, showOtherAgents, trustFolders, validateCustom } from '../../../shared/agents'
 import { AGENTS_FOUND } from '../Dock'
 import { agentTone, useToast } from '../parts'
 import { Badge, Button, Input, More, SettingGroup, SettingRow, Switch } from '../ui'
@@ -21,6 +21,7 @@ export function AgentSettings({ settings, part = 'cli' }: { settings: Record<str
   const trusting = trustFolders(settings[TRUST_FOLDERS_KEY])
   const closeOnQuit = settings[CLOSE_TERMINALS_KEY] === true
   const codexApprovals = settings[CODEX_APPROVALS_KEY] === true
+  const geminiExtension = settings[GEMINI_EXTENSION_KEY] === true
   const browserLan = settings[BROWSER_LAN_KEY] === true
   // null until known: where no terminal host runs (Windows), terminals always close with the app.
   const [keeps, setKeeps] = useState<boolean | null>(null)
@@ -73,6 +74,11 @@ export function AgentSettings({ settings, part = 'cli' }: { settings: Record<str
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
   }
 
+  const toggleGeminiExtension = async () => {
+    const reply = await saveSetting(GEMINI_EXTENSION_KEY, geminiExtension ? null : true)
+    if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
+  }
+
   const toggleCloseOnQuit = async () => {
     const reply = await saveSetting(CLOSE_TERMINALS_KEY, closeOnQuit ? null : true)
     if (!reply.ok) toast(t('common.saveFailed', { error: String(reply.json.error ?? reply.status) }), 'bad')
@@ -108,6 +114,9 @@ export function AgentSettings({ settings, part = 'cli' }: { settings: Record<str
           </SettingRow>
           <SettingRow title={t('agents.codexApprovals')} hint={t('agents.codexApprovalsHint')} more={t('agents.codexApprovalsHintMore')}>
             <Switch checked={codexApprovals} onChange={() => void toggleCodexApprovals()} label={t('agents.codexApprovals')} />
+          </SettingRow>
+          <SettingRow title={t('agents.geminiExtension')} hint={t('agents.geminiExtensionHint')} more={t('agents.geminiExtensionHintMore')}>
+            <Switch checked={geminiExtension} onChange={() => void toggleGeminiExtension()} label={t('agents.geminiExtension')} />
           </SettingRow>
           <SettingRow title={t('agents.browserLan')} hint={t('agents.browserLanHint')} more={t('agents.browserLanHintMore')}>
             <Switch checked={browserLan} onChange={() => void toggleBrowserLan()} label={t('agents.browserLan')} />

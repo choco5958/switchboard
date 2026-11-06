@@ -30,7 +30,10 @@ const ORCA = '/Applications/Orca.app/Contents/Resources/bin/orca'
 // `cli`: the agent CLI's own program, for what the server asks it (Codex's usage, codexUsage.ts).
 // `abilities`: what the run's hooks and plugins add beyond the tools, as the app attached them
 // (src/main/agentTerms.ts); the bridge goes by these (bridge/server.ts ABILITIES).
-export type Options = { agent: string; terminal: string; cwd: string; socket: string; home: string; cli: string; abilities: string[] }
+// `appOnly`: a server every run of the CLI starts (Gemini's extension, src/main/geminiExtension.ts),
+// which does something only in a run the app opened through it (a terminal key, and
+// SWITCHBOARD_EXTENSION, shared/agents.ts EXTENSION_RUN_ENV).
+export type Options = { agent: string; terminal: string; cwd: string; socket: string; home: string; cli: string; abilities: string[]; appOnly?: boolean; extensionRun?: boolean }
 
 // Flags first, since some CLIs pass MCP servers only a few env vars; env vars second.
 export function parseOptions(argv: readonly string[], env: Record<string, string | undefined>, cwd: string): Options {
@@ -45,6 +48,8 @@ export function parseOptions(argv: readonly string[], env: Record<string, string
     cwd: flag('cwd') || cwd,
     cli: flag('cli') || '',
     abilities: (flag('abilities') || env.SWITCHBOARD_ABILITIES || '').split(',').filter(Boolean),
+    appOnly: argv.includes('--app-only'),
+    extensionRun: env.SWITCHBOARD_EXTENSION === '1',
     // Empty: Windows, where the bridge is on TCP and each call reads where (bridge/endpoint.ts).
     socket: flag('socket') || env.CLAUDE_IDE_SOCKET || (usesTcp(env) ? '' : join(home, '.claude-ide', 'bridge.sock')),
     home,
@@ -568,8 +573,33 @@ export async function answerLine(line: string, handle: (m: Message) => Promise<R
   return one(parsed)
 }
 
-if (import.meta.main) {
-  const options = parseOptions(process.argv.slice(2), process.env, process.cwd())
+// A server with nothing to do (appOnly, outside the app): it answers as an MCP server with no tools,
+// so the CLI shows no error, and reaches no bridge.
+export async function idleHandle(message: Message): Promise<Response | undefined> {
+  const id = message.id ?? null
+  if (typeof message.method !== 'string') return { jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid Request' } }
+  if (message.id === undefined || message.id === null || message.method.startsWith('notifications/')) return undefined
+  const asked = text(message.params?.protocolVersion)
+  if (message.method === 'initialize')
+    return {
+      jsonrpc: '2.0',
+      id,
+      result: { protocolVersion: PROTOCOLS.includes(asked) ? asked : PROTOCOLS[1], capabilities: { tools: { listChanged: false } }, serverInfo: { name: SERVER_NAME, title: 'Switchboard', version: VERSION } },
+    }
+  if (message.method === 'ping') return { jsonrpc: '2.0', id, result: {} }
+  if (message.method === 'tools/list') return { jsonrpc: '2.0', id, result: { tools: [] } }
+  return { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${message.method}` } }
+}
+
+const started = import.meta.main ? parseOptions(process.argv.slice(2), process.env, process.cwd()) : null
+if (started?.appOnly && !(started.terminal && started.extensionRun)) {
+  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
+  lines.on('line', line => {
+    if (line.trim()) void answerLine(line, idleHandle).then(reply => reply !== undefined && process.stdout.write(`${JSON.stringify(reply)}\n`))
+  })
+  lines.on('close', () => process.exit(0))
+} else if (started) {
+  const options = started
   const session = createSession(options, {
     call: bridgeCall(options.socket),
     startBridge: async () => {

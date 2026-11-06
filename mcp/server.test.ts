@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { createBridge, listen } from '../bridge/server.ts'
 import { toolDefs } from '../mod/hooks/tools.ts'
-import { answerLine, mcpTools, createSession, parseOptions, takenText, type Reply } from './server.ts'
+import { answerLine, idleHandle, mcpTools, createSession, parseOptions, takenText, type Reply } from './server.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'sb-mcp-'))
 const socketPath = join(dir, 'bridge.sock')
@@ -202,11 +202,22 @@ describe('the MCP server against a test bridge', () => {
 describe('pieces of the MCP server', () => {
   test('flags win over env vars, and the defaults come from HOME', () => {
     const env = { HOME: '/h', SWITCHBOARD_AGENT: 'qwen', SWITCHBOARD_TERMINAL: 'r-t1' }
-    assert.deepEqual(parseOptions(['--agent', 'Codex'], env, '/w'), { agent: 'codex', terminal: 'r-t1', cwd: '/w', socket: '/h/.claude-ide/bridge.sock', home: '/h', cli: '', abilities: [] })
+    assert.deepEqual(parseOptions(['--agent', 'Codex'], env, '/w'), { agent: 'codex', terminal: 'r-t1', cwd: '/w', socket: '/h/.claude-ide/bridge.sock', home: '/h', cli: '', abilities: [], appOnly: false, extensionRun: false })
     assert.equal(parseOptions([], env, '/w').agent, 'qwen')
     // What the run's hooks add, as the app attached them (src/main/agentTerms.ts).
     assert.deepEqual(parseOptions(['--abilities', 'turnEnd,approvals'], env, '/w').abilities, ['turnEnd', 'approvals'])
     assert.equal(parseOptions([], { HOME: '/h' }, '/w').agent, 'mcp')
+    // Gemini's extension: a server of every run, which counts only in a run the app opened through it.
+    const ext = parseOptions(['--agent', 'gemini', '--app-only'], { ...env, SWITCHBOARD_EXTENSION: '1' }, '/w')
+    assert.deepEqual([ext.appOnly, ext.extensionRun, ext.terminal], [true, true, 'r-t1'])
+  })
+
+  test('a server with nothing to do answers as one with no tools', async () => {
+    const init = (await idleHandle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })) as { result: { protocolVersion: string; serverInfo: { name: string } } }
+    assert.deepEqual([init.result.protocolVersion, init.result.serverInfo.name], ['2025-06-18', 'switchboard'])
+    assert.deepEqual(await idleHandle({ jsonrpc: '2.0', id: 2, method: 'tools/list' }), { jsonrpc: '2.0', id: 2, result: { tools: [] } })
+    assert.equal(await idleHandle({ jsonrpc: '2.0', method: 'notifications/initialized' }), undefined)
+    assert.equal(((await idleHandle({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_sessions' } })) as { error: { code: number } }).error.code, -32601)
   })
 
   test('taken items and prompt commands read as one prompt, the way the mod submits them', () => {

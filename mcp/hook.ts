@@ -99,6 +99,8 @@ export async function runHook(agent: string, stdin: string, env: Record<string, 
   const adapter = ADAPTERS[agent]
   const terminal = env.SWITCHBOARD_TERMINAL ?? ''
   if (!adapter || !terminal) return ''
+  // Gemini's hooks come with its extension, in every run: only a run the app opened through it counts.
+  if (agent === 'gemini' && env.SWITCHBOARD_EXTENSION !== '1') return ''
   let input: unknown
   try {
     input = JSON.parse(stdin)

@@ -32,7 +32,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     title: 'settings.groupAgents',
     sections: [
       { id: 'settings-agents', title: 'agents.title', hint: 'agents.intro', more: 'agents.introMore', words: ['agents.showOthers', 'agents.closeOnQuit', 'agents.secCli', 'agents.customTitle', 'agents.secAdd'] },
-      { id: 'settings-safety', title: 'settings.safety', hint: 'settings.safetyHint', words: ['agents.trustFolders', 'agents.codexApprovals', 'agents.browserLan'] },
+      { id: 'settings-safety', title: 'settings.safety', hint: 'settings.safetyHint', words: ['agents.trustFolders', 'agents.codexApprovals', 'agents.geminiExtension', 'agents.browserLan'] },
       { id: 'settings-routines', title: 'routines.title', hint: 'routines.hint', more: 'routines.hintMore', words: [] },
     ],
   },

@@ -165,6 +165,8 @@ export const PRESETS: AgentPreset[] = [
       env: { GEMINI_CLI_SYSTEM_DEFAULTS_PATH: configFile },
       file: { mcpServers: { [MCP_NAME]: { command: server.command, args: server.args, trust: true } } },
     }),
+    // Gemini 0.67 reads a system defaults file only in folders root owns, so this reaches older ones
+    // only; with GEMINI_EXTENSION_KEY on, the server and hooks go in an extension (geminiExtension).
   },
   {
     id: 'qwen',
@@ -377,6 +379,43 @@ export const TRUST_FOLDERS_KEY = 'trustFolders'
 // turned on: it records Switchboard's hook as trusted in the person's Codex config.
 export const CODEX_APPROVALS_KEY = 'codexApprovals'
 export const trustFolders = (value: unknown): boolean => value === true
+
+// Settings: connect Gemini CLI through an extension of Switchboard's (src/main/geminiExtension.ts).
+// Off unless turned on: it links the extension in the person's Gemini folder (~/.gemini/extensions).
+export const GEMINI_EXTENSION_KEY = 'geminiExtension'
+
+// Switchboard's Gemini extension, in a folder of the app's that `gemini extensions link` points at.
+// Every Gemini run starts its server, so nothing of one run is in it: the server finds its run by
+// SWITCHBOARD_TERMINAL and does nothing without one (--app-only), and the run's abilities come in
+// SWITCHBOARD_ABILITIES. Gemini hands both on, as it does the rest of the env unless the person
+// turned on its redaction. The hooks follow the turn (Gemini 0.67, docs/hooks: a hook cannot allow
+// a tool past Gemini's prompt, so no ask goes away). A timeout is in milliseconds.
+export const GEMINI_EXTENSION = 'switchboard'
+// Set on a run the app opened through the extension: with the setting off, the link may still be
+// there, and the extension's server and hooks then stay quiet in the app's terminals too.
+export const EXTENSION_RUN_ENV = 'SWITCHBOARD_EXTENSION'
+export function geminiExtension(server: McpServer, hook: McpServer | undefined, folder: string): { path: string; value: unknown }[] {
+  const at = server.args.indexOf('--abilities')
+  const args = [...withoutTerminal(at < 0 ? server.args : [...server.args.slice(0, at), ...server.args.slice(at + 2)]), '--app-only']
+  const manifest = { name: GEMINI_EXTENSION, version: '1.0.0', description: 'Switchboard', mcpServers: { [MCP_NAME]: { command: server.command, args } } }
+  const command = hook ? hookCommand(hook) : ''
+  const follow = (name: string) => [name, [{ matcher: '*', hooks: [{ type: 'command', name: 'switchboard', command, timeout: EVENT_TIMEOUT_S * 1000 }] }]]
+  return [
+    { path: `${folder}/gemini-extension.json`, value: manifest },
+    // Gemini fills ${…} in this file: a command holding one gets no hooks.
+    { path: `${folder}/hooks/hooks.json`, value: { hooks: command && !command.includes('${') ? Object.fromEntries(['BeforeAgent', 'BeforeTool', 'AfterTool', 'AfterAgent'].map(follow)) : {} } },
+  ]
+}
+
+// A policy for one run (--policy): Switchboard's tools run without a confirmation, as they do in
+// Claude Code; Gemini still asks for its own. An extension's server cannot be given `trust`.
+export function geminiLaunch(policyFile: string, abilities: readonly string[], platform: string = process.platform): Launch {
+  return {
+    line: [commandWord('gemini', platform), '--policy', shellWord(policyFile, platform)].join(' '),
+    env: { SWITCHBOARD_ABILITIES: abilities.join(','), [EXTENSION_RUN_ENV]: '1' },
+    files: [{ path: policyFile, content: `[[rule]]\ntoolName = "*"\nmcpName = "${MCP_NAME}"\ndecision = "allow"\npriority = 100\n` }],
+  }
+}
 
 export const PLACEHOLDERS = ['server', 'command', 'args', 'args_json', 'config_file', 'config_json', 'name'] as const
 

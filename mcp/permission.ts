@@ -273,7 +273,24 @@ const crush: HookAdapter = {
   },
 }
 
-export const ADAPTERS: Record<string, HookAdapter> = { codex, qwen, copilot, crush }
+// Gemini CLI's hooks (0.67, docs/hooks): its turn only. A hook can deny a tool but not allow one
+// past Gemini's own prompt, so no ask goes away. BeforeAgent takes added context.
+const gemini: HookAdapter = {
+  ask: () => null,
+  reply: () => '',
+  event: input => {
+    const name = text(input.hook_event_name)
+    if (name === 'BeforeAgent') return { kind: 'turnStart' }
+    if (name === 'BeforeTool') return { kind: 'toolStart' }
+    if (name === 'AfterTool') return { kind: 'toolEnd' }
+    if (name === 'AfterAgent') return { kind: 'turnEnd', answer: text(input.prompt_response) }
+    return null
+  },
+  eventReply: (event, reply) =>
+    event.kind === 'turnStart' && reply.context ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'BeforeAgent', additionalContext: reply.context } }) : '',
+}
+
+export const ADAPTERS: Record<string, HookAdapter> = { codex, qwen, copilot, crush, gemini }
 
 // An ask of OpenCode 2 (its permission.asked event: packages/schema/src/permission.ts), which the
 // run's plugin (mcp/opencode/server.ts) sends here. A file change carries a diff of each file
