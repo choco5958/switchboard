@@ -95,6 +95,9 @@ async function main(): Promise<number> {
   const copilot = copilotCommand(process.argv[2])
   const version = spawnSync(copilot[0]!, [...copilot.slice(1), '--version'], { encoding: 'utf8' }).stdout.match(/(\d+\.\d+\.\d+)/)?.[1] ?? null
   console.log(`copilot ${version ?? 'unknown'}: ${copilot.join(' ')}`)
+  // The hook's socket is under HOME, and macOS's own temporary folder (/var/folders/...) is long
+  // enough to pass the socket path limit (about 104 bytes), where the app sends nothing away.
+  if (!WINDOWS) process.env.TMPDIR = '/tmp'
   const { work, home, env } = testHome('sb-relay-')
   const project = realpathSync(work) + (WINDOWS ? '\\proj' : '/proj')
   mkdirSync(project, { recursive: true })
