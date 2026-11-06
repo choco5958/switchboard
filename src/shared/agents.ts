@@ -15,7 +15,8 @@ export type McpServer = { command: string; args: string[] }
 // the shell, and files to write first (paths the main process chose, in ~/.claude-ide).
 export type Launch = { line: string; env: Record<string, string>; files: { path: string; content: string }[] }
 
-type Injection = { args?: string[]; env?: Record<string, string>; file?: unknown }
+// `files`: more files of the run, at the paths given (a plugin folder, for one).
+type Injection = { args?: string[]; env?: Record<string, string>; file?: unknown; files?: { path: string; value: unknown }[] }
 
 export type AgentPreset = {
   id: string // the agent kind its sessions carry
@@ -112,6 +113,9 @@ export function qwenDefaultsFile(platform: string): string {
   return '/etc/qwen-code/system-defaults.json'
 }
 
+// The first Copilot CLI its relay was tested with.
+export const COPILOT_HOOK_VERSION = '1.0.105'
+
 export const PRESETS: AgentPreset[] = [
   {
     id: 'codex',
@@ -168,6 +172,21 @@ export const PRESETS: AgentPreset[] = [
       args: ['--additional-mcp-config', `@${configFile}`],
       file: { mcpServers: { [MCP_NAME]: { type: 'local', command: server.command, args: server.args, tools: ['*'] } } },
     }),
+    // A plugin of the run (--plugin-dir) whose permissionRequest hook sends the asks away. Its folder
+    // is one for every Copilot run: the command holds nothing of a run, and the hook finds its run by
+    // SWITCHBOARD_TERMINAL, which Copilot hands it. Copilot needs plugin.json, and reads hooks.json
+    // beside it (1.0.105, tested; the plugin layout changed in 1.0.80, so older ones get no hook).
+    permissionHook: (hook, { hookFile, version }) => {
+      if (!version || olderThan(version, COPILOT_HOOK_VERSION)) return {}
+      const dir = `${hookFile.slice(0, hookFile.lastIndexOf('/'))}/copilot-plugin`
+      return {
+        args: ['--plugin-dir', dir],
+        files: [
+          { path: `${dir}/plugin.json`, value: { name: 'switchboard-approvals', version: '1.0.0', description: 'Switchboard: permission asks while you are away' } },
+          { path: `${dir}/hooks.json`, value: { version: 1, hooks: { permissionRequest: [{ type: 'command', bash: hookCommand(hook), timeoutSec: HOOK_TIMEOUT_S }] } } },
+        ],
+      }
+    },
   },
   {
     id: 'opencode',
@@ -336,6 +355,7 @@ export function presetLaunch(preset: AgentPreset, server: McpServer, configFile:
     files: [
       ...(got.file === undefined ? [] : [{ path: configFile, content: `${json(got.file)}\n` }]),
       ...(hooked.file === undefined ? [] : [{ path: hookFile, content: `${json(hooked.file)}\n` }]),
+      ...(hooked.files ?? []).map(f => ({ path: f.path, content: `${json(f.value)}\n` })),
     ],
   }
 }

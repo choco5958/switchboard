@@ -87,6 +87,23 @@ describe('preset launch lines', () => {
     expect(presetLaunch(presetOf('opencode')!, server, file, 'darwin', undefined, null).line).toBe('opencode')
   })
 
+  it('copilot from 1.0.105 gets a plugin folder of its own with the permission hook; an older one none', () => {
+    const hook = { command: '/n/node', args: ['/r/mcp/hook.mjs', 'copilot'] }
+    const launch = presetLaunch(presetOf('copilot')!, server, file, 'darwin', hook, '1.0.105')
+    const dir = '/home/u/.claude-ide/agents/copilot-plugin'
+    expect(words(launch.line)).toEqual(['copilot', '--additional-mcp-config', `@${file}`, '--plugin-dir', dir])
+    expect(launch.files.map(f => f.path)).toEqual([file, `${dir}/plugin.json`, `${dir}/hooks.json`])
+    expect(JSON.parse(launch.files[1]!.content).name).toBe('switchboard-approvals')
+    expect(JSON.parse(launch.files[2]!.content)).toEqual({
+      version: 1,
+      hooks: { permissionRequest: [{ type: 'command', bash: '/n/node /r/mcp/hook.mjs copilot', timeoutSec: HOOK_TIMEOUT_S }] },
+    })
+    for (const version of ['1.0.104', null]) {
+      const older = presetLaunch(presetOf('copilot')!, server, file, 'darwin', hook, version)
+      expect([words(older.line).includes('--plugin-dir'), older.files.length]).toEqual([false, 1])
+    }
+  })
+
   it('gemini reads a defaults file named by an env var; the file holds mcpServers.switchboard', () => {
     const launch = presetLaunch(presetOf('gemini')!, server, file)
     expect(launch.line).toBe('gemini')

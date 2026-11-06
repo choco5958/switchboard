@@ -91,6 +91,32 @@ describe('Qwen adapter', () => {
   })
 })
 
+describe('Copilot adapter', () => {
+  const copilot = ADAPTERS.copilot!
+  // As Copilot 1.0.105 sent them.
+  const base = { hookName: 'permissionRequest', sessionId: 's1', timestamp: 1793926529399, cwd: '/w', permissionSuggestions: [] }
+
+  test('a command and a file change go away with what they do as the summary', () => {
+    const run = copilot.ask({ ...base, toolName: 'bash', toolInput: { command: 'echo hi > a.txt && rm -rf /tmp/x' } })!
+    assert.deepEqual([run.tool, run.summary, run.complete, run.cwd], ['bash', 'echo hi > a.txt && rm -rf /tmp/x', true, '/w'])
+    assert.match(run.requestKey, /^s1:1793926529399:[0-9a-f]{24}$/)
+    const diff = '\ndiff --git a/w/a.txt b/w/a.txt\ncreate file mode 100644\n--- a/dev/null\n+++ b/w/a.txt\n@@ -1,0 +1,1 @@\n+hi\n'
+    const edit = copilot.ask({ ...base, toolName: 'edit', toolInput: { file_path: '/w/a.txt', diff } })!
+    assert.equal(edit.summary, `/w/a.txt\n${diff.slice(1)}`)
+    assert.equal(edit.complete, true)
+  })
+
+  test('leaving the sandbox, a field the summary leaves out and other events stay with the terminal or show whole', () => {
+    const out = copilot.ask({ ...base, toolName: 'bash', toolInput: { command: 'make', requestSandboxBypass: true } })!
+    assert.equal(out.complete, false)
+    assert.match(out.summary, /"requestSandboxBypass": true/)
+    assert.equal(copilot.ask({ ...base, hookName: 'preToolUse', toolName: 'bash', toolInput: { command: 'ls' } }), null)
+    assert.equal(copilot.reply({ answer: 'allow', message: '' }), '{"behavior":"allow"}')
+    assert.equal(copilot.reply({ answer: 'deny', message: 'no' }), '{"behavior":"deny","message":"no"}')
+    assert.equal(copilot.reply(PASS), '')
+  })
+})
+
 describe('OpenCode asks', () => {
   test('a file change carries its diff; a command stays in the terminal', () => {
     // As OpenCode 2.2.5 sends a new file.

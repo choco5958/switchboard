@@ -854,7 +854,7 @@ export const ko = {
   'agents.how.codex': '-c mcp_servers.switchboard.* 설정 덮어쓰기',
   'agents.how.gemini': 'GEMINI_CLI_SYSTEM_DEFAULTS_PATH 환경 변수로 기본 설정 파일 지정 (mcpServers는 사용자 설정과 합쳐짐)',
   'agents.how.qwen': '--mcp-config 파일',
-  'agents.how.copilot': '--additional-mcp-config @파일',
+  'agents.how.copilot': '--additional-mcp-config @파일. 1.0.105 이상은 --plugin-dir 플러그인으로 권한 확인도 중계',
   'agents.how.opencode': 'OPENCODE_CONFIG_CONTENT 환경 변수 (사용자 설정과 합쳐짐)',
   'agents.how.goose': 'goose session --with-extension "명령"',
   'agents.how.amp': '--mcp-config JSON',

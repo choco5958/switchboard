@@ -855,7 +855,7 @@ export const zhCN: Dict = {
   'agents.how.codex': '用 -c mcp_servers.switchboard.* 覆盖配置',
   'agents.how.gemini': '用环境变量 GEMINI_CLI_SYSTEM_DEFAULTS_PATH 指定默认配置文件 (mcpServers 会与用户配置合并)',
   'agents.how.qwen': '--mcp-config 文件',
-  'agents.how.copilot': '--additional-mcp-config @文件',
+  'agents.how.copilot': '--additional-mcp-config @文件。1.0.105 及以上还通过 --plugin-dir 插件转发权限确认',
   'agents.how.opencode': '环境变量 OPENCODE_CONFIG_CONTENT (与用户配置合并)',
   'agents.how.goose': 'goose session --with-extension "命令"',
   'agents.how.amp': '--mcp-config JSON',

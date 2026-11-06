@@ -855,7 +855,7 @@ export const ja: Dict = {
   'agents.how.codex': '-c mcp_servers.switchboard.* の設定上書き',
   'agents.how.gemini': '環境変数 GEMINI_CLI_SYSTEM_DEFAULTS_PATH で既定の設定ファイルを指定 (mcpServers はユーザー設定と統合)',
   'agents.how.qwen': '--mcp-config ファイル',
-  'agents.how.copilot': '--additional-mcp-config @ファイル',
+  'agents.how.copilot': '--additional-mcp-config @ファイル。1.0.105 以降は --plugin-dir のプラグインで権限確認も中継',
   'agents.how.opencode': '環境変数 OPENCODE_CONFIG_CONTENT (ユーザー設定と統合)',
   'agents.how.goose': 'goose session --with-extension "コマンド"',
   'agents.how.amp': '--mcp-config JSON',

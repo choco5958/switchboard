@@ -103,7 +103,41 @@ const qwen: HookAdapter = {
   reply: codex.reply,
 }
 
-export const ADAPTERS: Record<string, HookAdapter> = { codex, qwen }
+// Copilot CLI's permissionRequest hook (1.0.105, tested; output in
+// docs.github.com/en/copilot/reference/hooks-configuration). A new file and a change both come as
+// `edit` with the file and a diff, a command as `bash` with its whole script. Without Copilot's
+// sandbox a command runs on the machine as Claude Code's Bash does, and one allow also covers the
+// paths outside the folder it names, so it is answered away whole. A command asking to leave the
+// sandbox (requestSandboxBypass) cannot be allowed by a hook: the terminal asks. Copilot gives no
+// turn id, so the ask's time keeps two runs of one command apart.
+const copilot: HookAdapter = {
+  ask: input => {
+    if (input.hookName !== 'permissionRequest') return null
+    const tool = text(input.toolName)
+    if (!tool) return null
+    const v = object(input.toolInput)
+    const view =
+      tool === 'bash'
+        ? shown(v, ['command'], () => text(v.command))
+        : tool === 'edit'
+          ? shown(v, ['file_path', 'diff'], () => `${text(v.file_path)}\n${text(v.diff).replace(/^\n+/, '')}`)
+          : approvalSummary(tool, v)
+    return {
+      tool,
+      summary: view.summary,
+      complete: view.complete && v.requestSandboxBypass !== true,
+      cwd: text(input.cwd),
+      reason: '',
+      requestKey: `${text(input.sessionId)}:${String(input.timestamp ?? '')}:${digest(`${tool}\n${JSON.stringify(v)}`).slice(0, 24)}`,
+    }
+  },
+  reply: answer => {
+    if (answer.answer === 'ask') return ''
+    return JSON.stringify(answer.answer === 'allow' ? { behavior: 'allow' } : { behavior: 'deny', message: answer.message })
+  },
+}
+
+export const ADAPTERS: Record<string, HookAdapter> = { codex, qwen, copilot }
 
 // An ask of OpenCode 2 (its permission.asked event: packages/schema/src/permission.ts), which the
 // run's plugin (mcp/opencode/server.ts) sends here. A file change carries a diff of each file

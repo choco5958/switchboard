@@ -26,6 +26,12 @@ describe('folder trust written before a CLI opens', () => {
     expect(copilotTrustText('{"trustedFolders":["/work/app"]}', '/work/app')).toBeNull()
     expect(copilotTrustText('{not json', '/work/app')).toBeNull()
     expect(JSON.parse(copilotTrustText(null, '/w')!)).toEqual({ trustedFolders: ['/w'] })
+    // Copilot 1.0.105 writes two comment lines first.
+    const commented = '// User settings belong in settings.json.\n// This file is managed automatically.\n{\n  "firstLaunchAt": "x"\n}\n'
+    const kept = copilotTrustText(commented, '/w')!
+    expect(kept.startsWith('// User settings belong in settings.json.\n// This file is managed automatically.\n{')).toBe(true)
+    expect(JSON.parse(kept.split('\n').slice(2).join('\n'))).toEqual({ firstLaunchAt: 'x', trustedFolders: ['/w'] })
+    expect(copilotTrustText('// note\n{"trustedFolders":["/w"]}', '/w')).toBeNull()
   })
 
   it('Cursor: one marker file per folder', () => {

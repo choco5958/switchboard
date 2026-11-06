@@ -44,12 +44,15 @@ export function codexTrustText(existing: string, folder: string): string | null 
   return `${existing}${gap}${header}${eol}trust_level = "trusted"${eol}`
 }
 
-// Copilot: trustedFolders in ~/.copilot/config.json. A file it cannot read stays untouched.
+// Copilot: trustedFolders in ~/.copilot/config.json. Copilot 1.0.105 starts the file with `//`
+// comment lines, kept as they are. A file it cannot read otherwise stays untouched.
 export function copilotTrustText(existing: string | null, folder: string): string | null {
   let config: Record<string, unknown> = {}
-  if (existing !== null) {
+  const head = existing?.match(/^(?:[ \t]*\/\/[^\n]*\n)*/)?.[0] ?? ''
+  const body = existing?.slice(head.length) ?? null
+  if (body !== null && body.trim() !== '') {
     try {
-      const parsed: unknown = JSON.parse(existing)
+      const parsed: unknown = JSON.parse(body)
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
       config = parsed as Record<string, unknown>
     } catch {
@@ -58,7 +61,7 @@ export function copilotTrustText(existing: string | null, folder: string): strin
   }
   const trusted = Array.isArray(config.trustedFolders) ? config.trustedFolders.filter((f): f is string => typeof f === 'string') : []
   if (trusted.includes(folder)) return null
-  return `${JSON.stringify({ ...config, trustedFolders: [...trusted, folder] }, null, 2)}\n`
+  return `${head}${JSON.stringify({ ...config, trustedFolders: [...trusted, folder] }, null, 2)}\n`
 }
 
 // Cursor: a .workspace-trusted file in ~/.cursor/projects/<folder as a slug>/.

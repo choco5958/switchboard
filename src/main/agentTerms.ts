@@ -151,7 +151,7 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   // Codex's permission asks go to the person while away once the relay is on and Codex trusts the
   // hook (codexHook.ts); if it does not, the terminal opens without it and Codex asks there. Qwen's
   // always do, unless a system defaults file of the machine's would be hidden (qwenDefaultsFile),
-  // and OpenCode 2's (its plugin, mcp/opencode/server.ts).
+  // and OpenCode 2's (its plugin, mcp/opencode/server.ts) and Copilot's from 1.0.105 (its plugin folder).
   const hook = preset?.permissionHook && node && process.platform !== 'win32' ? { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), preset.id] } : undefined
   const hooked =
     hook && preset?.id === 'codex' && settings?.[CODEX_APPROVALS_KEY] === true && cliPath
@@ -164,8 +164,8 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
         )
       : preset?.id === 'qwen'
         ? !process.env[QWEN_DEFAULTS_ENV] && !existsSync(qwenDefaultsFile(process.platform))
-        : preset?.id === 'opencode'
-  const version = preset?.versionArgs && cliPath ? await versionOf(cliPath) : null
+        : preset?.id === 'opencode' || preset?.id === 'copilot'
+  const version = (preset?.versionArgs || hooked) && cliPath ? await versionOf(cliPath) : null
   return openTerminal({
     cwd,
     cols,

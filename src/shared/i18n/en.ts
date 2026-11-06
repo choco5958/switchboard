@@ -855,7 +855,7 @@ export const en: Dict = {
   'agents.how.codex': '-c mcp_servers.switchboard.* config overrides',
   'agents.how.gemini': 'A defaults file named by the GEMINI_CLI_SYSTEM_DEFAULTS_PATH env var (mcpServers merge with your settings)',
   'agents.how.qwen': '--mcp-config file',
-  'agents.how.copilot': '--additional-mcp-config @file',
+  'agents.how.copilot': '--additional-mcp-config @file. From 1.0.105, a --plugin-dir plugin also relays permission asks',
   'agents.how.opencode': 'OPENCODE_CONFIG_CONTENT env var (merges with your settings)',
   'agents.how.goose': 'goose session --with-extension "command"',
   'agents.how.amp': '--mcp-config JSON',
