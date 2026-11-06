@@ -125,7 +125,7 @@ Jump to any session, task or decision question. Gather projects into groups and 
 
 Claude Code connects through a mod; other CLIs connect through a server (MCP) the app attaches to that run only. Both use the same tools, so most features work whatever the agent.
 
-| Feature | Claude Code | Codex, Gemini CLI, Qwen Code, Copilot CLI,<br>OpenCode, Goose, Amp, Crush | Cursor CLI, Grok,<br>Kimi |
+| Feature | Claude Code | Codex, Gemini CLI, Qwen Code, Copilot CLI,<br>OpenCode, Goose, Amp, Crush, Cursor CLI | Grok, Kimi |
 | --- | :---: | :---: | :---: |
 | Task reports, decisions, asking other sessions, browser tools | ✅ | ✅ | Terminal only |
 | Receiving answers and messages | ✅ | ✅ typed into the app terminal | |
@@ -139,6 +139,8 @@ Claude Code connects through a mod; other CLIs connect through a server (MCP) th
 - Qwen Code and OpenCode 2 relay their asks with no setting: Qwen through a hook in a defaults file made for that run, OpenCode through a plugin added to that run. Your own settings files stay as they are. OpenCode's ask for a command does not hold the whole script, so commands are asked in its terminal only. Qwen's default Auto mode and OpenCode's default rules ask little, so few asks come up. macOS and Linux.
 - Copilot CLI 1.0.105 and later relays its asks with no setting too: a hook of a plugin in the app's folder (`--plugin-dir`) sends file changes and commands to the app and your phone. A command that asks to leave Copilot's sandbox cannot be allowed by a hook, so it is asked in the terminal only. macOS and Linux.
 - OpenCode 2 terminals run on a private server (`--standalone`), so each one has its own connection even when OpenCode is open outside the app.
+- Cursor CLI gets the server from a plugin in the app's folder (`--plugin-dir`). Cursor asks in its terminal before each Switchboard tool runs; add the tool to its allowlist there and later runs stop asking. Checked on macOS.
+- Grok 1.0.77 has no `--plugin-dir` flag, though its docs name one, and `GROK_CONFIG` does not take MCP servers, so only a terminal opens.
 - Crush gets the server with `-D`, a data folder the app keeps for each project. The history of Crush runs opened in the app stays in that folder and does not show in `crush` started outside the app. macOS and Linux.
 
 Add any other CLI in Settings > Agent CLIs with its command and how it connects. Only installed CLIs show in the `+` menu.

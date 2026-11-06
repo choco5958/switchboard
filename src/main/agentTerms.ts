@@ -66,7 +66,8 @@ function versionOf(path: string): Promise<string | null> {
 }
 
 // Config files a terminal pointed its CLI at; a week later nothing reads them any more. A folder
-// is a CLI's data folder for a project (AgentPreset.dataFolder), with its history: it stays.
+// is a CLI's data folder for a project (AgentPreset.dataFolder), with its history: it stays, and so
+// do the plugin folders every Copilot or Cursor run shares.
 function pruneFiles(): void {
   try {
     for (const name of readdirSync(DIR)) {

@@ -236,8 +236,20 @@ export const PRESETS: AgentPreset[] = [
     bin: 'cursor-agent',
     install: 'curl https://cursor.com/install -fsS | bash',
     docs: 'https://cursor.com/docs/cli/reference/parameters',
-    how: 'agents.how.undocumented',
-    mcp: null,
+    how: 'agents.how.cursor',
+    // A plugin (--plugin-dir) holding the server: Cursor starts a plugin's MCP servers with no
+    // approval and without --approve-mcps, which would also approve a cloned repo's own servers
+    // (cursor-agent 2026.11.05, tested). Cursor names the server after the plugin's folder, so every
+    // run shares one folder and a tool the person allowlists stays allowed. Cursor does not hand its
+    // env to the server: the terminal's key goes in through Cursor's ${env:} in the server's env.
+    mcp: (server, configFile) => {
+      const dir = `${configFile.slice(0, Math.max(configFile.lastIndexOf('/'), configFile.lastIndexOf('\\')))}/cursor-plugin`
+      const mcpServer = { command: server.command, args: withoutTerminal(server.args), env: { SWITCHBOARD_TERMINAL: '${env:SWITCHBOARD_TERMINAL}' } }
+      return {
+        args: ['--plugin-dir', dir],
+        files: [{ path: `${dir}/.cursor-plugin/plugin.json`, value: { name: MCP_NAME, version: '1.0.0', description: 'Switchboard', mcpServers: { [MCP_NAME]: mcpServer } } }],
+      }
+    },
   },
   {
     id: 'grok',
@@ -245,7 +257,10 @@ export const PRESETS: AgentPreset[] = [
     bin: 'grok',
     install: 'curl -fsSL https://x.ai/cli/install.sh | bash',
     docs: 'https://docs.x.ai/build/features/mcp-servers',
-    how: 'agents.how.undocumented',
+    // Grok 1.0.77 has no --plugin-dir (its docs name one), and its GROK_CONFIG overlay ignores
+    // mcp_servers and plugins.paths (grok inspect, tested). --agent would carry mcpServers, but it
+    // replaces Grok's own agent and its prompt.
+    how: 'agents.how.grok',
     mcp: null,
   },
   {
@@ -355,7 +370,7 @@ export function presetLaunch(preset: AgentPreset, server: McpServer, configFile:
     files: [
       ...(got.file === undefined ? [] : [{ path: configFile, content: `${json(got.file)}\n` }]),
       ...(hooked.file === undefined ? [] : [{ path: hookFile, content: `${json(hooked.file)}\n` }]),
-      ...(hooked.files ?? []).map(f => ({ path: f.path, content: `${json(f.value)}\n` })),
+      ...[...(got.files ?? []), ...(hooked.files ?? [])].map(f => ({ path: f.path, content: `${json(f.value)}\n` })),
     ],
   }
 }

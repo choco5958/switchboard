@@ -125,7 +125,7 @@
 
 Claude Code 通过 mod 连接，其他 CLI 通过应用只为该次运行附加的连接服务器 (MCP) 连接。两者使用相同的工具，所以大部分功能与代理无关。
 
-| 功能 | Claude Code | Codex、Gemini CLI、Qwen Code、Copilot CLI、<br>OpenCode、Goose、Amp、Crush | Cursor CLI、Grok、<br>Kimi |
+| 功能 | Claude Code | Codex、Gemini CLI、Qwen Code、Copilot CLI、<br>OpenCode、Goose、Amp、Crush、Cursor CLI | Grok、Kimi |
 | --- | :---: | :---: | :---: |
 | 任务汇报、决定问题、会话间提问、浏览器工具 | ✅ | ✅ | 仅终端 |
 | 接收回答和消息 | ✅ | ✅ 输入到应用终端 | |
@@ -139,6 +139,8 @@ Claude Code 通过 mod 连接，其他 CLI 通过应用只为该次运行附加�
 - Qwen Code 和 OpenCode 2 无需设置即可转发权限确认：Qwen 通过只为该次运行生成的默认设置文件中的钩子，OpenCode 通过只为该次运行添加的插件。不会修改你自己的设置文件。OpenCode 的命令确认不包含要运行的完整脚本，因此命令只在终端中确认。Qwen 默认的 Auto 模式和 OpenCode 默认的规则很少询问，所以转发的确认也很少。支持 macOS 和 Linux。
 - Copilot CLI 1.0.105 及以上也无需设置即可转发权限确认：放在应用文件夹中的插件 (`--plugin-dir`) 的钩子把文件修改和命令执行的确认发送到应用和手机。要离开 Copilot 沙箱的命令无法由钩子允许，因此只在终端中确认。支持 macOS 和 Linux。
 - OpenCode 2 终端每次运行都使用自己的服务器 (`--standalone`)，即使在应用外也开着 OpenCode，每个终端也会单独连接。
+- Cursor CLI 通过放在应用文件夹中的插件 (`--plugin-dir`) 连接服务器。Cursor 每次调用 Switchboard 工具前都会在终端中询问是否运行；在那里把工具加入允许列表 (Allowlist) 后，之后的运行不再询问。已在 macOS 上确认。
+- Grok 1.0.77 没有文档中提到的 `--plugin-dir` 参数，`GROK_CONFIG` 也不接受连接服务器设置，因此只打开终端。
 - Crush 通过 `-D` 使用应用为每个项目保留的数据文件夹来连接服务器。在应用中打开的 Crush 的对话记录保存在该文件夹中，在应用外启动的 `crush` 看不到这些记录。支持 macOS 和 Linux。
 
 列表之外的 CLI 可以在 设置 > 代理 CLI 中填写命令和连接方式来添加。`+` 菜单只显示已安装的 CLI。

@@ -125,7 +125,7 @@ Switchboard では、セッションが判断の質問をキューに載せて�
 
 Claude Code は mod で、ほかの CLI はアプリがその実行にだけ付ける接続サーバー (MCP) でつながります。使うツールは同じなので、ほとんどの機能はエージェントに関係なく使えます。
 
-| 機能 | Claude Code | Codex、Gemini CLI、Qwen Code、Copilot CLI、<br>OpenCode、Goose、Amp、Crush | Cursor CLI、Grok、<br>Kimi |
+| 機能 | Claude Code | Codex、Gemini CLI、Qwen Code、Copilot CLI、<br>OpenCode、Goose、Amp、Crush、Cursor CLI | Grok、Kimi |
 | --- | :---: | :---: | :---: |
 | タスク報告、判断の質問、セッション同士の質問、ブラウザーツール | ✅ | ✅ | ターミナルのみ |
 | 答えとメッセージの受け取り | ✅ | ✅ アプリのターミナルに入力 | |
@@ -139,6 +139,8 @@ Claude Code は mod で、ほかの CLI はアプリがその実行にだけ付�
 - Qwen Code と OpenCode 2 は設定なしで権限確認を中継します。Qwen はその実行だけのために作るデフォルト設定ファイルのフックで、OpenCode はその実行だけに加えるプラグインで確認します。ユーザーの設定ファイルは変えません。OpenCode のコマンドの確認には実行するスクリプト全体が入っていないため、コマンドはターミナルでだけ確認します。Qwen の既定の Auto モードと OpenCode の既定のルールは確認が少ないので、中継される確認も少なくなります。macOS と Linux で使えます。
 - Copilot CLI 1.0.105 以降も設定なしで権限確認を中継します。アプリのフォルダーに置いたプラグイン (`--plugin-dir`) のフックが、ファイル変更とコマンド実行の確認をアプリとスマートフォンに送ります。Copilot のサンドボックスの外に出るコマンドはフックが許可できないため、ターミナルでだけ確認します。macOS と Linux で使えます。
 - OpenCode 2 のターミナルは実行ごとに専用のサーバーで開きます (`--standalone`)。アプリの外で OpenCode を使っていても、ターミナルごとに別々に接続します。
+- Cursor CLI にはアプリのフォルダーに置いたプラグイン (`--plugin-dir`) で接続サーバーを付けます。Cursor は Switchboard のツールを呼ぶたびにターミナルで実行するか確認します。そこでツールを許可リスト (Allowlist) に入れると、次の実行から確認しません。macOS で確認しました。
+- Grok 1.0.77 には文書にある `--plugin-dir` フラグがなく、`GROK_CONFIG` は接続サーバーの設定を受け付けません。そのためターミナルだけを開きます。
 - Crush には `-D` でアプリがプロジェクトごとに持つデータフォルダーを渡して接続サーバーを付けます。アプリで開いた Crush の会話履歴はそのフォルダーに残り、アプリの外で開いた `crush` には表示されません。macOS と Linux で使えます。
 
 一覧にない CLI は、設定 > エージェント CLI でコマンドと接続方法を書いて追加します。`+` メニューにはインストール済みの CLI だけが出ます。

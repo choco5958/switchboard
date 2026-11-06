@@ -125,7 +125,7 @@ Switchboard에서는 세션이 결정 질문을 큐에 올려 두고 다른 일�
 
 Claude Code는 mod로, 다른 CLI는 앱이 그 실행에만 붙이는 연결 서버(MCP)로 연결됩니다. 쓰는 도구가 같아서 대부분의 기능은 에이전트와 상관없이 됩니다.
 
-| 기능 | Claude Code | Codex, Gemini CLI, Qwen Code, Copilot CLI,<br>OpenCode, Goose, Amp, Crush | Cursor CLI, Grok,<br>Kimi |
+| 기능 | Claude Code | Codex, Gemini CLI, Qwen Code, Copilot CLI,<br>OpenCode, Goose, Amp, Crush, Cursor CLI | Grok, Kimi |
 | --- | :---: | :---: | :---: |
 | 작업 보고, 결정 질문, 세션끼리 묻기, 브라우저 도구 | ✅ | ✅ | 터미널만 |
 | 답과 메시지 받기 | ✅ | ✅ 앱 터미널에 입력 | |
@@ -139,6 +139,8 @@ Claude Code는 mod로, 다른 CLI는 앱이 그 실행에만 붙이는 연결 �
 - Qwen Code와 OpenCode 2는 설정 없이 권한 확인을 중계합니다. Qwen은 그 실행에만 만든 기본 설정 파일의 훅으로, OpenCode는 그 실행에만 더한 플러그인으로 묻습니다. 사용자 설정 파일은 바꾸지 않습니다. OpenCode의 명령 질문에는 실행할 스크립트 전체가 들어 있지 않아서, 명령은 터미널에서만 묻습니다. Qwen의 기본 Auto 모드와 OpenCode의 기본 규칙은 묻는 일이 적어서, 중계되는 질문도 적습니다. macOS와 Linux에서 됩니다.
 - Copilot CLI 1.0.105 이상도 설정 없이 권한 확인을 중계합니다. 앱 폴더에 둔 플러그인(`--plugin-dir`)의 훅이 파일 수정과 명령 실행 질문을 앱과 휴대폰으로 보냅니다. Copilot 샌드박스를 벗어나려는 명령은 훅이 허용할 수 없어서 터미널에서만 묻습니다. macOS와 Linux에서 됩니다.
 - OpenCode 2 터미널은 실행마다 자기 서버로 엽니다(`--standalone`). 앱 밖에서 OpenCode를 쓰고 있어도 터미널마다 따로 연결됩니다.
+- Cursor CLI에는 앱 폴더에 둔 플러그인(`--plugin-dir`)으로 연결 서버를 붙입니다. Cursor는 Switchboard 도구를 부를 때마다 터미널에서 실행할지 묻습니다. 그때 도구를 허용 목록(Allowlist)에 넣으면 다음 실행부터 묻지 않습니다. macOS에서 확인했습니다.
+- Grok 1.0.77에는 문서에 있는 `--plugin-dir` 플래그가 없고, `GROK_CONFIG`는 연결 서버 설정을 받지 않습니다. 그래서 터미널만 엽니다.
 - Crush에는 `-D`로 앱이 프로젝트마다 두는 데이터 폴더를 넘겨 연결 서버를 붙입니다. 앱에서 연 Crush의 대화 기록은 그 폴더에 남아서, 앱 밖에서 연 `crush`에는 보이지 않습니다. macOS와 Linux에서 됩니다.
 
 목록에 없는 CLI는 설정 > 에이전트 CLI에서 명령과 연결 방법을 적어 추가합니다. 설치된 CLI만 `+` 메뉴에 나옵니다.

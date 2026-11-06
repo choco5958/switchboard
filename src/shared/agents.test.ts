@@ -104,6 +104,20 @@ describe('preset launch lines', () => {
     }
   })
 
+  it('cursor gets one plugin folder every run shares, the key coming from its env', () => {
+    const launch = presetLaunch(presetOf('cursor')!, server, file, 'darwin')
+    const dir = '/home/u/.claude-ide/agents/cursor-plugin'
+    expect(words(launch.line)).toEqual(['cursor-agent', '--plugin-dir', dir])
+    expect(launch.files.map(f => f.path)).toEqual([`${dir}/.cursor-plugin/plugin.json`])
+    const plugin = JSON.parse(launch.files[0]!.content)
+    expect(plugin.name).toBe('switchboard')
+    expect(plugin.mcpServers.switchboard).toEqual({
+      command: server.command,
+      args: ['/app/mcp/server.ts', '--agent', 'codex'],
+      env: { SWITCHBOARD_TERMINAL: '${env:SWITCHBOARD_TERMINAL}' },
+    })
+  })
+
   it('gemini reads a defaults file named by an env var; the file holds mcpServers.switchboard', () => {
     const launch = presetLaunch(presetOf('gemini')!, server, file)
     expect(launch.line).toBe('gemini')
