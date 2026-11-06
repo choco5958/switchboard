@@ -56,7 +56,8 @@ export async function until<T>(what: string, check: () => Promise<T | undefined 
 export async function seed(env: Env, home: string, scratch: string): Promise<void> {
   const bridge = spawn(process.execPath, [join(ROOT, 'bridge', 'server.ts')], { cwd: ROOT, env, stdio: 'ignore' })
   try {
-    await until('the seeding bridge', async () => (await call(env, home, 'GET', '/health')).status === 200, 20000)
+    // A Windows runner has taken longer than 20 seconds to start it.
+    await until('the seeding bridge', async () => (await call(env, home, 'GET', '/health')).status === 200, 60000)
     const post = async (path: string, body: unknown) => {
       const { status, text } = await call(env, home, 'POST', path, body)
       if (status >= 400) throw new Error(`POST ${path}: ${status} ${text}`)
