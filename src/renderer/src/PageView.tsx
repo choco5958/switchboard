@@ -33,9 +33,17 @@ function TauriPage({ src, visible, onSurface }: Props) {
     const element = spot.current
     if (!element) return
     let last = ''
+    // Something of the app's drawn over the spot (a dialog, the palette, a menu): the page is drawn
+    // above the app, so it would hide that. A few points across the spot, not its corners, so a
+    // toast at the window's edge leaves the page shown.
+    const covered = (r: DOMRect) =>
+      [[0.5, 0.5], [0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7]].some(([fx = 0, fy = 0]) => {
+        const hit = document.elementFromPoint(r.left + r.width * fx, r.top + r.height * fy)
+        return hit !== null && !element.contains(hit)
+      })
     const place = () => {
       const r = element.getBoundingClientRect()
-      const shown = visible && r.width > 0 && r.height > 0
+      const shown = visible && r.width > 0 && r.height > 0 && !covered(r)
       // The window's height too: full screen drops the title bar the page's place is measured below.
       const now = `${r.left},${r.top},${r.width},${r.height},${shown},${window.innerHeight}`
       if (now === last) return
@@ -49,8 +57,8 @@ function TauriPage({ src, visible, onSurface }: Props) {
     place()
     const observer = new ResizeObserver(place)
     observer.observe(element)
-    // A spot can move without changing size (the sidebar, a notice above).
-    const timer = setInterval(place, 400)
+    // A spot can move without changing size (the sidebar, a notice above), and a dialog can open over it.
+    const timer = setInterval(place, 250)
     return () => {
       observer.disconnect()
       clearInterval(timer)
