@@ -366,6 +366,8 @@ fn main() {
         ])
         .setup(|app| {
             let host = start_host(app.handle());
+            let power = host.clone();
+            os::watch_power(move |event| power.write(&json!({ "t": "event", "name": "power", "event": event })));
             app.manage(host);
             // Checks without a person at the screen: no Dock icon, no focus, the window never shown,
             // and a script run in the page once it has loaded.

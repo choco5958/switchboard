@@ -144,12 +144,64 @@ pub fn pick_folder(app: &AppHandle, title: &str) -> Value {
     }
 }
 
-// Away after `seconds` without keyboard or mouse (core.ts reportPresence).
+// Away after `seconds` without keyboard or mouse, or at once while the screen is locked (core.ts
+// reportPresence; Electron's powerMonitor.getSystemIdleState answers "locked" the same way).
 pub fn idle_state(seconds: u64) -> Value {
+    if screen_locked() == Some(true) {
+        return json!("locked");
+    }
     match user_idle::UserIdle::get_time() {
         Ok(idle) => json!(if idle.as_seconds() >= seconds { "idle" } else { "active" }),
         Err(_) => json!("unknown"),
     }
+}
+
+// Whether the screen is locked: the login session's CGSSessionScreenIsLocked on macOS. None where
+// the shell cannot tell (Windows, Linux): there the idle time alone says away.
+#[cfg(target_os = "macos")]
+pub fn screen_locked() -> Option<bool> {
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSDictionary, NSNumber, NSString};
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGSessionCopyCurrentDictionary() -> *mut NSDictionary<NSString, AnyObject>;
+    }
+    // A copy (the Create rule): Retained releases it.
+    let session = unsafe { Retained::from_raw(CGSessionCopyCurrentDictionary()) }?;
+    let value = session.objectForKey(&NSString::from_str("CGSSessionScreenIsLocked"));
+    Some(value.and_then(|v| v.downcast::<NSNumber>().ok()).is_some_and(|n| n.boolValue()))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn screen_locked() -> Option<bool> {
+    None
+}
+
+// The power events the host waits for (src/main/core.ts): the screen locked and unlocked, and the
+// computer awake again, seen as a gap in a two-second tick. Electron sends these itself.
+pub fn watch_power(send: impl Fn(&str) + Send + 'static) {
+    std::thread::spawn(move || {
+        let mut locked = screen_locked();
+        let mut last = std::time::SystemTime::now();
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let now = std::time::SystemTime::now();
+            if now.duration_since(last).map(|gap| gap.as_secs() >= 15).unwrap_or(false) {
+                send("resume");
+            }
+            last = now;
+            let current = screen_locked();
+            if current != locked {
+                match current {
+                    Some(true) => send("lock-screen"),
+                    Some(false) => send("unlock-screen"),
+                    None => {}
+                }
+                locked = current;
+            }
+        }
+    });
 }
 
 static AWAKE: Mutex<Option<keepawake::KeepAwake>> = Mutex::new(None);
@@ -317,6 +369,14 @@ mod tests {
         let electron = "76313009ba585e3735bf093177b9036964f7cfeb005f35741cb3f96c1d3db3540c1cd19675ebd7ede7c46843d02b800e027f5afd6088f735b5c88d7dfe47a93d6ebafc8458245f6d28c61c6d4eda5439b266c6";
         let electron: Vec<u8> = (0..electron.len()).step_by(2).map(|i| u8::from_str_radix(&electron[i..i + 2], 16).unwrap()).collect();
         assert_eq!(open_safe_storage("mock_password", electron.strip_prefix(b"v10").unwrap(), 1003), Some(key));
+    }
+
+    #[test]
+    fn an_unlocked_screen_reads_as_unlocked() {
+        // While these tests run the screen is not locked; a runner with no login session reads None.
+        assert_ne!(screen_locked(), Some(true));
+        #[cfg(target_os = "macos")]
+        eprintln!("screen_locked: {:?}", screen_locked());
     }
 
     #[test]
