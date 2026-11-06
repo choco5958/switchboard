@@ -70,7 +70,7 @@ Jump to any session, task or decision question. Gather projects into groups and 
 
 <table>
 <tr><td width="26%">🤝 <b>Sessions working together</b></td><td>Ask another session and get its answer back. Collect answers from several sessions into one turn, and take back work you handed off.</td></tr>
-<tr><td width="26%">📱 <b>While you are away</b></td><td>Answer decisions and Claude Code permission asks from your phone or Telegram, on any network.</td></tr>
+<tr><td width="26%">📱 <b>While you are away</b></td><td>Answer decisions and your agents' permission asks from your phone or Telegram, on any network.</td></tr>
 <tr><td width="26%">⏰ <b>Scheduled prompts</b></td><td>Send a prompt to a session daily, on weekdays, at an interval or once.</td></tr>
 <tr><td width="26%">🔍 <b>Fix what you see</b></td><td>Click an element in the in-app browser to leave a comment with its location, a screenshot and console errors. Sessions click through local pages to check their work.</td></tr>
 <tr><td width="26%">🖥️ <b>Terminals that keep going</b></td><td>On macOS and Linux, agents in the terminals keep working when you quit or update the app, and come back as they were when you reopen it.</td></tr>
@@ -97,7 +97,7 @@ Jump to any session, task or decision question. Gather projects into groups and 
 - A decision can be handed to another session to answer. Answers for a session at its usage limit are held until the limit resets.
 
 #### While you are away
-- When the app is closed, the screen is locked or there has been no input for 5 minutes, decisions and permission asks go to Telegram and your phone. At your desk, the terminal asks as usual.
+- When the app is closed, the screen is locked or there has been no input for 5 minutes, decisions and permission asks go to Telegram and your phone. At your desk, the terminal asks as usual. On macOS a locked screen counts at once; on Windows and Linux you count as away after 5 minutes without input.
 - When you deny a permission ask you can add a reason, and the session gets it and looks for another way. In Telegram, reply to the permission ask with the reason.
 - Each scheduled prompt names the agent it goes to; if that agent has no session, the app opens its terminal. Runs with nothing to report send no notification.
 
