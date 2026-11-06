@@ -36,10 +36,11 @@ function TauriPage({ src, visible, onSurface }: Props) {
     const place = () => {
       const r = element.getBoundingClientRect()
       const shown = visible && r.width > 0 && r.height > 0
-      const now = `${r.left},${r.top},${r.width},${r.height},${shown}`
+      // The window's height too: full screen drops the title bar the page's place is measured below.
+      const now = `${r.left},${r.top},${r.width},${r.height},${shown},${window.innerHeight}`
       if (now === last) return
       last = now
-      void invoke('browser_place', { url: 'about:blank', x: r.left, y: r.top, width: r.width, height: r.height, visible: shown }).then(() => {
+      void invoke('browser_place', { url: 'about:blank', x: r.left, y: r.top, width: r.width, height: r.height, visible: shown, viewport: window.innerHeight }).then(() => {
         if (started.current) return
         started.current = true
         void surface.load(src)

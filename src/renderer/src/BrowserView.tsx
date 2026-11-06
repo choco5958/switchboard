@@ -503,7 +503,9 @@ export function BrowserView({
       </div>
       <div className="browser-body">
         <div className="webview-wrap">
-          {on && <PageView src={src} visible={visible} onSurface={setSurface} />}
+          {/* A failed load shows its card in the page's place; the Tauri build draws the page above
+              the app, so the page is hidden while the card shows, or the card would sit under it. */}
+          {on && <PageView src={src} visible={visible && !failure} onSurface={setSurface} />}
           {failure && (
             <div className="load-failure" role="alert">
               <Card pad="none" className="load-failure-box">

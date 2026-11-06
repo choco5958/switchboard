@@ -45,10 +45,24 @@ fn event(app: &AppHandle, value: Value) {
 
 // Async: WebView2 deadlocks when a webview is made in a synchronous command (it runs on the main
 // thread, where the new webview's setup has to finish).
+// How far below the top of the window the app's own page starts (the title bar on macOS), in
+// logical pixels: the window's height less the height the app's page has (`viewport`, its
+// window.innerHeight). Tauri gives the app's webview the window's size, so the page has to say.
+fn top_inset(app: &AppHandle, viewport: Option<f64>) -> f64 {
+    let (Some(window), Some(viewport)) = (app.get_window("main"), viewport) else { return 0.0 };
+    let (Ok(inner), Ok(scale)) = (window.inner_size(), window.scale_factor()) else { return 0.0 };
+    let gap = inner.to_logical::<f64>(scale).height - viewport;
+    if cfg!(target_os = "macos") && gap > 0.5 && gap < 200.0 { gap } else { 0.0 }
+}
+
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
-pub async fn browser_place(app: AppHandle, webview: Webview, url: String, x: f64, y: f64, width: f64, height: f64, visible: bool) -> Result<(), String> {
+pub async fn browser_place(app: AppHandle, webview: Webview, url: String, x: f64, y: f64, width: f64, height: f64, visible: bool, viewport: Option<f64>) -> Result<(), String> {
     from_app(&webview)?;
+    // On macOS the page's parent view spans the whole window, title bar included, while the app's
+    // page (and the rectangle it measured) starts below the title bar: the page goes down by the
+    // difference. Elsewhere the two are the same and nothing moves.
+    let y = y + top_inset(&app, viewport);
     if let Some(page) = page(&app) {
         let _ = page.set_position(LogicalPosition::new(x, y));
         let _ = page.set_size(LogicalSize::new(width.max(1.0), height.max(1.0)));
