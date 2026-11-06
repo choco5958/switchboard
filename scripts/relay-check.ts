@@ -181,7 +181,7 @@ const SPECS: Record<string, Spec> = {
     tty: true,
     tool: file => ({ name: 'write_file', args: { file_path: file, content: 'hi' } }),
     run: async at => {
-      write(join(at.home, '.qwen', 'settings.json'), JSON.stringify({ security: { auth: { selectedType: 'openai' } }, model: { name: 'fake' } }))
+      write(join(at.home, '.qwen', 'settings.json'), JSON.stringify({ security: { auth: { selectedType: 'openai' } }, model: { name: 'fake' }, general: { disableAutoUpdate: true } }))
       return { args: ['--approval-mode', 'default'], env: { OPENAI_API_KEY: 'test', OPENAI_BASE_URL: `${at.model}/v1`, OPENAI_MODEL: 'fake' } }
     },
   },
@@ -412,7 +412,8 @@ async function main(): Promise<number> {
     }
     if (!spec.tty) await until('the CLI to end', () => exit !== undefined, 120000).catch(fail)
     await until('the turn end (idle)', async () => (await activity()) === 'idle', spec.tty ? 120000 : 30000).catch(fail)
-    if (tool && !existsSync(file)) fail(`no hello.txt after allowing (exit ${exit})`)
+    // The write may land a moment after the turn's end is told (Qwen on Windows).
+    if (tool) await until('hello.txt after allowing', () => existsSync(file), 30000).catch(fail)
     if (tool) console.log(`allowed, and ${agent} wrote hello.txt`)
     console.log('turn end: the session is idle again')
   } catch (error) {
