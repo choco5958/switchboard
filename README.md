@@ -110,6 +110,7 @@ Jump to any session, task or decision question. Gather projects into groups and 
 #### Terminals
 - `+` beside a project in the sidebar opens an installed agent or a plain shell there. The terminal shows up as a session under that project.
 - Your Mac does not sleep while an agent is working.
+- Drag a file from Finder or Explorer onto a terminal to type its path.
 - To close the terminals when the app quits, turn on `Close terminals when the app quits` in Settings > Agent CLIs. On Windows the terminals close with the app.
 - When turned on in Settings > Permissions and access, the app answers yes ahead of time to the folder trust question of Codex, Copilot and Cursor for a folder they open for the first time. It is off by default and skips folders with agent config of their own (.codex, .cursor, .mcp.json and so on).
 - Type `/switchboard` in Claude Code to see that session's flow and decisions in a side pane.

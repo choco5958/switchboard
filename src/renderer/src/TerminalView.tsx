@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
+import { acceptDrops } from './termDrop'
 import { createReplay } from './termReplay'
 import { t } from '../../shared/i18n'
 import { termTheme } from './termTheme'
@@ -71,9 +72,15 @@ export function TerminalView({ id, visible, themeKey }: { id: string; visible: b
       if (box.current && box.current.clientWidth > 0 && box.current.clientHeight > 0) fitter.fit()
     })
     observer.observe(box.current)
+    // A file dropped on the terminal goes in as its path, bracketed as a paste when the program asks.
+    const offDrop = acceptDrops(box.current, text => {
+      xterm.paste(text)
+      xterm.focus()
+    })
 
     return () => {
       live = false
+      offDrop()
       observer.disconnect()
       offData()
       offExit()

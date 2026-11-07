@@ -434,6 +434,8 @@ h3 { font-size: var(--fs-md); margin: var(--sp-3) 0 6px; color: var(--quiet); fo
 .terminal-stage[hidden] { display: none; }
 .terminal-view { position: absolute; inset: 0; padding: var(--sp-2) 0 0 var(--sp-3); background: var(--bg); }
 .terminal-view .xterm { height: 100%; }
+/* A file dragged over the terminal: dropping it types its path. */
+.terminal-view.drop-on { box-shadow: inset 0 0 0 2px var(--accent); }
 /* The terminal fills its area in the theme colour, with no black band under the last row. */
 .terminal-view .xterm, .terminal-view .xterm-viewport, .terminal-view .xterm-screen, .terminal-view .xterm-scrollable-element { background-color: var(--bg) !important; }
 .dock-menu-name { flex-shrink: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
