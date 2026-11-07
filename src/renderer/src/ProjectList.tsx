@@ -15,6 +15,7 @@ import {
   removedProjects,
   restoreFolder,
   savedProjects,
+  shownProjects,
   sidebarGroups,
   type ProjectFolder,
   type ProjectInfo,
@@ -70,9 +71,6 @@ export function ProjectList({ projects, hidden, folders, renderRows, renderAdd, 
       return next
     })
   const fold = (name: string) => saveClosed(current => (current.includes(name) ? current.filter(n => n !== name) : [...current, name]))
-  // Every project on the list shut, or every one open; the ones taken off the list keep theirs.
-  const anyOpen = projects.some(p => !closed.includes(p.name))
-  const foldAll = (shut: boolean) => saveClosed(current => foldedAll(current, projects.map(p => p.name), shut))
   // `p:<name>` or `f:<id>`: whose ⋯ menu is open.
   const [menu, setMenu] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
@@ -100,6 +98,14 @@ export function ProjectList({ projects, hidden, folders, renderRows, renderAdd, 
     if (clean) changeFolders(current => current.map(f => (f.id === id ? { ...f, name: clean } : f)))
   }
   const toggle = (id: string) => changeFolders(current => current.map(f => (f.id === id ? { ...f, closed: !f.closed } : f)))
+  // Every project on the list shut, or every one open; the ones taken off the list keep theirs.
+  // Opening all opens the closed folders too, or the projects in them would stay out of sight;
+  // shutting all leaves the folders as they are. A project in a closed folder is not seen open.
+  const anyOpen = shownProjects(groups).some(p => !closed.includes(p.name))
+  const foldAll = (shut: boolean) => {
+    saveClosed(current => foldedAll(current, projects.map(p => p.name), shut))
+    if (!shut && folders.some(f => f.closed)) changeFolders(current => current.map(f => (f.closed ? { ...f, closed: false } : f)))
+  }
   const move = (name: string, folderId: string | null) => changeFolders(current => moveToFolder(current, name, folderId))
   const unhide = (name: string) => update(HIDDEN_KEY, current => hiddenProjects(current).filter(h => h !== name))
   const hide = (name: string) => {

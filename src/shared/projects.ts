@@ -107,6 +107,11 @@ export function sidebarGroups(projects: readonly ProjectInfo[], folders: readonl
   return { folders: views, loose: projects.filter(p => !placed.has(p.name)) }
 }
 
+// The projects in sight: the ones in open folders and the ones in none.
+export function shownProjects(groups: { folders: readonly FolderView[]; loose: readonly ProjectInfo[] }): ProjectInfo[] {
+  return [...groups.folders.filter(g => !g.folder.closed).flatMap(g => g.items), ...groups.loose]
+}
+
 // A project sits in one folder at most: putting it in one takes it out of the others; null takes it out of all.
 export function moveToFolder(folders: readonly ProjectFolder[], project: string, folderId: string | null): ProjectFolder[] {
   return folders.map(f => {

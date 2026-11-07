@@ -116,7 +116,7 @@ Jump to any session, task or decision question. Gather projects into groups and 
 - Type `/switchboard` in Claude Code to see that session's flow and decisions in a side pane.
 
 #### Display
-- Click a project in the sidebar to fold it, and gather projects with `+ Group`. Click with ⌥ (Alt) held, or pick `Collapse all projects` in its ⋯ menu, to fold or unfold every project at once. Delete a group with `Delete group` in its ⋯ menu or the Delete key; its projects stay in the list. Removing a project from the list keeps its files and history; under `Removed from the list`, `Show again` brings it back and `Remove` takes it out for good. A removed project comes back when a new session opens in its folder.
+- Click a project in the sidebar to fold it, and gather projects with `+ Group`. Click with ⌥ (Alt) held, or pick `Collapse all projects` in its ⋯ menu, to fold or unfold every project at once. Unfolding opens closed groups too. Delete a group with `Delete group` in its ⋯ menu or the Delete key; its projects stay in the list. Removing a project from the list keeps its files and history; under `Removed from the list`, `Show again` brings it back and `Remove` takes it out for good. A removed project comes back when a new session opens in its folder.
 - 한국어, English, 日本語, 简体中文; it follows the OS language at first.
 - 14 themes: Classic navy dark and light, Adventure journal, Phosphor terminal, Pixel dots, Subway map, Circuit board, Modern terminal, Blue DOS window, Dracula, Nord, Solarized Dark and Light, GitHub Light.
 - With Orca installed, each node can get a worktree, and a Linear issue can start a task.

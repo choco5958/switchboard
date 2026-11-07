@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BridgeState } from './types'
-import { foldedAll, hiddenProjects, isRunning, removedProjects, stillRemoved, moveToFolder, restoreFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
+import { foldedAll, shownProjects, hiddenProjects, isRunning, removedProjects, stillRemoved, moveToFolder, restoreFolder, nameForFolder, projectFolders, sidebarGroups, pickSession, projectName, projectOfCwd, projectsOf, savedProjects, scopeFor, scopeState, shellQuote, taskState, terminalEnv } from './projects'
 
 const state = {
   sessions: [
@@ -253,5 +253,17 @@ describe('foldedAll', () => {
     expect(foldedAll(['beta', 'old'], ['alpha', 'beta'], true)).toEqual(['old', 'alpha', 'beta'])
     expect(foldedAll(['beta', 'old'], ['alpha', 'beta'], false)).toEqual(['old'])
     expect(foldedAll([], [], true)).toEqual([])
+  })
+})
+
+describe('shownProjects', () => {
+  it('leaves out the projects in closed folders', () => {
+    const projects = ['alpha', 'beta', 'gamma'].map(name => ({ name, cwd: `/w/${name}`, running: 0, pending: 0, active: 0 }))
+    const folders = [
+      { id: 'f1', name: 'Work', projects: ['alpha'], closed: true },
+      { id: 'f2', name: 'Play', projects: ['beta'], closed: false },
+    ]
+    expect(shownProjects(sidebarGroups(projects, folders)).map(p => p.name)).toEqual(['beta', 'gamma'])
+    expect(shownProjects(sidebarGroups(projects, folders.map(f => ({ ...f, closed: false })))).map(p => p.name)).toEqual(['alpha', 'beta', 'gamma'])
   })
 })
