@@ -113,14 +113,19 @@ test('an ask nobody polls for 90 s expires, and one found at the start gets that
   try {
     const polled = await ask('st-2', 'toolu_st2', socket)
     const status = async (id: number) => (await callAt(socket, 'GET', `/approvals/${id}`)).json.status
-    t.mock.timers.tick(60_000)
+    // Time awake passes in steps: one jump much longer than the bridge's looks reads as a sleep
+    // (bridge/asleep.ts), after which every ask gets its time again.
+    const pass = (ms: number) => {
+      for (let gone = 0; gone < ms; gone += 10_000) t.mock.timers.tick(10_000)
+    }
+    pass(60_000)
     assert.equal((await callAt(socket, 'GET', '/state')).json.approvals.filter((a: { status: string }) => a.status === 'pending').length, 2)
     // The mod of st-2 is still there: it looks again (status() polls too).
     assert.equal(await status(polled), 'pending')
-    t.mock.timers.tick(60_000)
+    pass(60_000)
     assert.equal(await status(left), 'expired')
     assert.equal(await status(polled), 'pending')
-    t.mock.timers.tick(120_000)
+    pass(120_000)
     assert.equal(await status(polled), 'expired')
   } finally {
     second.close()

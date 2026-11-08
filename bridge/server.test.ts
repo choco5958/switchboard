@@ -241,6 +241,33 @@ test('a second bridge on a live socket refuses instead of taking it over', async
   assert.equal((await call('GET', '/health')).status, 200)
 })
 
+test('time asleep does not run out a scheduled run or delegated work', async () => {
+  let woke = 0
+  const other = createBridge(join(dir, 'asleep.db'), 'ko-KR', { asleep: { check: () => woke } })
+  const at = Date.now()
+  const routine = Number(
+    other.db
+      .prepare("insert into routines (project, cwd, name, prompt, schedule, next_at, created_at, updated_at) values ('nap', '/w/nap', '밤 점검', 'p', ?, null, ?, ?)")
+      .run(JSON.stringify({ kind: 'daily', time: '09:00' }), at - 9 * 3600_000, at - 9 * 3600_000).lastInsertRowid,
+  )
+  // Sent before the lid closed 8 hours ago; its turn goes on once the computer wakes.
+  other.db.prepare("insert into routine_runs (routine_id, scheduled_for, created_at, session_id, status) values (?, ?, ?, 'nap-1', 'sent')").run(routine, at - 8 * 3600_000, at - 8 * 3600_000)
+  other.db
+    .prepare("insert into delegations (from_session, agent, project, cwd, task, created_at, status, terminal, opened_at) values ('nap-1', 'codex', 'nap', '/w/nap', 't', ?, 'opened', 'k-nap', ?)")
+    .run(at - 8 * 3600_000, at - 8 * 3600_000)
+  const statuses = () => [
+    (other.db.prepare('select status from routine_runs').get() as { status: string }).status,
+    (other.db.prepare('select status from delegations').get() as { status: string }).status,
+  ]
+  woke = at - 60_000
+  other.tickRoutines(at)
+  assert.deepEqual(statuses(), ['sent', 'opened'], 'woke a minute ago: both still have their time')
+  woke = 0
+  other.tickRoutines(at)
+  assert.deepEqual(statuses(), ['failed', 'failed'], 'awake all along: both ran out')
+  await other.close()
+})
+
 test('the task stage follows its first stage with unfinished nodes', async () => {
   const stageOf = async () =>
     (await call('GET', '/state')).json.tasks.find((t: { title: string }) => t.title === '단계 시험').stage

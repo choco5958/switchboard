@@ -37,6 +37,7 @@ import {
   type PeerRow,
 } from './peer.ts'
 import { ROUTINE_FAIL_LIMIT, nextRun, parseSchedule, type Schedule } from './schedule.ts'
+import { SLEEP_LOOK_MS, sleepClock } from './asleep.ts'
 import { TELEGRAM_API, createTelegram } from './telegram.ts'
 import { MOBILE_PORT, createMobile, type Run, type TailscaleMode } from './mobile.ts'
 import { makeVapidKeys, type PushMessage, type VapidKeys } from './push.ts'
@@ -386,7 +387,16 @@ export function systemLocale(): string {
 // `appKey`: what the app proves itself with (appOnly); the app hands it over at the start.
 // `tailscale`: the tailscale command for phones (bridge/mobile.ts), null for none (tests).
 // `tailscaleRun`: runs it instead of the real one (tests).
-export type BridgeOptions = { telegramApi?: string; fetch?: typeof fetch; token?: string; appKey?: string; tailscale?: string | null; tailscaleRun?: Run }
+// `asleep`: when the computer last woke (bridge/asleep.ts); the tests name the moment.
+export type BridgeOptions = {
+  telegramApi?: string
+  fetch?: typeof fetch
+  token?: string
+  appKey?: string
+  tailscale?: string | null
+  tailscaleRun?: Run
+  asleep?: { check: () => number }
+}
 
 // What only the person may do, through the app: answer a permission ask, say they are away,
 // set up Telegram or phones, schedule prompts, change settings, control sessions and read their
@@ -709,12 +719,17 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
   const approvalWaiters = new Map<number, Set<() => void>>()
   const approvalSeen = new Map<number, number>()
   const approvalsFrom = now()
+  // A computer that slept gives what waited its whole time again from the moment it woke.
+  const sleeping = options.asleep ?? sleepClock(now)
+  const sleepLook = setInterval(() => sleeping.check(), SLEEP_LOOK_MS)
+  sleepLook.unref()
   const sweepApprovals = () => {
     if (shuttingDown) return clearInterval(approvalSweep)
     const at = now()
+    const woke = sleeping.check()
     for (const row of db.prepare("select * from approvals where status = 'pending'").all() as ApprovalRow[]) {
       if ((approvalWaiters.get(row.id)?.size ?? 0) > 0) continue
-      const seen = approvalSeen.get(row.id) ?? Math.max(row.created_at, approvalsFrom)
+      const seen = Math.max(approvalSeen.get(row.id) ?? Math.max(row.created_at, approvalsFrom), woke)
       if (at - seen > APPROVAL_STALE_MS) answerApproval(row, 'expired', '', 'bridge.event.approvalStale')
     }
   }
@@ -910,16 +925,17 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const open = db.prepare("select * from delegations where status in ('waiting', 'opened') order by id").all() as DelegationRow[]
     if (open.length === 0) return
     const live = liveSessions()
+    const woke = sleeping.check()
     for (const d of open) {
       if (d.status === 'waiting') {
-        if (at - d.created_at > DELEGATE_OPEN_MS) failDelegation(d, say('delegate.noTerminal'))
+        if (at - Math.max(d.created_at, woke) > DELEGATE_OPEN_MS) failDelegation(d, say('delegate.noTerminal'))
         continue
       }
       const ready = d.terminal
         ? (db.prepare('select id from sessions where terminal = ? and agent = ? order by last_seen desc').all(d.terminal, d.agent) as { id: string }[]).find(row => live.includes(row.id))
         : undefined
       if (!ready) {
-        if (at - (d.opened_at ?? d.created_at) > DELEGATE_START_MS) failDelegation(d, say('delegate.noSession'))
+        if (at - Math.max(d.opened_at ?? d.created_at, woke) > DELEGATE_START_MS) failDelegation(d, say('delegate.noSession'))
         continue
       }
       atomic(() => {
@@ -963,10 +979,13 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
       else startRun(r, r.next_at!)
       advanceRoutine(r, at)
     }
-    // A run nobody took, or one whose turn never reported back, ends instead of blocking the next.
+    // A run nobody took, or one whose turn never reported back, ends instead of blocking the next
+    // (counted from the computer's wake when it slept since: 0 finds nothing).
+    const woke = sleeping.check()
+    const before = (ms: number) => (woke < at - ms ? at - ms : 0)
     const stale = db
       .prepare("select id, routine_id, status from routine_runs where (status = 'waiting' and created_at < ?) or (status = 'sent' and created_at < ?)")
-      .all(at - RUN_WAIT_MS, at - RUN_RESULT_MS) as { id: number; routine_id: number; status: string }[]
+      .all(before(RUN_WAIT_MS), before(RUN_RESULT_MS)) as { id: number; routine_id: number; status: string }[]
     for (const run of stale) {
       db.prepare("update routine_runs set status = 'failed', failure = ?, finished_at = ? where id = ?").run(
         say(run.status === 'waiting' ? 'routine.noSession' : 'routine.noResult'),
@@ -2662,6 +2681,7 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     clearInterval(pruning)
     clearInterval(releasing)
     clearInterval(routineTimer)
+    clearInterval(sleepLook)
     server.close()
     try {
       db.exec('pragma wal_checkpoint(TRUNCATE);')
