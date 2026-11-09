@@ -185,9 +185,10 @@ async function limitCheck(agent: string, spec: Spec, cli: string[], at: At, env:
     return lines
   }
   // Each CLI opens its terminal screen when started with no args.
-  // A CLI that sees a CI run (Gemini: CI, CI_*) takes its terminal as no terminal at all.
+  // A CLI that sees a CI run (Gemini 0.67 isHeadlessMode: CI or GITHUB_ACTIONS) takes its terminal
+  // as no terminal at all.
   const ttyEnv: Env = { ...env, ...spec.env(at) }
-  for (const name of Object.keys(ttyEnv)) if (/^(CI|CONTINUOUS_INTEGRATION|CI_.*)$/.test(name)) delete ttyEnv[name]
+  for (const name of Object.keys(ttyEnv)) if (/^(CI|CONTINUOUS_INTEGRATION|CI_.*|GITHUB_ACTIONS)$/.test(name)) delete ttyEnv[name]
   const term = pty.spawn(cli[0]!, cli.slice(1), { name: 'xterm-256color', cols: 120, rows: 40, cwd: at.project, env: ttyEnv as Record<string, string> })
   let exit: number | undefined
   term.onData(data => view.write(data))
