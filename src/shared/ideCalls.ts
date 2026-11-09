@@ -58,6 +58,7 @@ export const IDE_CALLS = {
   accountsLogin: { kind: 'invoke', channel: 'accounts:login' },
   accountsRename: { kind: 'invoke', channel: 'accounts:rename' },
   accountsRemove: { kind: 'invoke', channel: 'accounts:remove' },
+  accountsSelect: { kind: 'invoke', channel: 'accounts:select' },
   updateStatus: { kind: 'invoke', channel: 'update:status' },
   updateCheck: { kind: 'invoke', channel: 'update:check' },
   updateInstall: { kind: 'invoke', channel: 'update:install' },

@@ -2,7 +2,7 @@ import type { Ipc } from './platform'
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { ACCOUNT_SPECS, accountList, accountSpec, limitsOf, nextAccountId, pickAccount, type AccountLimits, type AccountList, type AccountSpec } from '../shared/accounts'
+import { ACCOUNT_SPECS, accountList, accountOrder, accountSpec, activeOf, limitsOf, nextAccountId, pickAccount, type AccountLimits, type AccountList, type AccountSpec } from '../shared/accounts'
 import type { AccountRow, TermInfo } from '../shared/types'
 import { commandWord } from '../shared/agents'
 import { maskEmail, readAccount } from './account'
@@ -51,6 +51,17 @@ function writeJson(path: string, value: unknown): void {
 }
 
 export const readAccounts = (p: AccountPaths): AccountList => accountList(readJson(listFile(p)))
+
+// The whole list file: each agent's accounts, and the account each agent's new sessions start on.
+type AccountFile = { list: AccountList; active: Record<string, number> }
+export function readAccountFile(p: AccountPaths): AccountFile {
+  const raw = readJson(listFile(p))
+  const list = accountList(raw)
+  return { list, active: activeOf(raw, list) }
+}
+function writeAccountFile(p: AccountPaths, file: AccountFile): void {
+  writeJson(listFile(p), { ...file.list, active: file.active })
+}
 
 export const readLimits = (p: AccountPaths, now = Date.now()): AccountLimits => limitsOf(readJson(limitsFile(p)), now)
 
@@ -130,14 +141,16 @@ export function accountEmail(p: AccountPaths, agent: string, id: number): string
 export type AccountRun = { agent: string; account: number; cwd: string }
 export const accountRuns = new Map<string, AccountRun>()
 
-// The account a new run of the agent goes on, and its env. `asked`: the one the person picked.
-// No extra accounts, or every one held: the CLI's own login, with nothing added.
+// The account a new run of the agent goes on, and its env: `asked` when given, else the first free one
+// from the account the person picked to use (`active`). No extra accounts, or every one held: the
+// CLI's own login, with nothing added.
 export function runAccount(p: AccountPaths, agent: string, asked?: number, now = Date.now()): { id: number; env: Record<string, string> } | null {
   const spec = accountSpec(agent)
-  const extra = readAccounts(p)[agent] ?? []
+  const { list, active } = readAccountFile(p)
+  const extra = list[agent] ?? []
   if (!spec || extra.length === 0) return null
   const ids = [1, ...extra.map(e => e.id)]
-  const id = asked !== undefined && ids.includes(asked) ? asked : pickAccount(ids, n => signedIn(p, agent, n), readLimits(p, now)[agent], now)
+  const id = asked !== undefined && ids.includes(asked) ? asked : pickAccount(accountOrder(ids, active[agent]), n => signedIn(p, agent, n), readLimits(p, now)[agent], now)
   if (id === null) return null
   return { id, env: { ...envOf(p, spec, id), SWITCHBOARD_ACCOUNT: String(id) } }
 }
@@ -151,18 +164,49 @@ export function envOf(p: AccountPaths, spec: AccountSpec, id: number): Record<st
   return spec.env(home, base)
 }
 
+// The latest plan usage of each account, from its live sessions: agent → account → percents.
+export type AccountUsage = Record<string, Record<number, { five?: number; week?: number }>>
+
+// What the live sessions on each account last reported of their plan (bridge sessions, by the
+// terminal key their account run was noted under); the latest report of an account wins.
+export function accountUsageOf(sessions: { terminal?: string; usage?: string; last_seen?: number }[], runs: Map<string, AccountRun>): AccountUsage {
+  const out: AccountUsage = {}
+  const seen: Record<string, number> = {}
+  for (const session of sessions) {
+    const run = session.terminal ? runs.get(session.terminal) : undefined
+    if (!run) continue
+    let limits: { kind?: string; percentUsed?: number }[] = []
+    try {
+      limits = (JSON.parse(session.usage || '{}') as { rateLimits?: typeof limits }).rateLimits ?? []
+    } catch {
+      continue
+    }
+    const pct = (kind: string) => limits.find(l => l.kind === kind)?.percentUsed
+    const five = pct('five_hour')
+    const week = pct('seven_day')
+    if (five === undefined && week === undefined) continue
+    const at = `${run.agent}:${run.account}`
+    if ((seen[at] ?? -1) > (session.last_seen ?? 0)) continue
+    seen[at] = session.last_seen ?? 0
+    ;(out[run.agent] ??= {})[run.account] = { five, week }
+  }
+  return out
+}
+
 // Each agent with accounts as the settings show them.
-export function accountRows(p: AccountPaths, now = Date.now()): AccountRow[] {
-  const list = readAccounts(p)
+export function accountRows(p: AccountPaths, usage: AccountUsage = {}, now = Date.now()): AccountRow[] {
+  const { list, active } = readAccountFile(p)
   const limits = readLimits(p, now)
   return ACCOUNT_SPECS.map(spec => ({
     agent: spec.agent,
+    active: active[spec.agent] ?? 1,
     accounts: [{ id: 1, name: '' }, ...(list[spec.agent] ?? [])].map(entry => ({
       id: entry.id,
       name: entry.name,
       email: accountEmail(p, spec.agent, entry.id),
       signedIn: signedIn(p, spec.agent, entry.id),
       until: limits[spec.agent]?.[String(entry.id)],
+      usage: usage[spec.agent]?.[entry.id],
     })),
   }))
 }
@@ -176,8 +220,8 @@ function freshId(p: AccountPaths, list: AccountList, agent: string): number {
 
 export type OpenLogin = (env: Record<string, string>, line: string, title: string) => TermInfo | { error: string }
 
-export function registerAccounts(ipc: Ipc, paths: () => AccountPaths, openLogin: OpenLogin): void {
-  ipc.handle('accounts:list', () => accountRows(paths()))
+export function registerAccounts(ipc: Ipc, paths: () => AccountPaths, openLogin: OpenLogin, usage: () => Promise<AccountUsage> = async () => ({})): void {
+  ipc.handle('accounts:list', async () => accountRows(paths(), await usage().catch(() => ({}))))
 
   const login = (agent: string, id: number) => {
     const spec = accountSpec(agent)
@@ -191,10 +235,10 @@ export function registerAccounts(ipc: Ipc, paths: () => AccountPaths, openLogin:
   ipc.handle('accounts:add', (_e, agent: string) => {
     if (!accountSpec(agent)) return { error: 'unknown agent' }
     const p = paths()
-    const list = readAccounts(p)
-    const id = freshId(p, list, agent)
-    list[agent] = [...(list[agent] ?? []), { id, name: '' }]
-    writeJson(listFile(p), list)
+    const file = readAccountFile(p)
+    const id = freshId(p, file.list, agent)
+    file.list[agent] = [...(file.list[agent] ?? []), { id, name: '' }]
+    writeAccountFile(p, file)
     return login(agent, id)
   })
 
@@ -202,22 +246,35 @@ export function registerAccounts(ipc: Ipc, paths: () => AccountPaths, openLogin:
 
   ipc.handle('accounts:rename', (_e, agent: string, id: number, name: string) => {
     const p = paths()
-    const list = readAccounts(p)
-    const entry = list[agent]?.find(e => e.id === Number(id))
+    const file = readAccountFile(p)
+    const entry = file.list[agent]?.find(e => e.id === Number(id))
     if (!entry) return false
     entry.name = String(name ?? '').trim().slice(0, 60)
-    writeJson(listFile(p), list)
+    writeAccountFile(p, file)
+    return true
+  })
+
+  // The account the agent's new sessions start on; running ones keep theirs.
+  ipc.handle('accounts:select', (_e, agent: string, id: number) => {
+    const p = paths()
+    const file = readAccountFile(p)
+    const want = Number(id)
+    if (!accountSpec(agent) || (want !== 1 && !(file.list[agent] ?? []).some(e => e.id === want))) return false
+    if (want === 1) delete file.active[agent]
+    else file.active[agent] = want
+    writeAccountFile(p, file)
     return true
   })
 
   // Off the list only: the home stays, with its login, so nothing of it is lost.
   ipc.handle('accounts:remove', (_e, agent: string, id: number) => {
     const p = paths()
-    const list = readAccounts(p)
-    const left = (list[agent] ?? []).filter(e => e.id !== Number(id))
-    if (left.length > 0) list[agent] = left
-    else delete list[agent]
-    writeJson(listFile(p), list)
+    const file = readAccountFile(p)
+    const left = (file.list[agent] ?? []).filter(e => e.id !== Number(id))
+    if (left.length > 0) file.list[agent] = left
+    else delete file.list[agent]
+    if (file.active[agent] === Number(id)) delete file.active[agent]
+    writeAccountFile(p, file)
     return true
   })
 }

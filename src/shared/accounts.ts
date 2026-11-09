@@ -98,6 +98,24 @@ export function accountList(value: unknown): AccountList {
   return out
 }
 
+// The account each agent's new sessions start on, as the person picked it (accounts.json `active`):
+// account 1 or one on the list; any other is dropped.
+export function activeOf(value: unknown, list: AccountList): Record<string, number> {
+  const out: Record<string, number> = {}
+  const raw = value && typeof value === 'object' ? (value as { active?: unknown }).active : undefined
+  if (!raw || typeof raw !== 'object') return out
+  for (const [agent, id] of Object.entries(raw as Record<string, unknown>)) {
+    if (accountSpec(agent) && typeof id === 'number' && (id === 1 || (list[agent] ?? []).some(e => e.id === id))) out[agent] = id
+  }
+  return out
+}
+
+// The order a new session tries the accounts in: the picked one first, then the rest by number.
+export function accountOrder(ids: number[], active: number | undefined): number[] {
+  const first = active !== undefined && ids.includes(active) ? active : ids[0]
+  return first === undefined ? ids : [first, ...ids.filter(id => id !== first)]
+}
+
 // The next free number for an agent's new account.
 export function nextAccountId(list: AccountList, agent: string): number {
   const used = new Set((list[agent] ?? []).map(e => e.id))

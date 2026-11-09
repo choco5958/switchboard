@@ -3,6 +3,7 @@ import { DEFAULT_THEME, THEMES, applyTheme, themeLabel, themeOf } from '../theme
 import { LANGS, isLang, resolveLang, t, type Key, type Lang } from '../../../shared/i18n'
 import { useToast } from '../parts'
 import { AgentSettings } from './AgentSettings'
+import { AccountsSection } from './AccountsSection'
 import { RoutinesSection } from './RoutinesSection'
 import { TelegramSection } from './TelegramSection'
 import { MobileSection } from './MobileSection'
@@ -31,7 +32,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     title: 'settings.groupAgents',
     sections: [
-      { id: 'settings-agents', title: 'agents.title', hint: 'agents.intro', more: 'agents.introMore', words: ['agents.showOthers', 'agents.closeOnQuit', 'agents.secCli', 'accounts.title', 'accounts.add', 'agents.customTitle', 'agents.secAdd'] },
+      { id: 'settings-agents', title: 'agents.title', hint: 'agents.intro', more: 'agents.introMore', words: ['agents.showOthers', 'agents.closeOnQuit', 'agents.secCli', 'agents.customTitle', 'agents.secAdd'] },
+      { id: 'settings-accounts', title: 'accounts.title', hint: 'accounts.intro', more: 'accounts.introMore', words: ['accounts.add', 'accounts.active', 'accounts.login', 'accounts.default'] },
       { id: 'settings-safety', title: 'settings.safety', hint: 'settings.safetyHint', words: ['agents.trustFolders', 'agents.codexApprovals', 'agents.geminiExtension', 'agents.browserLan'] },
       { id: 'settings-routines', title: 'routines.title', hint: 'routines.hint', more: 'routines.hintMore', words: [] },
     ],
@@ -307,6 +309,14 @@ export function SettingsPage({
     }
   }
 
+  if (shown.id === 'settings-accounts')
+    return (
+      <div className="settings-screen">
+        <Frame section={shown} bands>
+          <AccountsSection />
+        </Frame>
+      </div>
+    )
   if (shown.id === 'settings-agents' || shown.id === 'settings-safety')
     return (
       <div className="settings-screen">

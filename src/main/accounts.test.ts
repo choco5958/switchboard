@@ -2,8 +2,8 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { accountList, accountSpec, limitsOf, nextAccountId, pickAccount } from '../shared/accounts'
-import { accountRows, defaultBase, homeOf, markLimit, prepareHome, readLimits, runAccount, type AccountPaths } from './accounts'
+import { accountList, accountOrder, accountSpec, activeOf, limitsOf, nextAccountId, pickAccount } from '../shared/accounts'
+import { accountRows, accountUsageOf, defaultBase, homeOf, markLimit, prepareHome, readLimits, runAccount, type AccountPaths } from './accounts'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -137,8 +137,57 @@ describe('the account of a run', () => {
     writeFileSync(join(homeOf(p, 'gemini', 2), '.gemini', 'google_accounts.json'), JSON.stringify({ active: 'someone@example.com' }))
     const gemini = accountRows(p).find(r => r.agent === 'gemini')!
     expect(gemini.accounts).toEqual([
-      { id: 1, name: '', email: '', signedIn: true, until: undefined },
-      { id: 2, name: 'side', email: 'so****@example.com', signedIn: false, until: undefined },
+      { id: 1, name: '', email: '', signedIn: true, until: undefined, usage: undefined },
+      { id: 2, name: 'side', email: 'so****@example.com', signedIn: false, until: undefined, usage: undefined },
     ])
+    expect(gemini.active).toBe(1)
+  })
+})
+
+describe('the account in use', () => {
+  it('keeps a picked account only while it is on the list', () => {
+    const list = { codex: [{ id: 2, name: '' }] }
+    expect(activeOf({ active: { codex: 2, gemini: 3, nope: 1 } }, list)).toEqual({ codex: 2 })
+    expect(activeOf({ active: { codex: 1 } }, list)).toEqual({ codex: 1 })
+    expect(activeOf({}, list)).toEqual({})
+  })
+
+  it('tries the picked account first', () => {
+    expect(accountOrder([1, 2, 3], 3)).toEqual([3, 1, 2])
+    expect(accountOrder([1, 2, 3], 9)).toEqual([1, 2, 3])
+    expect(accountOrder([1, 2, 3], undefined)).toEqual([1, 2, 3])
+  })
+
+  it('starts new runs on the picked account, and on the next one while it is held', () => {
+    const p = paths()
+    keep(p, { codex: [{ id: 2, name: '' }, { id: 3, name: '' }], active: { codex: 3 } })
+    for (const id of [2, 3]) {
+      mkdirSync(homeOf(p, 'codex', id), { recursive: true })
+      writeFileSync(join(homeOf(p, 'codex', id), 'auth.json'), '{}')
+    }
+    expect(runAccount(p, 'codex', undefined, 1000)?.id).toBe(3)
+    markLimit(p, 'codex', 3, 5000, 1000)
+    expect(runAccount(p, 'codex', undefined, 1000)?.id).toBe(1)
+    expect(accountRows(p, {}, 1000).find(r => r.agent === 'codex')?.active).toBe(3)
+  })
+
+  it('takes each account\'s usage from the latest report of its live sessions', () => {
+    const runs = new Map([
+      ['k1', { agent: 'codex', account: 2, cwd: '/a' }],
+      ['k2', { agent: 'codex', account: 2, cwd: '/b' }],
+      ['k3', { agent: 'claude', account: 1, cwd: '/c' }],
+    ])
+    const usage = (five: number, week?: number) => JSON.stringify({ rateLimits: [{ kind: 'five_hour', percentUsed: five }, ...(week === undefined ? [] : [{ kind: 'seven_day', percentUsed: week }])] })
+    expect(
+      accountUsageOf(
+        [
+          { terminal: 'k1', usage: usage(10, 5), last_seen: 1 },
+          { terminal: 'k2', usage: usage(40, 20), last_seen: 2 },
+          { terminal: 'k3', usage: '{}', last_seen: 3 },
+          { terminal: 'other', usage: usage(99), last_seen: 4 },
+        ],
+        runs,
+      ),
+    ).toEqual({ codex: { 2: { five: 40, week: 20 } } })
   })
 })

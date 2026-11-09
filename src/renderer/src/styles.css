@@ -1131,9 +1131,26 @@ details[open] > summary .agent-card-open { transform: rotate(180deg); }
 .drawer-head .comment-filter + .icon-btn { margin-left: 0; }
 .debug-panel .dev-head { display: flex; justify-content: flex-end; margin-bottom: var(--sp-2); }
 
-/* Accounts per agent CLI (pages/AccountsSection.tsx) */
-.account-agent { align-items: flex-start; }
-.account-list { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: 6px; }
-.account-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.account-name { min-width: 6em; }
+/* Accounts per agent CLI (pages/AccountsSection.tsx): a group per CLI, a row per account; the row
+   in use carries the accent, as a radio would. */
+.account-group-hint { margin: var(--sp-2) 0 var(--sp-3); }
+.account-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.account-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3);
+  border: var(--bw) solid var(--line); border-radius: var(--r-md); transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.account-row:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.account-row.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.account-row.held:not(.active) { opacity: 0.85; }
+.account-pick { flex: 1; min-width: 0; display: grid; gap: 2px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.account-pick:focus-visible { outline: var(--focus-ring); outline-offset: 4px; border-radius: var(--r-sm); }
+.account-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.account-name { font-weight: 550; }
+.account-detail { overflow-wrap: anywhere; }
+.account-actions { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
 .account-rename { width: 12em; }
+.account-add { display: flex; justify-content: flex-end; margin-top: var(--sp-3); }
+@media (max-width: 720px) {
+  .account-row { flex-direction: column; align-items: stretch; }
+  .account-actions { justify-content: flex-start; }
+}

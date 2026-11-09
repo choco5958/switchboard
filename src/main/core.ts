@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { BridgeState, Reply, WorktreeCheck } from '../shared/types'
 import { sharedStart, watchBridge } from './bridgeWatch'
 import { registerAccount } from './account'
-import { accountPaths, registerAccounts } from './accounts'
+import { accountPaths, accountRuns, accountUsageOf, registerAccounts } from './accounts'
 import { startRotation } from './accountRotate'
 import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
@@ -466,11 +466,19 @@ registerDevServers(ipcMain, event => send('dev:change', event))
 registerTerminals(ipcMain, send)
 registerAccount(ipcMain, () => ccrPath())
 // The person's accounts per agent CLI; adding one opens a terminal that signs in on it.
-registerAccounts(ipcMain, () => accountPaths(terminalConfigDir()), (env, line, title) => {
-  const opened = openTerminal({ cwd: homedir(), cols: 100, rows: 30, title, prepare: () => ({ env, line }) })
-  if (!('error' in opened)) send('term:opened', opened)
-  return opened
-})
+registerAccounts(
+  ipcMain,
+  () => accountPaths(terminalConfigDir()),
+  (env, line, title) => {
+    const opened = openTerminal({ cwd: homedir(), cols: 100, rows: 30, title, prepare: () => ({ env, line }) })
+    if (!('error' in opened)) send('term:opened', opened)
+    return opened
+  },
+  async () => {
+    const reply = await call('GET', '/state')
+    return reply.ok ? accountUsageOf((reply.json.sessions ?? []) as { terminal?: string; usage?: string; last_seen?: number }[], accountRuns) : {}
+  },
+)
 registerSessionHistory(ipcMain, terminalConfigDir)
 // Feature area: agent CLIs other than Claude Code. Their terminals, and answers typed into them.
 registerAgentTerms(ipcMain, call)

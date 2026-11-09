@@ -240,6 +240,7 @@ export type IdeApi = {
   accountsLogin: (agent: string, id: number) => Promise<TermInfo | { error: string }>
   accountsRename: (agent: string, id: number, name: string) => Promise<boolean>
   accountsRemove: (agent: string, id: number) => Promise<boolean>
+  accountsSelect: (agent: string, id: number) => Promise<boolean>
   // Feature area: the app's own updates (src/main/updater.ts), for the settings page.
   updateStatus: () => Promise<UpdateStatus>
   updateCheck: () => Promise<UpdateStatus>
@@ -297,7 +298,12 @@ export type UpdateStatus = {
 export type AccountInfo = { email: string; plan: string; ccr?: { current: number; slots: CcrSlot[] } }
 
 // One agent's accounts, account 1 (the CLI's own login) first. until: epoch ms its limit lifts.
-export type AccountRow = { agent: string; accounts: { id: number; name: string; email: string; signedIn: boolean; until?: number }[] }
+// active: the account new sessions start on. usage: the latest percents its live sessions reported.
+export type AccountRow = {
+  agent: string
+  active: number
+  accounts: { id: number; name: string; email: string; signedIn: boolean; until?: number; usage?: { five?: number; week?: number } }[]
+}
 
 // One ccr slot. until: epoch seconds its limit lifts (0: not marked spent); usage as ccr measured it at measuredAt.
 export type CcrSlot = {
