@@ -17,6 +17,10 @@ const PAIR_MS = 10 * 60_000
 const PAIR_TRIES = 5
 const PAIR_CHATS = 1000
 const POLL_SECONDS = 25
+// How long a call may go unanswered past what Telegram itself holds it (getUpdates' timeout).
+// Without a limit, a connection that died silently (the lid closed mid-poll, another Wi-Fi) is
+// waited on for Node's own five minutes, and nothing the person taps in Telegram arrives.
+const STALL_MS = 15_000
 
 export type TelegramQuestion = {
   id: number
@@ -57,6 +61,9 @@ export type TelegramDeps = {
   log: (text: string) => void
   // The first wait after a failed poll (5 s; tests make it short).
   retryMs?: number
+  // POLL_SECONDS and STALL_MS, for tests.
+  pollSeconds?: number
+  stallMs?: number
 }
 
 export type TelegramApproval = { id: number; project: string; tool: string; summary: string; cwd: string; reason: string; status: string }
@@ -156,14 +163,17 @@ export function createTelegram(deps: TelegramDeps) {
   const chat = () => Number(deps.secret('telegram.chat')) || 0
   const user = () => Number(deps.secret('telegram.user')) || 0
 
+  const pollSeconds = deps.pollSeconds ?? POLL_SECONDS
   const call = async (method: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<any> => {
     const key = token()
     if (!key) throw new Error('no token')
+    const held = typeof body.timeout === 'number' ? body.timeout * 1000 : 0
+    const limit = AbortSignal.timeout(held + (deps.stallMs ?? STALL_MS))
     const res = await deps.fetch(`${deps.api}/bot${key}/${method}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-      signal,
+      signal: signal ? AbortSignal.any([signal, limit]) : limit,
     })
     const json = (await res.json()) as { ok: boolean; result?: unknown; description?: string }
     if (!json.ok) throw new Error(json.description ?? `${method} failed`)
@@ -355,7 +365,7 @@ export function createTelegram(deps: TelegramDeps) {
     while (current(gen)) {
       abort = new AbortController()
       try {
-        const updates = (await call('getUpdates', { offset, timeout: POLL_SECONDS, allowed_updates: ['message', 'callback_query'] }, abort.signal)) as Update[]
+        const updates = (await call('getUpdates', { offset, timeout: pollSeconds, allowed_updates: ['message', 'callback_query'] }, abort.signal)) as Update[]
         wait = 0
         for (const update of updates) {
           if (gen !== generation) return

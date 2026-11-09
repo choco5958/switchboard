@@ -280,6 +280,36 @@ test('a new token never leaves two polling loops, even when the old one slept af
   assert.equal(polls, after)
 })
 
+test('a poll whose connection went silent is given up, and the next one is heard', async () => {
+  const secrets = new Map<string, string>([['telegram.token', '1:T']])
+  const said: string[] = []
+  let polls = 0
+  // The first getUpdates never answers (a connection that died with the lid closed); later
+  // ones hold briefly and answer, as long polling does.
+  const fakeFetch = (async (url: string, init: RequestInit) => {
+    polls++
+    const first = polls === 1
+    await new Promise((resolve, reject) => {
+      const timer = first ? undefined : setTimeout(resolve, 20)
+      init.signal?.addEventListener('abort', () => (clearTimeout(timer), reject(init.signal?.reason)))
+    })
+    return new Response(JSON.stringify({ ok: true, result: [] }))
+  }) as typeof fetch
+  const telegram = createTelegram({
+    api: 'http://telegram', fetch: fakeFetch, retryMs: 10, pollSeconds: 0, stallMs: 50,
+    secret: key => secrets.get(key) ?? null,
+    setSecret: (key, value) => (value === null ? secrets.delete(key) : secrets.set(key, value)),
+    lang: () => 'ko', away: () => true, pending: () => [], question: () => undefined, answer: () => undefined, hold: () => undefined,
+    sentMessage: () => null, saveMessage: () => undefined, questionOf: () => null, pendingApprovals: () => [], approval: () => undefined,
+    answerApproval: () => false, approvalMessage: () => null, approvalOf: () => null, saveApprovalMessage: () => undefined, changed: () => undefined,
+    log: text => said.push(text),
+  })
+  telegram.start()
+  await until(() => polls >= 2)
+  telegram.stop()
+  assert.ok(said.some(text => text.startsWith('telegram poll:')), said.join('\n'))
+})
+
 test('a command with characters that hide or reorder text shows them, and is allowed elsewhere only', () => {
   const a = { id: 7, project: 'p', tool: 'Bash', summary: 'echo safe‮# txt.exe', cwd: '', reason: '', status: 'pending' }
   assert.equal(hasHidden(a.summary), true)
