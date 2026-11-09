@@ -185,7 +185,10 @@ async function limitCheck(agent: string, spec: Spec, cli: string[], at: At, env:
     return lines
   }
   // Each CLI opens its terminal screen when started with no args.
-  const term = pty.spawn(cli[0]!, cli.slice(1), { name: 'xterm-256color', cols: 120, rows: 40, cwd: at.project, env: { ...env, ...spec.env(at) } as Record<string, string> })
+  // A CLI that sees a CI run (Gemini: CI, CI_*) takes its terminal as no terminal at all.
+  const ttyEnv: Env = { ...env, ...spec.env(at) }
+  for (const name of Object.keys(ttyEnv)) if (/^(CI|CONTINUOUS_INTEGRATION|CI_.*)$/.test(name)) delete ttyEnv[name]
+  const term = pty.spawn(cli[0]!, cli.slice(1), { name: 'xterm-256color', cols: 120, rows: 40, cwd: at.project, env: ttyEnv as Record<string, string> })
   let exit: number | undefined
   term.onData(data => view.write(data))
   term.onExit(({ exitCode }) => (exit = exitCode))
@@ -213,6 +216,15 @@ async function limitCheck(agent: string, spec: Spec, cli: string[], at: At, env:
   }
 }
 
+// The temporary folder goes; on Windows a CLI's child may still hold a file in it for a moment.
+function leave(work: string): void {
+  try {
+    rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
+  } catch (error) {
+    console.log(`left behind: ${work} (${(error as Error).message})`)
+  }
+}
+
 async function main(): Promise<number> {
   const agent = process.argv[2] ?? ''
   const limit = process.argv[3] === '--limit'
@@ -228,6 +240,8 @@ async function main(): Promise<number> {
   for (const name of ['CODEX_HOME', 'GEMINI_CLI_HOME', 'QWEN_HOME', 'QWEN_RUNTIME_DIR', 'COPILOT_HOME', 'GITHUB_SHA']) delete env[name]
   // A CLI started from a Claude Code or Orca session would read that session's own settings.
   for (const name of Object.keys(env)) if (/^(CLAUDE_CODE_|CLAUDECODE|ORCA_|ANTHROPIC_)/.test(name)) delete env[name]
+  // Codex finds its home on Windows without USERPROFILE: the default account's home is named.
+  if (agent === 'codex') env.CODEX_HOME = join(home, '.codex')
   const paths: AccountPaths = { root: join(home, '.claude-ide'), home, env, claudeDir: env.CLAUDE_CONFIG_DIR }
   const base = defaultBase(paths, agent)
   const at: At = { home, base, account: homeOf(paths, agent, 2), project, model: model.url }
@@ -253,7 +267,7 @@ async function main(): Promise<number> {
       ok = await limitCheck(agent, spec, cli, at, env, model)
     } finally {
       model.close()
-      rmSync(work, { recursive: true, force: true })
+      leave(work)
     }
     return ok ? 0 : 1
   }
@@ -276,11 +290,7 @@ async function main(): Promise<number> {
     console.log(`FAILED: ${(error as Error).message}`)
   } finally {
     model.close()
-    try {
-      rmSync(work, { recursive: true, force: true })
-    } catch (error) {
-      console.log(`left behind: ${work} (${(error as Error).message})`)
-    }
+    leave(work)
   }
   return ok ? 0 : 1
 }
