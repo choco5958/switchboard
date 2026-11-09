@@ -71,7 +71,7 @@ pub async fn browser_place(app: AppHandle, webview: Webview, url: String, x: f64
     }
     let url: Url = url.parse().map_err(|e| format!("{e}"))?;
     let window = app.get_window("main").ok_or("no main window")?;
-    let (on_nav, on_load) = (app.clone(), app.clone());
+    let (on_nav, on_load, on_open) = (app.clone(), app.clone(), app.clone());
     #[allow(unused_mut)]
     let mut builder = WebviewBuilder::new(LABEL, WebviewUrl::External(url))
         .initialization_script(PAGE_SCRIPT)
@@ -80,6 +80,21 @@ pub async fn browser_place(app: AppHandle, webview: Webview, url: String, x: f64
         .on_navigation(move |url| {
             event(&on_nav, json!({ "kind": "startNavigation", "url": url.as_str() }));
             true
+        })
+        // A link with target="_blank", or the page's window.open: the browser has one page and
+        // no windows of its own, so a web address opens in this page (left alone, each system
+        // dropped it and the click did nothing). Anything else stays closed. Not in the handler
+        // itself: WebView2 calls it inside its own event, where a navigation could reenter it.
+        .on_new_window(move |url, _features| {
+            if matches!(url.scheme(), "http" | "https") {
+                let app = on_open.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(page) = page(&app) {
+                        let _ = page.navigate(url);
+                    }
+                });
+            }
+            tauri::webview::NewWindowResponse::Deny
         })
         .on_page_load(move |page, payload| {
             let url = payload.url().as_str().to_string();
