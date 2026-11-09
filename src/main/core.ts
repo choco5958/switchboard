@@ -9,12 +9,14 @@ import { join } from 'node:path'
 import type { BridgeState, Reply, WorktreeCheck } from '../shared/types'
 import { sharedStart, watchBridge } from './bridgeWatch'
 import { registerAccount } from './account'
+import { accountPaths, registerAccounts } from './accounts'
+import { startRotation } from './accountRotate'
 import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
 import { bridgePathAllowed, debugPathAllowed } from './guard'
 import { saveShot } from './shots'
 import { anyoneWorking } from './awake'
-import { dockIdOf, keyOfDock, onTerminalsChange, openClaudeIn, registerTerminals, setCloseTerminalsOnQuit, startTerminalHost, terminalConfigDir, typingTarget } from './terminals'
+import { dockIdOf, keyOfDock, onTerminalsChange, openClaudeIn, openTerminal, registerTerminals, setCloseTerminalsOnQuit, startTerminalHost, terminalConfigDir, typingTarget } from './terminals'
 import { registerSessionHistory } from './sessionHistory'
 import { openAgentIn, registerAgentTerms } from './agentTerms'
 import { startAgentDelivery } from './agentDelivery'
@@ -463,9 +465,29 @@ ipcMain.handle('debug:call', (_e, method: string, path: string, body?: unknown) 
 registerDevServers(ipcMain, event => send('dev:change', event))
 registerTerminals(ipcMain, send)
 registerAccount(ipcMain, () => ccrPath())
+// The person's accounts per agent CLI; adding one opens a terminal that signs in on it.
+registerAccounts(ipcMain, () => accountPaths(terminalConfigDir()), (env, line, title) => {
+  const opened = openTerminal({ cwd: homedir(), cols: 100, rows: 30, title, prepare: () => ({ env, line }) })
+  if (!('error' in opened)) send('term:opened', opened)
+  return opened
+})
 registerSessionHistory(ipcMain, terminalConfigDir)
 // Feature area: agent CLIs other than Claude Code. Their terminals, and answers typed into them.
 registerAgentTerms(ipcMain, call)
+// A session at its account's limit goes on on the next account of its CLI (accountRotate.ts).
+startRotation({
+  call,
+  paths: () => accountPaths(terminalConfigDir()),
+  terminal: typingTarget,
+  open: async (run, account, resume) => {
+    const opened = run.agent === 'claude' ? openClaudeIn(run.cwd, { resume, account }) : await openAgentIn(call, run.cwd, run.agent, 100, 30, resume, account)
+    if ('error' in opened) return opened
+    send('term:opened', opened)
+    const key = keyOfDock(opened.id)
+    return key ? { key } : { error: 'no terminal key' }
+  },
+  notify: text => void notify('Switchboard', text),
+})
 agentDelivery = startAgentDelivery({
   // The app's key on the delivery stream too (a session that took a token answers only it or the
   // app), sent only to a bridge that proved it holds the key.

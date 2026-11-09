@@ -6,7 +6,8 @@ import { randomBytes } from 'node:crypto'
 import * as pty from 'node-pty'
 import type { TermInfo } from '../shared/types'
 import { projectName, shellQuote, terminalEnv } from '../shared/projects'
-import { accountDir, claudeLauncher, claudeLine } from './termAccount'
+import { accountDir, ccrPath, claudeLauncher, claudeLine } from './termAccount'
+import { accountPaths, accountRuns, runAccount } from './accounts'
 import { ccrPaths } from './account'
 import { pasteModeAfter, type TypingTarget } from './agentInput'
 import { createScreen, type Screen } from './termScreen'
@@ -15,7 +16,7 @@ import { writeOpenUrl } from './openUrl'
 import { nodeExecutable, nodeRoot } from './appRoot'
 import { nodeEntry } from './runtime'
 import { loginShell } from './shell'
-import { resumableId, shellWord } from '../shared/agents'
+import { CONTINUE_LAST, resumableId, shellWord } from '../shared/agents'
 import { HOST_DOWN, hostSupported, localBackend, terminalHosts, type HostEvents, type Hosts, type TermBackend } from './termClient'
 import { hostDir, type Snapshot } from './termProtocol'
 import type { SpawnPty } from './termCore'
@@ -171,7 +172,8 @@ let browserScript = ''
 
 // A `+ Claude` terminal opened by the app itself (a scheduled prompt with no session to go
 // to); set once the terminal handlers are registered.
-export let openClaudeIn: (cwd: string) => TermInfo | { error: string } = () => ({ error: 'terminals not ready' })
+// `more`: a conversation to go on with (an id, or CONTINUE_LAST) and the account to run on.
+export let openClaudeIn: (cwd: string, more?: { resume?: string; account?: number }) => TermInfo | { error: string } = () => ({ error: 'terminals not ready' })
 
 // A login shell in the folder, the way every dock terminal starts.
 export function openTerminal(start: TermStart): TermInfo | { error: string } {
@@ -272,7 +274,13 @@ export function registerTerminals(ipcMain: Ipc, sendTo: (channel: string, payloa
   ipcMain.handle('term:list', () => [...terms.values()].map(info))
 
   // `resume`: a Claude Code session whose terminal is gone, opened again with `--resume`.
-  ipcMain.handle('term:open', (_e, cwd: string, claude: boolean, cols: number, rows: number, slot?: number, resume?: string): TermInfo | { error: string } => {
+  // `account`: the Claude account to run on (accounts.ts), unless ccr picks them.
+  const claudeAccount = (key: string, cwd: string, account?: number) => {
+    const run = ccrPath() ? null : runAccount(accountPaths(configDir), 'claude', account)
+    if (run) accountRuns.set(key, { agent: 'claude', account: run.id, cwd })
+    return run?.env
+  }
+  ipcMain.handle('term:open', (_e, cwd: string, claude: boolean, cols: number, rows: number, slot?: number, resume?: string, account?: number): TermInfo | { error: string } => {
     if (resume !== undefined && (!claude || !resumableId(resume))) return { error: t('term.badResume') }
     return openTerminal({
       cwd,
@@ -280,17 +288,23 @@ export function registerTerminals(ipcMain: Ipc, sendTo: (channel: string, payloa
       rows,
       claude,
       title: claude ? 'claude' : t('term.shell'),
-      prepare: () => ({ line: claude ? `${claudeLine(claudeLauncher(), shellWord(modDir()), slot, ccrPaths().count)}${resume ? ` --resume ${resume}` : ''}` : undefined }),
+      prepare: key =>
+        claude
+          ? { env: claudeAccount(key, cwd, Number.isInteger(account) ? account : undefined), line: `${claudeLine(claudeLauncher(), shellWord(modDir()), slot, ccrPaths().count)}${resume ? ` --resume ${resume}` : ''}` }
+          : {},
     })
   })
-  openClaudeIn = cwd =>
+  openClaudeIn = (cwd, more = {}) =>
     openTerminal({
       cwd,
       cols: 100,
       rows: 30,
       claude: true,
       title: 'claude',
-      prepare: () => ({ line: claudeLine(claudeLauncher(), shellWord(modDir()), undefined, ccrPaths().count) }),
+      prepare: key => ({
+        env: claudeAccount(key, cwd, more.account),
+        line: `${claudeLine(claudeLauncher(), shellWord(modDir()), undefined, ccrPaths().count)}${more.resume === CONTINUE_LAST ? ' --continue' : more.resume && resumableId(more.resume) ? ` --resume ${more.resume}` : ''}`,
+      }),
     })
 
   ipcMain.handle('term:buffer', (_e, id: string) => {

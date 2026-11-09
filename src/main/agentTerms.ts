@@ -4,18 +4,19 @@ import { createHash } from 'node:crypto'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, resumableId, geminiExtension, geminiLaunch, AGENTS, CUSTOM_AGENTS_KEY, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, codexHookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
+import { CONTINUE_LAST, CODEX_APPROVALS_KEY, GEMINI_EXTENSION_KEY, resumableId, geminiExtension, geminiLaunch, AGENTS, CUSTOM_AGENTS_KEY, hookAttaches, QWEN_DEFAULTS_ENV, TRUST_FOLDERS_KEY, qwenDefaultsFile, codexHookCommand, codexHookOverrides, customAgents, customLaunch, presetLaunch, presetOf, trustFolders, checkedCustom, type Launch } from '../shared/agents'
 import { terminalEnv } from '../shared/projects'
 import { t } from '../shared/i18n'
 import type { AgentDetect, Reply, TermInfo } from '../shared/types'
 import { cliBins, detectScript, mcpNode, npmShimScript, parseDetect, serverFor } from './agentDetect'
-import { openTerminal } from './terminals'
+import { openTerminal, terminalConfigDir } from './terminals'
 import { nodeRoot } from './appRoot'
 import { nodeEntry, nodeLauncher } from './runtime'
 import { loginShell } from './shell'
 import { trustFolder } from './agentTrust'
 import { trustCodexHook } from './codexHook'
 import { linkGeminiExtension } from './geminiExtension'
+import { accountPaths, accountRuns, runAccount } from './accounts'
 
 // Terminals for agent CLIs other than Claude Code: which ones are installed (on the
 // login-shell PATH the terminals get) and opening one with the Switchboard MCP server.
@@ -155,10 +156,11 @@ const SETTINGS_MATTER = [...TRUSTED_AHEAD, 'gemini']
 // A terminal running an agent CLI other than Claude Code (a preset or the person's own), with
 // the Switchboard MCP server attached to that run. The dock opens these, and so does a
 // scheduled prompt whose agent has no session to go to. `resume`: a past conversation of the
-// CLI's to go on with (agentHistory.ts), for a preset that resumes by id.
-export async function openAgentIn(call: Call, cwd: string, agentId: string, cols = 100, rows = 30, resume?: string): Promise<TermInfo | { error: string }> {
+// CLI's to go on with (agentHistory.ts), for a preset that resumes by id. `account`: the account
+// of the CLI's to run on (accounts.ts); left out, the first free one.
+export async function openAgentIn(call: Call, cwd: string, agentId: string, cols = 100, rows = 30, resume?: string, account?: number): Promise<TermInfo | { error: string }> {
   const preset = presetOf(String(agentId))
-  if (resume !== undefined && (!preset?.resumeArgs || !resumableId(resume))) return { error: t('term.badResume') }
+  if (resume !== undefined && (resume === CONTINUE_LAST ? !preset?.continueArgs : !preset?.resumeArgs || !resumableId(resume))) return { error: t('term.badResume') }
   // The settings matter for a custom CLI, and for the CLIs SETTINGS_MATTER names.
   const state = !preset || SETTINGS_MATTER.includes(preset.id) ? await call('GET', '/state') : null
   const settings = state?.proven ? (state.json.settings as Record<string, unknown> | undefined) : undefined
@@ -171,8 +173,12 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
   if (needsServer && !node) return { error: t('agents.noNode') }
   const id = preset?.id ?? custom!.id
   const folder = cwd.startsWith('~/') ? homedir() + cwd.slice(1) : cwd
+  // The account's home goes in before anything runs the CLI for this run: the folder trust and Codex's
+  // hook trust go in that home's config.
+  const onAccount = preset ? runAccount(accountPaths(terminalConfigDir()), preset.id, account) : null
+  const accountEnv = onAccount?.env ?? {}
   // A trust menu on screen would hold back what the app types in (agentTrust.ts).
-  if (preset && TRUSTED_AHEAD.includes(preset.id) && trustFolders(settings?.[TRUST_FOLDERS_KEY])) trustFolder(preset.id, folder, homedir())
+  if (preset && TRUSTED_AHEAD.includes(preset.id) && trustFolders(settings?.[TRUST_FOLDERS_KEY])) trustFolder(preset.id, folder, homedir(), { ...process.env, ...accountEnv })
   const cliPath = preset ? found.found[preset.bin] : undefined
   // Codex's permission asks go to the person while away once the relay is on and Codex trusts the
   // hooks (codexHook.ts); if it does not, the terminal opens without them and Codex asks there. Qwen's
@@ -189,7 +195,7 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
           codexHookOverrides(hook),
           codexHookCommand(hook) ?? '',
           folder,
-          terminalEnv(process.env),
+          { ...terminalEnv(process.env), ...accountEnv },
         )
       : preset?.id === 'qwen'
         ? !process.env[QWEN_DEFAULTS_ENV] && !existsSync(qwenDefaultsFile(process.platform))
@@ -204,7 +210,7 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
           const shared = serverFor(node, nodeEntry(nodeRoot(), 'mcp/server'), 'gemini', '', process.env.CLAUDE_IDE_SOCKET)
           const events = { command: node, args: [nodeEntry(nodeRoot(), 'mcp/hook'), 'gemini'] }
           writeFiles({ line: '', env: {}, files: geminiExtension(shared, events, extension).map(f => ({ path: f.path, content: `${JSON.stringify(f.value)}\n` })) })
-          return linkGeminiExtension(cliCommand(cliPath, found.node), extension, terminalEnv(process.env))
+          return linkGeminiExtension(cliCommand(cliPath, found.node), extension, { ...terminalEnv(process.env), ...accountEnv })
         })()
       : false
   return openTerminal({
@@ -216,6 +222,7 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
     // npm-installed CLIs run as node (cliBins).
     bins: preset ? cliBins(preset.bin, headOf(found.found[preset.bin])) : cliBins(custom!.command.trim().split(/\s+/)[0] ?? '', null),
     prepare: key => {
+      if (onAccount) accountRuns.set(key, { agent: id, account: onAccount.id, cwd: folder })
       // Codex's usage comes from the codex the app found (mcp/codexUsage.ts); not on Windows, where
       // what is found is a shim the server cannot start.
       const cli = preset?.id === 'codex' && process.platform !== 'win32' ? cliPath : undefined
@@ -232,16 +239,16 @@ export async function openAgentIn(call: Call, cwd: string, agentId: string, cols
       if (viaExtension) {
         const launch = geminiLaunch(join(DIR, `${key}-gemini.toml`), ['turnEnd', 'activity', 'prompt'], process.platform, resume)
         writeFiles(launch)
-        return { env: launch.env, line: launch.line }
+        return { env: { ...launch.env, ...accountEnv }, line: launch.line }
       }
-      const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli, abilities)
+      const server = serverFor(node ?? 'node', nodeEntry(nodeRoot(), 'mcp/server'), id, key, process.env.CLAUDE_IDE_SOCKET, cli, abilities, accountEnv.CODEX_HOME)
       const configFile = preset?.dataFolder ? join(dataFolderOf(DIR, preset.id, folder), `${preset.id}.json`) : join(DIR, `${key}-${id}.json`)
       // A data folder is named by a hash of the project's: it keeps the project's folder too, for
       // its past conversations (agentHistory.ts).
       if (preset?.dataFolder) writeFiles({ line: '', env: {}, files: [{ path: join(dataFolderOf(DIR, preset.id, folder), 'cwd'), content: folder }] })
       const launch = preset ? presetLaunch(preset, server, configFile, process.platform, hooked ? hook : undefined, version, resume) : customLaunch(custom!, server, configFile)
       writeFiles(launch)
-      return { env: launch.env, line: launch.line }
+      return { env: { ...launch.env, ...accountEnv }, line: launch.line }
     },
   })
 }
@@ -251,7 +258,7 @@ export function registerAgentTerms(ipcMain: Ipc, call: Call): void {
 
   ipcMain.handle('agents:detect', (_e, force: boolean) => detect(force === true))
 
-  ipcMain.handle('term:openAgent', (_e, cwd: string, agentId: string, cols: number, rows: number, resume?: string) =>
-    openAgentIn(call, cwd, agentId, cols, rows, typeof resume === 'string' ? resume : undefined),
+  ipcMain.handle('term:openAgent', (_e, cwd: string, agentId: string, cols: number, rows: number, resume?: string, account?: number) =>
+    openAgentIn(call, cwd, agentId, cols, rows, typeof resume === 'string' ? resume : undefined, Number.isInteger(account) ? account : undefined),
   )
 }

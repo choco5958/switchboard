@@ -10,6 +10,7 @@ import { tx } from '../tx'
 import { saveSetting } from '../settings'
 import { BROWSER_LAN_KEY } from '../agentBrowser'
 import { RiskyConfirm } from '../flows'
+import { AccountsSection } from './AccountsSection'
 
 // Settings for agent CLIs other than Claude Code: which presets are installed, and
 // the person's own entries. Saving an entry runs nothing; its dock button does.
@@ -179,6 +180,8 @@ export function AgentSettings({ settings, part = 'cli' }: { settings: Record<str
           </Button>
         </SettingRow>
       </SettingGroup>
+
+      <AccountsSection found={found} />
 
       <SettingGroup title={t('agents.customTitle')}>
         {customs.length === 0 && <SettingRow title={t('agents.customNone')} />}

@@ -202,8 +202,10 @@ describe('the MCP server against a test bridge', () => {
 describe('pieces of the MCP server', () => {
   test('flags win over env vars, and the defaults come from HOME', () => {
     const env = { HOME: '/h', SWITCHBOARD_AGENT: 'qwen', SWITCHBOARD_TERMINAL: 'r-t1' }
-    assert.deepEqual(parseOptions(['--agent', 'Codex'], env, '/w'), { agent: 'codex', terminal: 'r-t1', cwd: '/w', socket: '/h/.claude-ide/bridge.sock', home: '/h', cli: '', abilities: [], appOnly: false, extensionRun: false })
+    assert.deepEqual(parseOptions(['--agent', 'Codex'], env, '/w'), { agent: 'codex', terminal: 'r-t1', cwd: '/w', socket: '/h/.claude-ide/bridge.sock', home: '/h', cli: '', cliHome: '', abilities: [], appOnly: false, extensionRun: false })
     assert.equal(parseOptions([], env, '/w').agent, 'qwen')
+    // Codex hands its servers no CODEX_HOME: the account's home comes as a flag.
+    assert.equal(parseOptions(['--cli', '/bin/codex', '--cli-home', '/h/acct'], env, '/w').cliHome, '/h/acct')
     // What the run's hooks add, as the app attached them (src/main/agentTerms.ts).
     assert.deepEqual(parseOptions(['--abilities', 'turnEnd,approvals'], env, '/w').abilities, ['turnEnd', 'approvals'])
     assert.equal(parseOptions([], { HOME: '/h' }, '/w').agent, 'mcp')

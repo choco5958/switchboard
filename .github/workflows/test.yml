@@ -90,3 +90,29 @@ jobs:
       - run: npm install -g ${{ matrix.package }}
       # jiti reads the app's TypeScript as it is (imports without extensions); it is not a dependency.
       - run: npx -y jiti@2.6.1 scripts/relay-check.ts ${{ matrix.agent }}
+      # Going on with a conversation on another account of the CLI (docs/계정-여러-개.md).
+      - if: contains(fromJSON('["copilot","qwen","codex","gemini"]'), matrix.agent)
+        run: npx -y jiti@2.6.1 scripts/account-check.ts ${{ matrix.agent }}
+      # The limit text the app looks for on the screen, and the Ctrl-C that ends the CLI before the move.
+      - if: contains(fromJSON('["qwen","gemini"]'), matrix.agent)
+        run: npx -y jiti@2.6.1 scripts/account-check.ts ${{ matrix.agent }} --limit
+
+  accounts:
+    name: accounts (claude, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npm install -g @anthropic-ai/claude-code@2.1.317
+      - run: npx -y jiti@2.6.1 scripts/account-check.ts claude

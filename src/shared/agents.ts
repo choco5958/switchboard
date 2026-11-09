@@ -41,7 +41,13 @@ export type AgentPreset = {
   // How the CLI goes on with a past conversation of its own, by id (src/main/agentHistory.ts).
   // They come first on the line: Codex's is a subcommand.
   resumeArgs?: (id: string) => string[]
+  // How it goes on with its latest conversation in the folder (CONTINUE_LAST), for a session moved to
+  // another account (src/main/accountRotate.ts). Checked with the real CLI by scripts/account-check.ts.
+  continueArgs?: string[]
 }
+
+// In place of a conversation id: the CLI's latest conversation in the folder (AgentPreset.continueArgs).
+export const CONTINUE_LAST = '@last'
 
 const json = (value: unknown) => JSON.stringify(value)
 // JSON that goes on a command line: its spaces written \u0020, the same JSON, because
@@ -175,6 +181,7 @@ export const PRESETS: AgentPreset[] = [
     docs: 'https://developers.openai.com/codex/mcp',
     how: 'agents.how.codex',
     resumeArgs: id => ['resume', id],
+    continueArgs: ['resume', '--last'],
     // The value of -c is TOML.
     mcp: server => ({
       args: ['-c', `mcp_servers.${MCP_NAME}.command=${tomlString(server.command)}`, '-c', `mcp_servers.${MCP_NAME}.args=[${server.args.map(tomlString).join(',')}]`],
@@ -189,6 +196,7 @@ export const PRESETS: AgentPreset[] = [
     docs: 'https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md',
     how: 'agents.how.gemini',
     resumeArgs: id => ['--resume', id],
+    continueArgs: ['--resume', 'latest'],
     mcp: (server, configFile) => ({
       // `trust`: Switchboard's own tools run without a confirmation, as they do in Claude Code
       // (the mod's tools); the CLI still asks for its own shell and file tools. open_in_ide's
@@ -207,6 +215,7 @@ export const PRESETS: AgentPreset[] = [
     docs: 'https://github.com/QwenLM/qwen-code',
     how: 'agents.how.qwen',
     resumeArgs: id => ['--resume', id],
+    continueArgs: ['--continue'],
     mcp: (server, configFile) => ({
       args: ['--mcp-config', configFile],
       file: { mcpServers: { [MCP_NAME]: { command: server.command, args: server.args, trust: true } } },
@@ -224,6 +233,7 @@ export const PRESETS: AgentPreset[] = [
     docs: 'https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference',
     how: 'agents.how.copilot',
     resumeArgs: id => ['--resume', id],
+    continueArgs: ['--continue'],
     mcp: (server, configFile) => ({
       args: ['--additional-mcp-config', `@${configFile}`],
       file: { mcpServers: { [MCP_NAME]: { type: 'local', command: server.command, args: server.args, tools: ['*'] } } },
@@ -410,6 +420,7 @@ export const CLAUDE: AgentPreset = {
   mcp: null,
   via: 'mod',
   resumeArgs: id => ['--resume', id],
+  continueArgs: ['--continue'],
 }
 
 // Every agent the app knows, Claude Code first: for lists, detection and names.
@@ -474,7 +485,7 @@ export function geminiLaunch(policyFile: string, abilities: readonly string[], p
 }
 export function geminiRun(policyFile: string, abilities: readonly string[], resume?: string): Run {
   return {
-    args: [...(resume ? ['--resume', resume] : []), '--policy', policyFile],
+    args: [...(resume ? ['--resume', resume === CONTINUE_LAST ? 'latest' : resume] : []), '--policy', policyFile],
     env: { SWITCHBOARD_ABILITIES: abilities.join(','), [EXTENSION_RUN_ENV]: '1' },
     files: [{ path: policyFile, content: `[[rule]]\ntoolName = "*"\nmcpName = "${MCP_NAME}"\ndecision = "allow"\npriority = 100\n` }],
   }
@@ -528,7 +539,8 @@ export function presetLaunch(preset: AgentPreset, server: McpServer, configFile:
 }
 export function presetRun(preset: AgentPreset, server: McpServer, configFile: string, platform: string = process.platform, hook?: McpServer, version: string | null = null, resume?: string): Run {
   const got = preset.mcp?.(server, configFile) ?? {}
-  const pinned = [...(resume && preset.resumeArgs ? preset.resumeArgs(resume) : []), ...(preset.versionArgs?.(version) ?? [])]
+  const resumed = resume === CONTINUE_LAST ? (preset.continueArgs ?? []) : resume && preset.resumeArgs ? preset.resumeArgs(resume) : []
+  const pinned = [...resumed, ...(preset.versionArgs?.(version) ?? [])]
   const hookFile = hookFileOf(configFile)
   const hooked = hook && preset.permissionHook ? preset.permissionHook(hook, { hookFile, injected: got, version, platform }) : {}
   return {

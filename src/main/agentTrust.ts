@@ -100,7 +100,7 @@ export function trustFolder(agent: string, folder: string, home: string, env: Re
       const next = codexTrustText(existsSync(file) ? readFileSync(file, 'utf8') : '', path)
       if (next !== null) replaceFile(file, next)
     } else if (agent === 'copilot') {
-      const file = join(home, '.copilot', 'config.json')
+      const file = join(env.COPILOT_HOME || join(home, '.copilot'), 'config.json')
       const next = copilotTrustText(existsSync(file) ? readFileSync(file, 'utf8') : null, path)
       if (next !== null) replaceFile(file, next)
     } else if (agent === 'cursor') {

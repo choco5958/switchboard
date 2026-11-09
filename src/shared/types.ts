@@ -216,9 +216,10 @@ export type IdeApi = {
   onConnection: (listener: (connected: boolean) => void) => () => void
   onNotifyOpen: (listener: (questionId: number) => void) => () => void
   termList: () => Promise<TermInfo[]>
-  termOpen: (cwd: string, claude: boolean, cols: number, rows: number, slot?: number, resume?: string) => Promise<TermInfo | { error: string }>
+  // account: the account to run on (src/shared/accounts.ts); left out, the first free one.
+  termOpen: (cwd: string, claude: boolean, cols: number, rows: number, slot?: number, resume?: string, account?: number) => Promise<TermInfo | { error: string }>
   // Agent CLIs other than Claude Code: a terminal running one, and which ones are installed.
-  termOpenAgent: (cwd: string, agentId: string, cols: number, rows: number, resume?: string) => Promise<TermInfo | { error: string }>
+  termOpenAgent: (cwd: string, agentId: string, cols: number, rows: number, resume?: string, account?: number) => Promise<TermInfo | { error: string }>
   detectAgents: (force?: boolean) => Promise<AgentDetect>
   termBuffer: (id: string) => Promise<{ data: string; seq: number }>
   termWrite: (id: string, data: string) => void
@@ -232,6 +233,13 @@ export type IdeApi = {
   onTermOpened: (listener: (term: TermInfo) => void) => () => void
   accountInfo: () => Promise<AccountInfo | null>
   measureAccounts: () => Promise<AccountInfo | null>
+  // Feature area: several accounts per agent CLI (src/main/accounts.ts). add and login open a
+  // terminal that signs in on the account.
+  accountsList: () => Promise<AccountRow[]>
+  accountsAdd: (agent: string) => Promise<TermInfo | { error: string }>
+  accountsLogin: (agent: string, id: number) => Promise<TermInfo | { error: string }>
+  accountsRename: (agent: string, id: number, name: string) => Promise<boolean>
+  accountsRemove: (agent: string, id: number) => Promise<boolean>
   // Feature area: the app's own updates (src/main/updater.ts), for the settings page.
   updateStatus: () => Promise<UpdateStatus>
   updateCheck: () => Promise<UpdateStatus>
@@ -287,6 +295,9 @@ export type UpdateStatus = {
 
 // Feature area: the signed-in Claude account for the top bar (masked email, readable plan).
 export type AccountInfo = { email: string; plan: string; ccr?: { current: number; slots: CcrSlot[] } }
+
+// One agent's accounts, account 1 (the CLI's own login) first. until: epoch ms its limit lifts.
+export type AccountRow = { agent: string; accounts: { id: number; name: string; email: string; signedIn: boolean; until?: number }[] }
 
 // One ccr slot. until: epoch seconds its limit lifts (0: not marked spent); usage as ccr measured it at measuredAt.
 export type CcrSlot = {

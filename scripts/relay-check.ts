@@ -21,7 +21,8 @@ import { createServer, request } from 'node:http'
 import { dirname, join, resolve } from 'node:path'
 import { requestTarget, resolveEndpoint } from '../bridge/endpoint.ts'
 import { codexHookCommand, codexHookOverrides, geminiExtension, geminiRun, hookAttaches, presetOf, presetRun, type McpServer } from '../src/shared/agents'
-import { npmShimScript, serverFor } from '../src/main/agentDetect'
+import { serverFor } from '../src/main/agentDetect'
+import { cliCommand } from './cli-path.ts'
 import { copilotTrustText } from '../src/main/agentTrust'
 import { trustCodexHook } from '../src/main/codexHook'
 import { linkGeminiExtension } from '../src/main/geminiExtension'
@@ -264,36 +265,12 @@ const SPECS: Record<string, Spec> = {
   },
 }
 
-// How to start the CLI: the given command, the npm package's entry run with node (a Windows .cmd
-// shim cannot start without a shell), or its name on PATH.
-function cliCommand(spec: Spec, given: string[]): string[] {
-  if (given.length > 0) return given
-  const npmRoot = spawnSync(WINDOWS ? 'npm.cmd' : 'npm', ['root', '-g'], { encoding: 'utf8', shell: WINDOWS }).stdout.trim()
-  const pkg = join(npmRoot, ...spec.npm.split('/'))
-  if (existsSync(join(pkg, 'package.json'))) {
-    const bin = (JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8')) as { bin?: string | Record<string, string> }).bin
-    const entry = typeof bin === 'string' ? bin : bin?.[spec.bin]
-    if (entry) {
-      const path = join(pkg, entry)
-      // A package whose entry is the native program itself.
-      const head = readFileSync(path).subarray(0, 2).toString()
-      return head === '#!' || /\.[cm]?js$/.test(path) ? [process.execPath, path] : [path]
-    }
-  }
-  if (WINDOWS) {
-    const shim = spawnSync('where.exe', [`${spec.bin}.cmd`], { encoding: 'utf8' }).stdout.split(/\r?\n/)[0]?.trim()
-    const script = shim ? npmShimScript(shim, readFileSync(shim, 'utf8')) : null
-    if (script) return [process.execPath, script]
-  }
-  return [spec.bin]
-}
-
 async function main(): Promise<number> {
   const agent = process.argv[2] ?? ''
   const spec = SPECS[agent]
   const preset = agent === 'gemini' ? null : presetOf(agent)
   if (!spec || (agent !== 'gemini' && !preset)) throw new Error(`unknown agent: ${agent} (${Object.keys(SPECS).join(', ')})`)
-  const cli = cliCommand(spec, process.argv.slice(3))
+  const cli = cliCommand(spec.npm, spec.bin, process.argv.slice(3))
   const version = spawnSync(cli[0]!, [...cli.slice(1), '--version'], { encoding: 'utf8', timeout: 60000 }).stdout?.match(/(\d+\.\d+\.\d+)/)?.[1] ?? null
   console.log(`${agent} ${version ?? 'unknown'}: ${cli.join(' ')}`)
   // The hook's socket is under HOME, and macOS's own temporary folder (/var/folders/...) is long

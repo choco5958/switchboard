@@ -33,7 +33,9 @@ const ORCA = '/Applications/Orca.app/Contents/Resources/bin/orca'
 // `appOnly`: a server every run of the CLI starts (Gemini's extension, src/main/geminiExtension.ts),
 // which does something only in a run the app opened through it (a terminal key, and
 // SWITCHBOARD_EXTENSION, shared/agents.ts EXTENSION_RUN_ENV).
-export type Options = { agent: string; terminal: string; cwd: string; socket: string; home: string; cli: string; abilities: string[]; appOnly?: boolean; extensionRun?: boolean }
+// cliHome: the CLI's home for the account the run is on (src/main/accounts.ts), which Codex does not
+// hand its MCP servers; empty for the CLI's own login.
+export type Options = { agent: string; terminal: string; cwd: string; socket: string; home: string; cli: string; cliHome?: string; abilities: string[]; appOnly?: boolean; extensionRun?: boolean }
 
 // Flags first, since some CLIs pass MCP servers only a few env vars; env vars second.
 export function parseOptions(argv: readonly string[], env: Record<string, string | undefined>, cwd: string): Options {
@@ -47,6 +49,7 @@ export function parseOptions(argv: readonly string[], env: Record<string, string
     terminal: flag('terminal') || env.SWITCHBOARD_TERMINAL || '',
     cwd: flag('cwd') || cwd,
     cli: flag('cli') || '',
+    cliHome: flag('cli-home') || '',
     abilities: (flag('abilities') || env.SWITCHBOARD_ABILITIES || '').split(',').filter(Boolean),
     appOnly: argv.includes('--app-only'),
     extensionRun: env.SWITCHBOARD_EXTENSION === '1',
@@ -619,7 +622,7 @@ if (started?.appOnly && !(started.terminal && started.extensionRun)) {
   const hooks = options.terminal ? listenForHooks(hookSocket(options.home, options.terminal), options.terminal, session.approve, session.onEvent) : null
   const stopUsage =
     options.agent === 'codex' && options.cli
-      ? watchCodexUsage(codexArgv(options.cli), { ...process.env, HOME: options.home }, rateLimits => session.reportUsage({ rateLimits }))
+      ? watchCodexUsage(codexArgv(options.cli), { ...process.env, HOME: options.home, ...(options.cliHome ? { CODEX_HOME: options.cliHome } : {}) }, rateLimits => session.reportUsage({ rateLimits }))
       : () => undefined
   const write = (reply: unknown) => {
     if (reply !== undefined) process.stdout.write(`${JSON.stringify(reply)}\n`)

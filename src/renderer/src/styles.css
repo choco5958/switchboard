@@ -1130,3 +1130,10 @@ details[open] > summary .agent-card-open { transform: rotate(180deg); }
 .drawer-head .comment-filter { margin-left: auto; }
 .drawer-head .comment-filter + .icon-btn { margin-left: 0; }
 .debug-panel .dev-head { display: flex; justify-content: flex-end; margin-bottom: var(--sp-2); }
+
+/* Accounts per agent CLI (pages/AccountsSection.tsx) */
+.account-agent { align-items: flex-start; }
+.account-list { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: 6px; }
+.account-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.account-name { min-width: 6em; }
+.account-rename { width: 12em; }
