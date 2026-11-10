@@ -34,11 +34,147 @@ function replaceFile(file: string, content: string, mode = 0o600): void {
 const tomlString = (text: string) =>
   `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\u0000-\u001f\u007f]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)}"`
 
+// A key path a TOML text names: a table header (`[a."b"]`), or a key of a key/value line under its
+// table (`value`), whose value may be an inline table.
+export type TomlKey = { path: string[]; value: boolean }
+
+const BARE_KEY = /[A-Za-z0-9_-]+/y
+const ESCAPES: Record<string, string> = { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', e: '\x1b', '"': '"', '\\': '\\' }
+
+// The keys a TOML text names, read as TOML reads them: a key in "double" or 'single' quotes or
+// bare, spaces around dots and brackets, and values skipped whole (multiline strings and arrays
+// across lines too), so a line inside a value is never taken for a header. Lenient: a line it
+// cannot read is passed over.
+export function tomlKeys(text: string): TomlKey[] {
+  const out: TomlKey[] = []
+  const n = text.length
+  let i = text.startsWith('\uFEFF') ? 1 : 0
+  let table: string[] = []
+  const space = () => {
+    while (text[i] === ' ' || text[i] === '\t') i++
+  }
+  const lineEnd = () => {
+    while (i < n && text[i] !== '\n') i++
+  }
+  const part = (): string | null => {
+    space()
+    const quote = text[i]
+    if (quote === "'") {
+      const end = text.indexOf("'", i + 1)
+      const body = end < 0 ? '' : text.slice(i + 1, end)
+      if (end < 0 || body.includes('\n')) return null
+      i = end + 1
+      return body
+    }
+    if (quote === '"') {
+      let body = ''
+      for (i++; i < n && text[i] !== '"'; i++) {
+        if (text[i] === '\n') return null
+        if (text[i] !== '\\') {
+          body += text[i]
+          continue
+        }
+        const c = text[++i] ?? ''
+        const hex = c === 'u' ? 4 : c === 'U' ? 8 : c === 'x' ? 2 : 0
+        if (hex) {
+          const code = parseInt(text.slice(i + 1, i + 1 + hex), 16)
+          if (!Number.isInteger(code) || code > 0x10ffff) return null
+          body += String.fromCodePoint(code)
+          i += hex
+        } else if (c in ESCAPES) body += ESCAPES[c]
+        else return null
+      }
+      if (text[i] !== '"') return null
+      i++
+      return body
+    }
+    BARE_KEY.lastIndex = i
+    const bare = BARE_KEY.exec(text)
+    if (!bare) return null
+    i += bare[0].length
+    return bare[0]
+  }
+  const dotted = (): string[] | null => {
+    const parts: string[] = []
+    for (;;) {
+      const p = part()
+      if (p === null) return null
+      parts.push(p)
+      space()
+      if (text[i] !== '.') return parts
+      i++
+    }
+  }
+  // A value, to the end of its line; brackets and braces may carry it over more lines.
+  const skipValue = () => {
+    let depth = 0
+    while (i < n) {
+      const c = text[i]!
+      if (c === '"' || c === "'") {
+        if (text.startsWith(c.repeat(3), i)) {
+          // A multiline string ends at the first run of three or more quotes; up to two of the
+          // run belong to the string (`'''a''''` ends with `a'`).
+          for (i += 3; i < n; ) {
+            if (c === '"' && text[i] === '\\') i += 2
+            else if (text[i] === c) {
+              let run = 0
+              while (text[i] === c) run++, i++
+              if (run >= 3) break
+            } else i++
+          }
+        } else {
+          for (i++; i < n && text[i] !== c && text[i] !== '\n'; i++) if (c === '"' && text[i] === '\\') i++
+          if (text[i] === c) i++
+        }
+        continue
+      }
+      if (c === '#') lineEnd()
+      else if (c === '\n' && depth <= 0) return
+      else {
+        if (c === '[' || c === '{') depth++
+        else if (c === ']' || c === '}') depth--
+        i++
+      }
+    }
+  }
+  while (i < n) {
+    space()
+    const c = text[i]
+    if (c === '\n' || c === '\r') i++
+    else if (c === '#') lineEnd()
+    else if (c === '[') {
+      const array = text[i + 1] === '['
+      i += array ? 2 : 1
+      const path = dotted()
+      space()
+      if (path && text[i] === ']' && (!array || text[i + 1] === ']')) {
+        table = path
+        out.push({ path, value: false })
+      }
+      lineEnd()
+    } else {
+      const key = dotted()
+      space()
+      if (key && text[i] === '=') {
+        i++
+        out.push({ path: [...table, ...key], value: true })
+        skipValue()
+      } else lineEnd()
+    }
+  }
+  return out
+}
+
+const startsWith = (path: string[], head: string[]) => head.length <= path.length && head.every((p, at) => path[at] === p)
+
 // Codex: [projects."<folder>"] trust_level = "trusted" in config.toml. A folder the file names
-// already, trusted or not, is the person's choice and is left as it is.
+// already, trusted or not, is the person's choice and is left as it is, in whatever form it is
+// written: Codex itself writes a Windows folder as [projects.'C:\…'], and a second table for the
+// same folder would stop Codex with a duplicate key. So would a table under `projects = { … }`.
 export function codexTrustText(existing: string, folder: string): string | null {
+  const want = ['projects', folder]
+  if (tomlKeys(existing).some(key => startsWith(key.path, want) || (key.value && startsWith(want, key.path)))) return null
   const header = `[projects.${tomlString(folder)}]`
-  if (existing.split(/\r?\n/).some(line => line.trim() === header)) return null
   const eol = existing.includes('\r\n') ? '\r\n' : '\n'
   const gap = existing === '' || existing.endsWith(eol + eol) ? '' : existing.endsWith(eol) ? eol : eol + eol
   return `${existing}${gap}${header}${eol}trust_level = "trusted"${eol}`
