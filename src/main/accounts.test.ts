@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { accountList, accountOrder, accountSpec, activeOf, limitsOf, nextAccountId, pickAccount } from '../shared/accounts'
-import { accountRows, accountUsageOf, defaultBase, homeOf, markLimit, prepareHome, readLimits, runAccount, type AccountPaths } from './accounts'
+import { accountRows, accountUsageOf, claudeStateText, defaultBase, homeOf, markLimit, prepareHome, readLimits, runAccount, type AccountPaths } from './accounts'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -115,6 +115,36 @@ describe('the account of a run', () => {
     expect(runAccount(p, 'codex', undefined, 1000)).toEqual({ id: 2, env: { CODEX_HOME: homeOf(p, 'codex', 2), SWITCHBOARD_ACCOUNT: '2' } })
     // Asked for one, that one.
     expect(runAccount(p, 'codex', 1, 1000)?.id).toBe(1)
+  })
+
+  it('brings the default account\'s folder trust and MCP servers into a Claude account', () => {
+    const p = paths()
+    keep(p, { claude: [{ id: 2, name: '' }] })
+    const home = homeOf(p, 'claude', 2)
+    const own = { oauthAccount: { emailAddress: 'two@example.com' }, projects: { '/b': { hasTrustDialogAccepted: true, allowedTools: ['x'] } } }
+    writeFileSync(join(p.home, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'one@example.com' }, mcpServers: { db: { command: 'db' } }, projects: { '/a': { hasTrustDialogAccepted: true, mcpServers: { web: { command: 'web' } }, enabledMcpjsonServers: ['local'], history: ['hi'] }, '/b': { hasTrustDialogAccepted: false } } }))
+    // Before the login there is no file of the account's to add to.
+    runAccount(p, 'claude', 2)
+    expect(existsSync(join(home, '.claude.json'))).toBe(false)
+    writeFileSync(join(home, '.claude.json'), JSON.stringify(own))
+    expect(runAccount(p, 'claude', 2)?.env.CLAUDE_CONFIG_DIR).toBe(home)
+    expect(JSON.parse(readFileSync(join(home, '.claude.json'), 'utf8'))).toEqual({
+      oauthAccount: { emailAddress: 'two@example.com' },
+      mcpServers: { db: { command: 'db' } },
+      projects: {
+        '/a': { hasTrustDialogAccepted: true, mcpServers: { web: { command: 'web' } }, enabledMcpjsonServers: ['local'] },
+        // The account's own trust stays; a folder the default account never trusted is not trusted for it.
+        '/b': { hasTrustDialogAccepted: true, allowedTools: ['x'] },
+      },
+    })
+  })
+
+  it('leaves the Claude state file alone when nothing changes or a file cannot be read', () => {
+    const base = JSON.stringify({ projects: { '/a': { hasTrustDialogAccepted: true } } })
+    expect(claudeStateText(base, JSON.stringify({ projects: { '/a': { hasTrustDialogAccepted: true } } }))).toBeNull()
+    expect(claudeStateText(base, '{ half')).toBeNull()
+    expect(claudeStateText('[]', '{}')).toBeNull()
+    expect(JSON.parse(claudeStateText(base, '{}')!)).toEqual({ projects: { '/a': { hasTrustDialogAccepted: true } } })
   })
 
   it('gives Qwen its own home and the shared runtime folder', () => {

@@ -1,5 +1,5 @@
 import type { Ipc } from './platform'
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { ACCOUNT_SPECS, accountList, accountOrder, accountSpec, activeOf, limitsOf, nextAccountId, pickAccount, type AccountLimits, type AccountList, type AccountSpec } from '../shared/accounts'
@@ -111,6 +111,65 @@ export function prepareHome(spec: AccountSpec, base: string, home: string, platf
   }
 }
 
+// Claude Code's state file of the default account: ~/.claude.json, or in CLAUDE_CONFIG_DIR when set.
+// An account's is in its home (CLAUDE_CONFIG_DIR is the home).
+function claudeStateFile(p: AccountPaths): string {
+  const dir = p.claudeDir || p.env.CLAUDE_CONFIG_DIR
+  return dir ? join(dir, '.claude.json') : join(p.home, '.claude.json')
+}
+
+// What a project of Claude's state file keeps that is the person's, not the login's: the folder
+// trust and the MCP servers they added or approved there.
+const CLAUDE_PROJECT_KEYS = ['mcpServers', 'enabledMcpjsonServers', 'disabledMcpjsonServers', 'enableAllProjectMcpServers']
+
+type ClaudeState = { mcpServers?: Record<string, unknown>; projects?: Record<string, Record<string, unknown>> }
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+
+// The account's state file text with the default account's folder trust and MCP servers in it, or
+// null when nothing changes or either file cannot be read. Without the trust, Claude on an account
+// asks again in each folder, and that menu takes what the app types (its first choice exits).
+// The default account's values win; what only the account has stays. Trust is only added.
+export function claudeStateText(baseText: string, accountText: string): string | null {
+  let base: ClaudeState
+  let account: ClaudeState
+  try {
+    base = JSON.parse(baseText)
+    account = JSON.parse(accountText)
+  } catch {
+    return null
+  }
+  if (!isObject(base) || !isObject(account)) return null
+  const before = JSON.stringify(account)
+  if (isObject(base.mcpServers)) account.mcpServers = { ...(isObject(account.mcpServers) ? account.mcpServers : {}), ...base.mcpServers }
+  if (isObject(base.projects)) {
+    const projects = (account.projects = isObject(account.projects) ? account.projects : {})
+    for (const [folder, from] of Object.entries(base.projects)) {
+      if (!isObject(from)) continue
+      const to = (projects[folder] = isObject(projects[folder]) ? projects[folder] : {})
+      if (from.hasTrustDialogAccepted === true) to.hasTrustDialogAccepted = true
+      for (const key of CLAUDE_PROJECT_KEYS) if (key in from) to[key] = from[key]
+    }
+  }
+  return JSON.stringify(account) === before ? null : `${JSON.stringify(account, null, 2)}\n`
+}
+
+// Brings the default account's folder trust and MCP servers into a Claude account's state file.
+// Only once the account signed in (its login writes the file); never throws.
+function shareClaudeState(p: AccountPaths, home: string): void {
+  const file = join(home, '.claude.json')
+  try {
+    if (!existsSync(file)) return
+    const next = claudeStateText(readFileSync(claudeStateFile(p), 'utf8'), readFileSync(file, 'utf8'))
+    if (next === null) return
+    // Written beside and renamed over, so a Claude starting meanwhile never reads half a file.
+    const temp = `${file}.switchboard-${process.pid}`
+    writeFileSync(temp, next, { mode: statSync(file).mode & 0o777 })
+    renameSync(temp, file)
+  } catch {
+    // the account keeps its own state
+  }
+}
+
 // Whether the account signed in, by files that only a login writes. Account 1 is the person's
 // own login, taken as signed in.
 export function signedIn(p: AccountPaths, agent: string, id: number): boolean {
@@ -125,10 +184,7 @@ export function signedIn(p: AccountPaths, agent: string, id: number): boolean {
 // The masked email of an account, where a file without tokens names it.
 export function accountEmail(p: AccountPaths, agent: string, id: number): string {
   const base = id === 1 ? defaultBase(p, agent) : homeOf(p, agent, id)
-  if (agent === 'claude') {
-    const file = id === 1 && !p.claudeDir && !p.env.CLAUDE_CONFIG_DIR ? join(p.home, '.claude.json') : join(base, '.claude.json')
-    return readAccount(file)?.email ?? ''
-  }
+  if (agent === 'claude') return readAccount(id === 1 ? claudeStateFile(p) : join(base, '.claude.json'))?.email ?? ''
   if (agent === 'gemini') {
     const active = (readJson(join(base, '.gemini', 'google_accounts.json')) as { active?: unknown } | null)?.active
     return typeof active === 'string' ? maskEmail(active) : ''
@@ -161,6 +217,7 @@ export function envOf(p: AccountPaths, spec: AccountSpec, id: number): Record<st
   const base = defaultBase(p, spec.agent)
   const home = homeOf(p, spec.agent, id)
   prepareHome(spec, base, home)
+  if (spec.agent === 'claude') shareClaudeState(p, home)
   return spec.env(home, base)
 }
 
