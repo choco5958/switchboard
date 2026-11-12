@@ -53,10 +53,10 @@ function session(input: Found & Ends, agent: string, id: string, cwd: string, tu
 
 const records = (input: Ends): Json[] => [...recordsOf<Json>(input.head, false, !input.whole), ...(input.whole ? [] : recordsOf<Json>(input.tail, true, false))]
 
-// Codex: sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl. Its first record (session_meta) has the id
-// and folder; the person's words are user messages but for what Codex adds; a turn's answer is an
-// assistant message. A conversation the person ran in the terminal or an editor (source cli or
-// vscode) resumes; `codex exec` and subagent runs do not.
+// Codex: sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl, or .jsonl.zst once Codex packed it. Its
+// first record (session_meta) has the id and folder; the person's words are user messages but for
+// what Codex adds; a turn's answer is an assistant message. A conversation the person ran in the
+// terminal or an editor (source cli or vscode) resumes; `codex exec` and subagent runs do not.
 export function parseCodex(input: Found & Ends): PastSession | null {
   let id = ''
   let cwd = ''
@@ -272,11 +272,17 @@ export function agentSources(env: NodeJS.ProcessEnv, home = env.HOME || homedir(
     {
       files: async () => {
         const names = codexNames(await read(join(codexHome, 'session_index.jsonl')))
-        const paths = await walk(join(codexHome, 'sessions'), 3, name => /^rollout-.*\.jsonl$/.test(name))
+        const all = await walk(join(codexHome, 'sessions'), 3, name => /^rollout-.*\.jsonl(?:\.zst)?$/.test(name))
+        // Codex packs a conversation left alone for a week into <name>.jsonl.zst (its feature
+        // local_thread_store_compression, read in Codex 0.167) and unpacks it beside to go on
+        // with it: where both are there, the plain one is the conversation.
+        const plain = new Set(all)
+        const paths = all.filter(path => !(path.endsWith('.zst') && plain.has(path.slice(0, -'.zst'.length))))
         // The id ends the file's name; session_meta says it again.
-        return present(await Promise.all(paths.map(path => {
-          const id = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/.exec(path)?.[1] ?? ''
-          return found(path, id, 'codex', names.has(id) ? { title: names.get(id) } : undefined)
+        return present(await Promise.all(paths.map(async path => {
+          const id = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl(?:\.zst)?$/.exec(path)?.[1] ?? ''
+          const file = await found(path, id, 'codex', names.has(id) ? { title: names.get(id) } : undefined)
+          return file && path.endsWith('.zst') ? { ...file, packed: true } : file
         })))
       },
       parse: parseCodex,

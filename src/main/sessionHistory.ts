@@ -1,7 +1,10 @@
 import type { Ipc } from './platform'
+import { createReadStream } from 'node:fs'
 import { open, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
+import { pipeline } from 'node:stream/promises'
+import { createZstdDecompress } from 'node:zlib'
 import type { PastSession, PastSessions } from '../shared/types'
 import { resumableId } from '../shared/agents'
 import { agentSources } from './agentHistory'
@@ -132,8 +135,10 @@ export function parseTranscript(input: { id: string; folder: string; head: strin
 
 // `side`: what the listing learned besides the file (a name a CLI keeps apart, its project folder).
 // `ready`: a conversation read already, from a database (agentHistory.ts), with no file to read.
-export type Found = { path: string; id: string; folder: string; size: number; mtime: number; side?: { title?: string; cwd?: string }; ready?: PastSession }
-export type Ends = { head: string; tail: string; whole: boolean }
+// `packed`: the file is zstd-compressed (Codex's .jsonl.zst).
+export type Found = { path: string; id: string; folder: string; size: number; mtime: number; side?: { title?: string; cwd?: string }; ready?: PastSession; packed?: boolean }
+// `size`: the length of what was unpacked, when the file is packed.
+export type Ends = { head: string; tail: string; whole: boolean; size?: number }
 // Where one CLI keeps its conversations, and how one reads.
 export type Source = { files: () => Promise<Found[]>; parse: (input: Found & Ends) => PastSession | null }
 // The share of a long file's records that were read, to count all of them.
@@ -192,6 +197,32 @@ async function readEnds(path: string, size: number): Promise<Ends> {
   }
 }
 
+// A packed transcript cannot be read from its middle: it is unpacked from the start, the same head
+// kept and of the rest only the last bytes.
+async function readPackedEnds(path: string): Promise<Ends> {
+  const head: Buffer[] = []
+  const tail: Buffer[] = []
+  let headBytes = 0
+  let tailBytes = 0
+  let size = 0
+  await pipeline(createReadStream(path), createZstdDecompress(), async source => {
+    for await (const chunk of source as AsyncIterable<Buffer>) {
+      size += chunk.length
+      const take = Math.min(chunk.length, HEAD_BYTES - headBytes)
+      if (take > 0) head.push(chunk.subarray(0, take))
+      headBytes += take
+      if (take === chunk.length) continue
+      tail.push(chunk.subarray(take))
+      tailBytes += chunk.length - take
+      while (tailBytes - tail[0]!.length >= TAIL_BYTES) tailBytes -= tail.shift()!.length
+    }
+  })
+  const whole = size <= HEAD_BYTES + TAIL_BYTES
+  const rest = Buffer.concat(tail)
+  if (whole) return { head: Buffer.concat([...head, rest]).toString('utf8'), tail: '', whole, size }
+  return { head: Buffer.concat(head).toString('utf8'), tail: rest.subarray(rest.length - TAIL_BYTES).toString('utf8'), whole, size }
+}
+
 // A transcript read once is kept until its file changes (another size or time).
 const cache = new Map<string, { size: number; mtime: number; title?: string; session: PastSession | null }>()
 
@@ -222,7 +253,7 @@ export async function loadFrom(sources: readonly Source[]): Promise<{ total: num
         }
         let session: PastSession | null = null
         try {
-          session = file.ready ?? source.parse({ ...file, ...(await readEnds(file.path, file.size)) })
+          session = file.ready ?? source.parse({ ...file, ...(await (file.packed ? readPackedEnds(file.path) : readEnds(file.path, file.size))) })
         } catch {
           // Unreadable: left out.
         }

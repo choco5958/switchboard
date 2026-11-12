@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { zstdCompressSync } from 'node:zlib'
 import { afterEach, describe, expect, test } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { agentSources, codexNames, crushSessions, cursorSessions, opencodeSessions, parseCodex, parseCopilot, parseGemini, parseQwen } from './agentHistory'
@@ -95,6 +96,36 @@ describe('finding them on disk', () => {
     })
     // CODEX_HOME and GEMINI_CLI_HOME stand for their folders.
     expect((await loadFrom(agentSources({ CODEX_HOME: join(home, 'none') }, home))).sessions.some(s => s.agent === 'codex')).toBe(false)
+  })
+
+  test('Codex: a conversation packed as .jsonl.zst reads like a plain one', async () => {
+    home = mkdtempSync(join(tmpdir(), 'sb-zst-'))
+    const put = (path: string, data: string | Buffer) => {
+      mkdirSync(join(home, path, '..'), { recursive: true })
+      writeFileSync(join(home, path), data)
+    }
+    const id = (n: number) => `01a1af4c-4f95-77e2-ba3a-9331b634550${n}`
+    const meta = (n: number) => ({ type: 'session_meta', payload: { id: id(n), cwd: `/w/c${n}`, source: 'cli' } })
+    const say = (role: string, text: string) => ({ type: 'response_item', payload: { type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] } })
+    const name = (n: number) => `.codex/sessions/2026/10/0${n}/rollout-2026-10-0${n}T09-00-00-${id(n)}.jsonl`
+    put(`${name(1)}.zst`, zstdCompressSync(lines(meta(1), say('user', 'short one'), say('assistant', 'Done.'))))
+    // Longer than the head and tail together: its first prompt and its last words, the count by share.
+    const long = lines(meta(2), say('user', 'long one'), ...Array.from({ length: 4000 }, (_, i) => say('assistant', `step ${i} ${'x'.repeat(60)}`)), say('assistant', 'All finished.'))
+    put(`${name(2)}.zst`, zstdCompressSync(long))
+    // Unpacked again to go on with: the plain file is the conversation.
+    put(`${name(3)}.zst`, zstdCompressSync(lines(meta(3), say('user', 'as packed'))))
+    put(name(3), lines(meta(3), say('user', 'as packed'), say('user', 'went on')))
+    // Not zstd at all, and another .zst beside them: left out.
+    put(`${name(4)}.zst`, 'not packed')
+    put('.codex/sessions/2026/10/01/notes.zst', zstdCompressSync('x'))
+    const { total, sessions } = await loadFrom(agentSources({}, home))
+    expect(total).toBe(4)
+    const by = Object.fromEntries(sessions.map(s => [s.id, s]))
+    expect(Object.keys(by).sort()).toEqual([id(1), id(2), id(3)])
+    expect(by[id(1)]).toMatchObject({ agent: 'codex', cwd: '/w/c1', title: 'short one', snippet: 'Done.', messages: 2, approximate: false })
+    expect(by[id(2)]).toMatchObject({ cwd: '/w/c2', title: 'long one', snippet: 'All finished.', approximate: true })
+    expect(Math.abs(by[id(2)]!.messages - 4002)).toBeLessThan(200)
+    expect(by[id(3)]).toMatchObject({ snippet: 'went on', messages: 2 })
   })
 })
 
