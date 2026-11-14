@@ -79,6 +79,14 @@ export async function seed(env: Env, home: string, scratch: string): Promise<voi
   db.close()
 }
 
+// Runs in the app's page: what a terminal's output says in words, without its escape sequences.
+// The terminal's own first bytes (on Windows the screen setup and the window title) come before
+// the shell has started, and are not the shell's.
+export const SHELL_WORDS = `text => {
+  const ESC = String.fromCharCode(27), BEL = String.fromCharCode(7)
+  return text.replace(new RegExp(ESC + '[[][0-9;?]*[ -/]*[@-~]|' + ESC + '][^' + BEL + ESC + ']*' + BEL + '?|' + ESC + '.', 'g'), '').trim()
+}`
+
 // What runs in the app's page once it has loaded. Each step reports one line; "done" ends it.
 export function pageScript(scratch: string, page: string): string {
   return `(async () => {
@@ -108,15 +116,18 @@ export function pageScript(scratch: string, page: string): string {
   await step('terminal', async () => {
     const term = await window.ide.termOpen(${JSON.stringify(scratch)}, false, 100, 30)
     if (term.error) throw new Error(term.error)
-    // The shell's first output (its prompt) says it reads input: PowerShell on a slow runner (Windows
-    // ARM) took longer than a fixed wait, and what was typed before it was ready was lost. Typed
+    // The shell's first words (its banner or prompt) say it has started: PowerShell on a slow runner
+    // (Windows ARM) took longer than a fixed wait, and what was typed before it was ready was lost.
+    // Any output is not enough: the terminal's screen setup and title came at once, the typing began
+    // then, and an x64 PowerShell that took over 45 seconds to start there failed the step. Typed
     // again if nothing came back.
     const output = async () => (await window.ide.termBuffer(term.id)).data
-    await until(async () => (await output()).trim().length > 0, 60000).catch(() => undefined)
+    const words = ${SHELL_WORDS}
+    await until(async () => words(await output()).length > 0, 90000).catch(() => undefined)
     await sleep(500)
     const line = ${JSON.stringify(WINDOWS ? 'echo "smoke-$(40+2)"\r' : 'echo smoke-$((40+2))\r')}
     let echoed = false
-    for (let typed = 0; typed < 3 && !echoed; typed++) {
+    for (let typed = 0; typed < 4 && !echoed; typed++) {
       window.ide.termWrite(term.id, line)
       echoed = await until(async () => (await output()).includes('smoke-42'), 15000).then(() => true, () => false)
     }
