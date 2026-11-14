@@ -21,7 +21,7 @@ import { BROWSER_TOOLS, cancelText, delegatedText, openBody, openResultText, ope
 export { takenText }
 
 export const SERVER_NAME = 'switchboard'
-const VERSION = '0.3.33'
+const VERSION = '0.3.34'
 const PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
 // How often the session tells the bridge it is still there.
 const SEEN_MS = 20_000
