@@ -96,7 +96,9 @@ const KO = {
     'Switchboard 내장 브라우저에 지금 보이는 로컬 페이지를 읽는다: 주소, 제목, 누르거나 입력할 수 있는 요소 목록([ref] 역할 "이름"), 보이는 글. ' +
     '입력칸은 든 값을, 선택 상자는 고른 항목과 고를 수 있는 항목을, 체크박스는 체크 여부를 함께 보여 준다. ' +
     '화면을 확인하거나 고친 결과를 검증할 때 쓴다. ref는 이번 읽기에서만 유효하다. 브라우저 탭이 앞으로 나와 사람이 볼 수 있다. 로컬 개발 서버만 다룬다.',
-  browserClick: 'browser_snapshot의 ref로 요소를 실제 마우스 입력으로 누른다. 읽은 뒤 숨겨졌거나 비활성이 됐거나 다른 요소가 덮고 있으면 거절되고 이유를 돌려준다. 누른 뒤의 새 읽기를 돌려준다.',
+  browserClick:
+    'browser_snapshot의 ref로 요소를 실제 마우스 입력으로 누른다. 읽은 뒤 숨겨졌거나 비활성이 됐거나 다른 요소가 덮고 있으면 거절되고 이유를 돌려준다. ' +
+    '파일 선택 창은 열지 않고, 페이지가 파일을 요청했으면 그렇다고 알려 준다. 누른 뒤의 새 읽기를 돌려준다.',
   browserRef: 'browser_snapshot이 준 ref (예: 3:12)',
   browserType:
     'ref의 입력칸에 글을 넣는다(있던 내용은 바뀐다). 선택 상자는 고를 항목의 이름을 넣으면 그 항목이 선택된다. 날짜, 시간, 색, 슬라이더 칸은 그 칸의 형식(2026-03-05, 14:30, #ff0000, 7)으로 넣는다. ' +
@@ -204,7 +206,9 @@ const EN: typeof KO = {
     'Reads the local page shown in the Switchboard in-app browser: address, title, the elements that can be pressed or typed into ([ref] role "name"), and the visible text. ' +
     'A field shows the value it holds, a select its choice and the options it can take, a checkbox whether it is checked. ' +
     'Use it to check a screen or verify a fix. A ref holds only for this reading. The browser tab comes to the front, so the person can watch. Local dev servers only.',
-  browserClick: 'Presses an element by its browser_snapshot ref, with real mouse input. Refused, with the reason, when it has become hidden or disabled since the reading or another element covers it. Returns a fresh reading.',
+  browserClick:
+    'Presses an element by its browser_snapshot ref, with real mouse input. Refused, with the reason, when it has become hidden or disabled since the reading or another element covers it. ' +
+    'It opens no file dialog, and says so when the page asked for a file. Returns a fresh reading.',
   browserRef: 'A ref from browser_snapshot (e.g. 3:12)',
   browserType:
     'Puts text into the field of a ref (what was there is replaced). For a select, the text is the name of the option to choose. A date, time, color or slider field takes its value in its own form (2026-03-05, 14:30, #ff0000, 7). ' +

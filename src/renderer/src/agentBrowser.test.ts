@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { fillScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotText } from './agentBrowser'
+import { fileAskedScript, fillScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotText } from './agentBrowser'
 
 test('only pages on this computer can be driven, the private network too when the person allows it', () => {
   const here = ['http://localhost:5173/', 'http://127.0.0.1:8951/x', 'https://app.localhost/', 'http://[::1]:4000', 'http://127.1.2.3']
@@ -74,11 +74,11 @@ type Fake = {
   // What the field makes of a value set on it (a date field drops what is no date).
   keeps?: (value: string) => string
 }
-type Page = { events: string[]; selected: number; el: { value: string; options?: Option[] } }
+type Page = { window: { __sbFiles?: unknown }; clicks: ((event: unknown) => void)[]; events: string[]; selected: number; el: { value: string; options?: Option[] } }
 function page(fake: Fake): Page & { run: (script: string) => { x?: number; y?: number; error?: string; by?: string; ok?: boolean; done?: boolean; type?: string; format?: string; options?: string[] } } {
   const rect = fake.rect ?? { left: 100, top: 200, width: 80, height: 30 }
   let value = fake.value ?? ''
-  const state: Page = { events: [], selected: 0, el: undefined as never }
+  const state: Page = { window: {}, clicks: [], events: [], selected: 0, el: undefined as never }
   const el = {
     tagName: fake.tag ?? 'BUTTON',
     type: fake.type ?? '',
@@ -108,6 +108,9 @@ function page(fake: Fake): Page & { run: (script: string) => { x?: number; y?: n
     elementFromPoint: () => (fake.top === 'other' ? banner : fake.top === 'none' ? null : el),
   }
   const getComputedStyle = () => ({ visibility: fake.visibility ?? 'visible' })
+  const addEventListener = (name: string, listener: (event: unknown) => void) => {
+    if (name === 'click') state.clicks.push(listener)
+  }
   class Event {
     type: string
     constructor(type: string) {
@@ -115,7 +118,7 @@ function page(fake: Fake): Page & { run: (script: string) => { x?: number; y?: n
     }
   }
   const run = (script: string) =>
-    new Function('document', 'getComputedStyle', 'innerWidth', 'innerHeight', 'Event', `return ${script}`)(document, getComputedStyle, 1280, 800, Event)
+    new Function('document', 'getComputedStyle', 'innerWidth', 'innerHeight', 'window', 'addEventListener', 'Event', `return ${script}`)(document, getComputedStyle, 1280, 800, state.window, addEventListener, Event)
   return Object.assign(state, { run })
 }
 const runIn = (script: string, fake: Fake) => page(fake).run(script)
@@ -222,4 +225,45 @@ test('a checkbox and a file field take no text', () => {
   expect(refusal(box.run(fillScript('1:1', 'x')))).toBe('a checkbox takes no text; press it with browser_click')
   expect(box.el.value).toBe('on')
   expect(refusal(runIn(fillScript('1:1', '/etc/passwd'), { tag: 'INPUT', type: 'file' }))).toMatch(/cannot choose a file/)
+})
+
+// A click as the page hears it, on a field of that type.
+const clickOn = (type: string) => {
+  const event = { target: { tagName: 'INPUT', type }, prevented: false, preventDefault: () => void (event.prevented = true) }
+  return event
+}
+
+test('a press that makes the page ask for a file opens no file dialog, and says so', () => {
+  const view = page({})
+  expect(view.run(fileAskedScript())).toBe(false)
+  expect(view.run(pointScript('1:1'))).toEqual({ x: 140, y: 215 })
+  expect(view.clicks.length).toBe(1)
+  // The press reached a file field (itself, or through the page's own script).
+  const file = clickOn('file')
+  view.clicks[0]!(file)
+  expect(file.prevented).toBe(true)
+  // Anything else goes through.
+  const box = clickOn('checkbox')
+  view.clicks[0]!(box)
+  expect(box.prevented).toBe(false)
+  expect(view.run(fileAskedScript())).toBe(true)
+  expect(view.run(fileAskedScript())).toBe(false)
+})
+
+test('the person’s own press on a file field opens the dialog as ever', () => {
+  const view = page({})
+  view.run(pointScript('1:1'))
+  view.run(fileAskedScript())
+  const file = clickOn('file')
+  view.clicks[0]!(file)
+  expect(file.prevented).toBe(false)
+  // The next press listens once more, not twice.
+  view.run(pointScript('1:1'))
+  expect(view.clicks.length).toBe(1)
+  const again = clickOn('file')
+  view.clicks[0]!(again)
+  expect(again.prevented).toBe(true)
+  // A press that asked for no file says nothing.
+  view.run(pointScript('1:1'))
+  expect(view.run(fileAskedScript())).toBe(false)
 })

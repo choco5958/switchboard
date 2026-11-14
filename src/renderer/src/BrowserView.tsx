@@ -18,7 +18,7 @@ import { commentStatusLabel, commentStatusSlug, t, type Key } from '../../shared
 import { composing } from './ime'
 import { Badge, Button, Card, Chip, EmptyState, IconButton, Input, Select, cx } from './ui'
 import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
-import { fillScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
+import { FILE_NOTE, fileAskedScript, fillScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
 import type { PageSurface, SurfaceEvents } from './pageSurface'
 import { PageView } from './PageView'
 
@@ -384,7 +384,9 @@ export function BrowserView({
         const at = { x: point!.x!, y: point!.y! }
         wv.click(at.x, at.y)
         await settle(600)
-        return { text: await snapshot() }
+        const askedFile = (await run(fileAskedScript())) === true
+        const text = await snapshot()
+        return { text: askedFile ? `${FILE_NOTE}\n\n${text}` : text }
       }
       if (action === 'type') {
         const text = String(args.text ?? '')

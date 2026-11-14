@@ -3,13 +3,20 @@
 // reading: a ref from an older reading is refused, so the session never clicks a stale
 // element. Clicks and typing go in as real input events; a click on an element that is now
 // hidden, disabled or out of view, or that something else covers, is refused with why, so the
-// session never reads a click that went nowhere as one that worked. Only pages on this computer can be driven, and
+// session never reads a click that went nowhere as one that worked. A press never opens the
+// system's file dialog (FILE_NOTE). Only pages on this computer can be driven, and
 // pages on the private network too when the person allows it in Settings (BROWSER_LAN_KEY).
 
 export const ELEMENTS_MAX = 200
 export const TEXT_MAX = 12_000
 // How many of a select's options a reading lists.
 export const OPTIONS_MAX = 30
+// How long after a press the page's asks for a file are turned down (ms).
+const FILE_GUARD_MS = 2000
+
+// What the session reads when its press made the page ask for a file.
+export const FILE_NOTE =
+  'The page asked for a file to upload. A session cannot choose files, so no file dialog was opened; ask the person to choose the file in the browser.'
 
 // Settings: true lets sessions drive private network pages (192.168.x.x, 10.x.x.x, name.local)
 // too. Off unless set: a router's or a NAS's admin page lives there, and this browser keeps
@@ -118,7 +125,35 @@ export function pointScript(ref: string): string {
     const what = (top.getAttribute('aria-label') || top.innerText || top.tagName).replace(/\\s+/g, ' ').trim().slice(0, 60);
     return { error: 'covered', by: top.tagName.toLowerCase() + ' "' + what + '"' };
   }
+  // The press may reach a file field, directly or through the page's own script. The system's
+  // file dialog would open over the person's work and hold the whole app until they close it,
+  // so for a moment such an ask is turned down and noted (fileAskedScript).
+  const files = window.__sbFiles || (window.__sbFiles = { until: 0, asked: false });
+  if (!files.bound) {
+    files.bound = true;
+    addEventListener('click', event => {
+      const target = (event.composedPath && event.composedPath()[0]) || event.target;
+      if (Date.now() >= files.until || !target || target.tagName !== 'INPUT' || target.type !== 'file') return;
+      event.preventDefault();
+      files.asked = true;
+    }, true);
+  }
+  files.until = Date.now() + ${FILE_GUARD_MS};
+  files.asked = false;
   return { x, y };
+})()`
+}
+
+// Runs in the page after a press: whether the page asked for a file since pointScript. Asking
+// again is allowed from here on, so the person's own presses open the dialog as ever.
+export function fileAskedScript(): string {
+  return `(() => {
+  const files = window.__sbFiles;
+  if (!files) return false;
+  const asked = files.asked === true;
+  files.until = 0;
+  files.asked = false;
+  return asked;
 })()`
 }
 
