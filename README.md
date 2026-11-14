@@ -106,6 +106,7 @@ Jump to any session, task or decision question. Gather projects into groups and 
 #### Fix what you see
 - Register a dev server, start it and open it in the in-app browser. Local addresses a CLI opens in an app terminal open there too.
 - Sessions read, click and type in local pages with the `browser_*` tools. By default they reach only this computer's addresses; allow private network addresses in Settings > Permissions and access.
+- Sessions choose a select's option by its name and set date, time, color and slider fields. A reading of the page shows each field's value, a select's choice and options, and whether a checkbox is checked. The value of a password field is never read.
 - The page takes the full width; open comments and dev servers on the right with `Comments` and `Dev servers` in the toolbar. Turning on comment mode or leaving a comment opens the comments by itself.
 
 #### Terminals

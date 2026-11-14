@@ -8,6 +8,8 @@
 
 export const ELEMENTS_MAX = 200
 export const TEXT_MAX = 12_000
+// How many of a select's options a reading lists.
+export const OPTIONS_MAX = 30
 
 // Settings: true lets sessions drive private network pages (192.168.x.x, 10.x.x.x, name.local)
 // too. Off unless set: a router's or a NAS's admin page lives there, and this browser keeps
@@ -41,7 +43,9 @@ export function isLocalUrl(raw: string, lan = false): boolean {
 export type Snapshot = {
   url: string
   title: string
-  elements: { ref: string; role: string; name: string }[]
+  // What a form control holds is not in the page's text: a field's value, a select's choice and
+  // the options it can take, whether a checkbox or radio is checked.
+  elements: { ref: string; role: string; name: string; value?: string; options?: string[]; checked?: boolean }[]
   text: string
   truncated: boolean
 }
@@ -50,7 +54,7 @@ export type Snapshot = {
 // and returns them with the page's visible text.
 export function snapshotScript(rev: number): string {
   return `(() => {
-  const REV = ${rev}, MAX = ${ELEMENTS_MAX}, TEXT = ${TEXT_MAX};
+  const REV = ${rev}, MAX = ${ELEMENTS_MAX}, TEXT = ${TEXT_MAX}, OPTIONS = ${OPTIONS_MAX};
   for (const old of document.querySelectorAll('[data-sb-ref]')) old.removeAttribute('data-sb-ref');
   const shown = el => {
     const r = el.getBoundingClientRect();
@@ -62,7 +66,12 @@ export function snapshotScript(rev: number): string {
     || (el.tagName === 'INPUT' ? ({ checkbox: 'checkbox', radio: 'radio', submit: 'button', button: 'button', range: 'slider' })[el.type] || 'textbox' : el.isContentEditable ? 'textbox' : 'clickable');
   // Attributes last: the script runs in a world of its own, where properties a page's own
   // elements define (a web component's value) are not seen, but their attributes are.
-  const nameOf = el => (el.getAttribute('aria-label') || el.labels?.[0]?.innerText || el.innerText || el.value || el.placeholder || el.title || el.alt || el.name || el.getAttribute('label') || el.getAttribute('value') || el.getAttribute('placeholder') || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+  // A select's own text is every option it holds, and a password field's value is not for reading.
+  const held = el => el.tagName === 'SELECT' ? '' : el.innerText || (el.type === 'password' ? '' : el.value);
+  const nameOf = el => (el.getAttribute('aria-label') || el.labels?.[0]?.innerText || held(el) || el.placeholder || el.title || el.alt || el.name || el.getAttribute('label') || (el.type === 'password' ? '' : el.getAttribute('value')) || el.getAttribute('placeholder') || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+  const label = o => (o.label || o.text || '').replace(/\\s+/g, ' ').trim().slice(0, 60);
+  // Inputs whose value is not what the field holds for reading: a secret, a button's caption, a file's path.
+  const UNREAD = ['password', 'submit', 'button', 'reset', 'image', 'file'];
   const query = 'a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=link], [role=checkbox], [role=tab], [role=menuitem], [contenteditable=""], [contenteditable=true], [onclick], [tabindex]:not([tabindex="-1"])';
   const elements = [];
   for (const el of document.querySelectorAll(query)) {
@@ -70,7 +79,19 @@ export function snapshotScript(rev: number): string {
     if (!shown(el) || el.disabled) continue;
     const ref = REV + ':' + (elements.length + 1);
     el.setAttribute('data-sb-ref', ref);
-    elements.push({ ref, role: roleOf(el), name: nameOf(el) });
+    const one = { ref, role: roleOf(el), name: nameOf(el) };
+    if (el.tagName === 'SELECT') {
+      const options = [...el.options].filter(o => !o.disabled);
+      one.value = [...el.selectedOptions].map(label).join(', ');
+      one.options = options.slice(0, OPTIONS).map(label);
+      if (options.length > OPTIONS) one.options.push('…');
+    } else if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) one.checked = el.checked === true;
+    else if (el.getAttribute('aria-checked')) one.checked = el.getAttribute('aria-checked') === 'true';
+    else if ((el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && !UNREAD.includes(el.type)) {
+      const value = String(el.value || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+      if (value && value !== one.name) one.value = value;
+    }
+    elements.push(one);
   }
   const all = (document.body?.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim();
   return { url: location.href, title: document.title, elements, text: all.slice(0, TEXT), truncated: all.length > TEXT || elements.length >= MAX };
@@ -101,16 +122,62 @@ export function pointScript(ref: string): string {
 })()`
 }
 
-// Runs in the page: focus the element of a ref and select what it holds, so typing replaces it.
-// A disabled or read-only field takes no typing, so that is refused rather than reported done.
-export function focusScript(ref: string): string {
+// Fields that take no typed text: their value is set whole, in the form the field keeps it.
+const SET_FORMATS: Record<string, string> = {
+  date: 'YYYY-MM-DD',
+  time: 'HH:MM',
+  'datetime-local': 'YYYY-MM-DDTHH:MM',
+  month: 'YYYY-MM',
+  week: 'YYYY-Www',
+  color: '#rrggbb',
+  range: 'a number within its range',
+}
+// Inputs that hold no text at all.
+const NO_TEXT = ['checkbox', 'radio', 'file', 'button', 'submit', 'reset', 'image']
+
+// Runs in the page: puts the text into the element of a ref where typing cannot, or readies it for
+// typing. A select takes the option of that name (or value); a date, time, color or slider field
+// takes its value whole. Both answer { done: true } and tell the page as a person's change would.
+// Typed into, a select lost its choice and a date field its date, and the session read that as
+// done. Any other field is focused with what it holds selected ({ ok: true }), so typing replaces
+// it. A disabled or read-only field takes no typing, so that is refused rather than reported done.
+export function fillScript(ref: string, text: string): string {
   return `(() => {
   const el = document.querySelector('[data-sb-ref="' + ${JSON.stringify(ref)} + '"]');
   if (!el) return { error: 'stale' };
   if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return { error: 'disabled' };
   if (el.readOnly === true || el.getAttribute('aria-readonly') === 'true') return { error: 'readonly' };
+  const text = ${JSON.stringify(text)}, FORMATS = ${JSON.stringify(SET_FORMATS)}, NO_TEXT = ${JSON.stringify(NO_TEXT)};
+  const type = el.tagName === 'INPUT' ? el.type : '';
+  if (NO_TEXT.includes(type)) return { error: 'notext', type };
   el.scrollIntoView({ block: 'center' });
   el.focus();
+  const changed = () => {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return { done: true };
+  };
+  if (el.tagName === 'SELECT') {
+    const tidy = value => String(value || '').replace(/\\s+/g, ' ').trim();
+    const label = o => tidy(o.label || o.text);
+    const want = tidy(text), options = [...el.options].filter(o => !o.disabled);
+    // By its name, its value, its name in another case, or its name as a reading cut it short.
+    const option = options.find(o => label(o) === want) || options.find(o => o.value === text || o.value === want)
+      || options.find(o => label(o).toLowerCase() === want.toLowerCase()) || options.find(o => want !== '' && label(o).slice(0, 60).trim() === want);
+    if (!option) return { error: 'option', options: options.slice(0, ${OPTIONS_MAX}).map(label) };
+    option.selected = true;
+    return changed();
+  }
+  if (FORMATS[type]) {
+    const before = el.value, want = text.trim();
+    el.value = want;
+    // A value the field cannot hold is dropped or bent by the browser (an unknown date, a number past the slider's end).
+    if (type === 'range' ? want === '' || Number(el.value) !== Number(want) : el.value.toLowerCase() !== want.toLowerCase()) {
+      el.value = before;
+      return { error: 'value', type, format: FORMATS[type] };
+    }
+    return changed();
+  }
   if (typeof el.select === 'function') el.select();
   else if (el.isContentEditable) document.execCommand('selectAll');
   return { ok: true };
@@ -118,15 +185,25 @@ export function focusScript(ref: string): string {
 }
 
 // Why a press or typing on a ref was refused, for the session. Null when it can go ahead.
-export function refusal(result: { error?: string; by?: string } | undefined): string | null {
+export function refusal(result: { error?: string; by?: string; type?: string; format?: string; options?: string[] } | undefined): string | null {
   if (!result || result.error === 'stale') return 'that element is gone; call browser_snapshot again'
   if (!result.error) return null
   if (result.error === 'covered') return `the element is covered by ${result.by}`
+  if (result.error === 'option') return `the select has no such option; its options are: ${(result.options ?? []).map(o => `"${o}"`).join(', ')}`
+  if (result.error === 'value') return `a ${result.type} field takes ${result.format}`
+  if (result.error === 'notext') return result.type === 'file' ? 'a session cannot choose a file; ask the person to choose it in the browser' : `a ${result.type} takes no text; press it with browser_click`
   if (result.error === 'disabled') return 'the element is disabled now; call browser_snapshot again'
   if (result.error === 'readonly') return 'the field is read-only'
   if (result.error === 'hidden') return 'the element is hidden now; call browser_snapshot again'
   if (result.error === 'outside') return 'the element cannot be scrolled into view'
   return result.error
+}
+
+// What a form control holds, after its name: = "value", a select's options, (checked).
+function elementState(e: Snapshot['elements'][number]): string {
+  if (e.options) return ` = "${e.value ?? ''}" (options: ${e.options.map(o => (o === '…' ? o : `"${o}"`)).join(', ')})`
+  if (e.checked !== undefined) return e.checked ? ' (checked)' : ' (not checked)'
+  return e.value ? ` = "${e.value}"` : ''
 }
 
 // What the session reads: the address, the title, one line per element, then the text.
@@ -136,7 +213,7 @@ export function snapshotText(s: Snapshot): string {
     `Title: ${s.title}`,
     '',
     'Elements (ref role "name"):',
-    ...s.elements.map(e => `[${e.ref}] ${e.role}${e.name ? ` "${e.name}"` : ''}`),
+    ...s.elements.map(e => `[${e.ref}] ${e.role}${e.name ? ` "${e.name}"` : ''}${elementState(e)}`),
     '',
     'Text:',
     s.text,

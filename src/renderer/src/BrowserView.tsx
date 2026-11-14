@@ -18,7 +18,7 @@ import { commentStatusLabel, commentStatusSlug, t, type Key } from '../../shared
 import { composing } from './ime'
 import { Badge, Button, Card, Chip, EmptyState, IconButton, Input, Select, cx } from './ui'
 import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
-import { focusScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
+import { fillScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
 import type { PageSurface, SurfaceEvents } from './pageSurface'
 import { PageView } from './PageView'
 
@@ -387,9 +387,12 @@ export function BrowserView({
         return { text: await snapshot() }
       }
       if (action === 'type') {
-        const refused = refusal((await run(focusScript(element(args.ref)))) as { error?: string } | undefined)
+        const text = String(args.text ?? '')
+        const filled = (await run(fillScript(element(args.ref), text))) as { error?: string; done?: boolean } | undefined
+        const refused = refusal(filled)
         if (refused) throw new Error(refused)
-        await wv.insertText(String(args.text ?? ''))
+        // A select, a date, a slider: the script set it; typing would undo that.
+        if (!filled?.done) await wv.insertText(text)
         if (args.submit === true) wv.pressEnter()
         await settle(500)
         return { text: await snapshot() }
