@@ -136,10 +136,11 @@ export function pageScript(scratch: string, page: string): string {
     return 'echoed'
   })
   await step('browser', async () => {
-    await invoke('browser_place', { url: ${JSON.stringify(page)}, x: 0, y: 0, width: 800, height: 600, visible: true })
-    // The app's browser screen may have made the page already, on a blank one (it was open when the
-    // app last ran on this computer): placing only moves that page, so it is sent to the address.
-    if ((await invoke('browser_run', { code: 'location.href' }).catch(() => '')) === 'about:blank') await invoke('browser_load', { url: ${JSON.stringify(page)} })
+    // As the app's browser screen does (PageView.tsx): the page is made on a blank one, then sent to
+    // the address once. Placing only moves a page that is there already (the browser was open when
+    // the app last ran on this computer), so an address given to it would not be opened.
+    await invoke('browser_place', { url: 'about:blank', x: 0, y: 0, width: 800, height: 600, visible: true })
+    await invoke('browser_load', { url: ${JSON.stringify(page)} })
     const title = await until(() => invoke('browser_run', { code: 'document.readyState === "complete" && document.title' }))
     // The app's own world keeps what it sets between scripts, and the page does not see it.
     await invoke('browser_run', { code: 'window.__smoke = 7; 1' })
