@@ -196,6 +196,7 @@ export const ja: Dict = {
   'top.ccrToken': '1年',
   'top.fiveHour': '5時間',
   'top.week': '週間',
+  'top.spend': '利用上限',
   'top.context': 'コンテキスト',
   'top.cost': 'セッション累計 {cost}',
   'top.report': '進捗報告',

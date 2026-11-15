@@ -196,6 +196,7 @@ export const zhCN: Dict = {
   'top.ccrToken': '1年',
   'top.fiveHour': '5小时',
   'top.week': '本周',
+  'top.spend': '支出上限',
   'top.context': '上下文',
   'top.cost': '会话累计 {cost}',
   'top.report': '进度汇报',

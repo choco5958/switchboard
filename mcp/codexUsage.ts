@@ -15,7 +15,9 @@ const object = (value: unknown): Json => (value !== null && typeof value === 'ob
 const KINDS: Record<number, string> = { 300: 'five_hour', 10080: 'seven_day' }
 
 // The app-server's rate limits (the reply's result, or an account/rateLimits/updated params) as the
-// bridge keeps them. Windows of other lengths are left out.
+// bridge keeps them. Windows of other lengths are left out. A seat with a spending cap of its own
+// (a workspace member's) reports how much of it is left: kept as the window "spend". Some seats
+// have that cap alone, no five-hour or weekly window, and reported nothing at all.
 export function rateLimitsOf(value: unknown): RateLimit[] {
   const limits = object(object(value).rateLimits)
   const out: RateLimit[] = []
@@ -26,6 +28,12 @@ export function rateLimitsOf(value: unknown): RateLimit[] {
     if (!kind || !Number.isFinite(percent) || out.some(l => l.kind === kind)) continue
     const resets = Number(w.resetsAt)
     out.push({ kind, percentUsed: percent, ...(Number.isFinite(resets) && resets > 0 ? { resetsAt: new Date(resets * 1000).toISOString() } : {}) })
+  }
+  const cap = object(limits.individualLimit)
+  if (typeof cap.remainingPercent === 'number' && Number.isFinite(cap.remainingPercent)) {
+    const percent = limits.spendControlReached === true ? 100 : Math.min(100, Math.max(0, 100 - cap.remainingPercent))
+    const resets = Number(cap.resetsAt)
+    out.push({ kind: 'spend', percentUsed: percent, ...(Number.isFinite(resets) && resets > 0 ? { resetsAt: new Date(resets * 1000).toISOString() } : {}) })
   }
   return out
 }

@@ -195,6 +195,7 @@ export const ko = {
   'top.ccrToken': '1년',
   'top.fiveHour': '5시간',
   'top.week': '주간',
+  'top.spend': '지출 한도',
   'top.context': '컨텍스트',
   'top.cost': '세션 누적 {cost}',
   'top.report': '진행 보고',

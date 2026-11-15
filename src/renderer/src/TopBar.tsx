@@ -280,11 +280,14 @@ export function StatusFooter({
           {others.map(({ agent, usage: theirs }) => {
             const theirFive = theirs.rateLimits?.find(r => r.kind === 'five_hour')
             const theirWeek = theirs.rateLimits?.find(r => r.kind === 'seven_day')
+            // A Codex seat's own spending cap (mcp/codexUsage.ts), the only window some seats have.
+            const theirSpend = theirs.rateLimits?.find(r => r.kind === 'spend')
             return (
               <div key={agent} className="agent-usage">
                 <span className="quiet small">{agentLabel(agent)}</span>
                 {theirFive && <Meter label={t('top.fiveHour')} percent={theirFive.percentUsed} reset={resetText(theirFive.resetsAt)} />}
                 {theirWeek && <Meter label={t('top.week')} percent={theirWeek.percentUsed} reset={resetText(theirWeek.resetsAt)} />}
+                {theirSpend && <Meter label={t('top.spend')} percent={Math.round(theirSpend.percentUsed)} reset={resetText(theirSpend.resetsAt)} />}
                 {theirs.contextPercent !== undefined && <Meter label={t('top.context')} percent={theirs.contextPercent} />}
               </div>
             )

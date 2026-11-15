@@ -196,6 +196,7 @@ export const en: Dict = {
   'top.ccrToken': '1y',
   'top.fiveHour': '5h',
   'top.week': 'Week',
+  'top.spend': 'Spend limit',
   'top.context': 'Context',
   'top.cost': 'Session total {cost}',
   'top.report': 'Report',
