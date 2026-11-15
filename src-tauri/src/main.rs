@@ -23,6 +23,39 @@ use tauri::{AppHandle, Emitter, EventTarget, Manager, RunEvent, State, WindowEve
 mod browser;
 mod os;
 
+// A plugin without the script it puts into every page. The dialog plugin's replaces alert() and
+// confirm() with calls to itself, in the in-app browser's page too, where they are refused: a
+// page's alert showed nothing, and its confirm answered with a promise, which reads as yes, so
+// "Delete?" went ahead unasked. The app asks the plugin from here only (os.rs), never from a page.
+struct NoPageScript<P>(P);
+
+impl<R: tauri::Runtime, P: tauri::plugin::Plugin<R>> tauri::plugin::Plugin<R> for NoPageScript<P> {
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
+    fn initialize(&mut self, app: &AppHandle<R>, config: Value) -> Result<(), Box<dyn std::error::Error>> {
+        self.0.initialize(app, config)
+    }
+    fn window_created(&mut self, window: tauri::Window<R>) {
+        self.0.window_created(window)
+    }
+    fn webview_created(&mut self, webview: tauri::Webview<R>) {
+        self.0.webview_created(webview)
+    }
+    fn on_navigation(&mut self, webview: &tauri::Webview<R>, url: &tauri::Url) -> bool {
+        self.0.on_navigation(webview, url)
+    }
+    fn on_page_load(&mut self, webview: &tauri::Webview<R>, payload: &tauri::webview::PageLoadPayload<'_>) {
+        self.0.on_page_load(webview, payload)
+    }
+    fn on_event(&mut self, app: &AppHandle<R>, event: &RunEvent) {
+        self.0.on_event(app, event)
+    }
+    fn extend_api(&mut self, invoke: tauri::ipc::Invoke<R>) -> bool {
+        self.0.extend_api(invoke)
+    }
+}
+
 // The host's id of a page call, and the page's own id for it (its answer goes back under that).
 type Pending = Arc<Mutex<HashMap<u64, String>>>;
 
@@ -352,7 +385,7 @@ fn main() {
     let app = tauri::Builder::default()
         // A second start brings the running window forward and ends (first, before the rest).
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(NoPageScript(tauri_plugin_dialog::init()))
         .invoke_handler(tauri::generate_handler![
             ide_invoke,
             ide_send,

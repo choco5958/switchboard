@@ -36,8 +36,14 @@ export type PageSurface = {
   click(x: number, y: number): void
   insertText(text: string): Promise<void>
   pressEnter(): void
+  // For `ms` from now the page's alert(), confirm() and prompt() open no dialog and are answered
+  // at once (accepted when `accept`); 0 ends it. Resolves with what the page asked since the last
+  // call. Only the Tauri shell has it: Electron's <webview> shows its dialogs as ever.
+  dialogs?(ms: number, accept: boolean): Promise<PageDialog[]>
   on(handlers: Partial<SurfaceEvents>): () => void
 }
+
+export type PageDialog = { kind: 'alert' | 'confirm' | 'prompt'; message: string }
 
 // Electron's <webview>: scripts run through the main process in the browser's own world
 // (index.ts browser:run), failed requests come from its session (index.ts watchBrowserRequests).

@@ -281,6 +281,7 @@ export const ko = {
   'settings.devMenu': '개발자 메뉴 보기',
   'settings.devMenuHint': '왼쪽 아이콘 줄에 부품 갤러리를 보여 줍니다.',
   'common.cancel': '취소',
+  'common.ok': '확인',
   'routines.title': '예약 프롬프트',
   'routines.hint': '정한 시각에 이 프로젝트의 세션에 프롬프트를 넣습니다.',
   'routines.hintMore': '프롬프트를 받을 에이전트는 예약마다 고릅니다. 그 에이전트의 세션이 없으면 앱이 터미널을 엽니다. 이전 실행이 끝나지 않았으면 이번 실행은 건너뛰고, 알릴 것이 없는 실행은 알림을 보내지 않습니다.',

@@ -99,6 +99,9 @@ const KO = {
   browserClick:
     'browser_snapshot의 ref로 요소를 실제 마우스 입력으로 누른다. 읽은 뒤 숨겨졌거나 비활성이 됐거나 다른 요소가 덮고 있으면 거절되고 이유를 돌려준다. ' +
     '파일 선택 창은 열지 않고, 페이지가 파일을 요청했으면 그렇다고 알려 준다. 누른 뒤의 새 읽기를 돌려준다.',
+  browserDialog:
+    '누르거나 입력한 것 때문에 페이지가 alert, confirm, prompt를 띄울 때의 답. 대화 상자는 열리지 않고, 페이지가 무엇을 물었는지 결과에 나온다. ' +
+    '기본은 dismiss(confirm은 취소, prompt는 취소)이고, accept면 confirm에 확인으로, prompt에 페이지가 제안한 글로 답한다.',
   browserRef: 'browser_snapshot이 준 ref (예: 3:12)',
   browserType:
     'ref의 입력칸에 글을 넣는다(있던 내용은 바뀐다). 선택 상자는 고를 항목의 이름을 넣으면 그 항목이 선택된다. 날짜, 시간, 색, 슬라이더 칸은 그 칸의 형식(2026-03-05, 14:30, #ff0000, 7)으로 넣는다. ' +
@@ -209,6 +212,9 @@ const EN: typeof KO = {
   browserClick:
     'Presses an element by its browser_snapshot ref, with real mouse input. Refused, with the reason, when it has become hidden or disabled since the reading or another element covers it. ' +
     'It opens no file dialog, and says so when the page asked for a file. Returns a fresh reading.',
+  browserDialog:
+    'The answer when the press or the typing makes the page call alert, confirm or prompt. No dialog opens, and the result says what the page asked. ' +
+    'dismiss by default (a confirm gets Cancel, a prompt is cancelled); with accept a confirm gets OK and a prompt the text the page suggests.',
   browserRef: 'A ref from browser_snapshot (e.g. 3:12)',
   browserType:
     'Puts text into the field of a ref (what was there is replaced). For a select, the text is the name of the option to choose. A date, time, color or slider field takes its value in its own form (2026-03-05, 14:30, #ff0000, 7). ' +
@@ -384,7 +390,11 @@ export function toolDefs(lang: Lang): ToolDef[] {
     {
       name: 'browser_click',
       description: d.browserClick,
-      inputSchema: { type: 'object', properties: { ref: { type: 'string', description: d.browserRef } }, required: ['ref'] },
+      inputSchema: {
+        type: 'object',
+        properties: { ref: { type: 'string', description: d.browserRef }, dialog: { type: 'string', enum: ['dismiss', 'accept'], description: d.browserDialog } },
+        required: ['ref'],
+      },
     },
     {
       name: 'browser_type',
@@ -395,6 +405,7 @@ export function toolDefs(lang: Lang): ToolDef[] {
           ref: { type: 'string', description: d.browserRef },
           text: { type: 'string', description: d.browserText },
           submit: { type: 'boolean', description: d.browserSubmit },
+          dialog: { type: 'string', enum: ['dismiss', 'accept'], description: d.browserDialog },
         },
         required: ['ref', 'text'],
       },

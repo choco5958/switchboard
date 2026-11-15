@@ -6,7 +6,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { netEntry } from '../../shared/pageLog'
-import type { PageSurface, SurfaceEvents } from './pageSurface'
+import type { PageDialog, PageSurface, SurfaceEvents } from './pageSurface'
 
 type ShellEvent = {
   kind: 'startNavigation' | 'startLoading' | 'loaded' | 'navigate' | 'title' | 'console' | 'net'
@@ -115,6 +115,11 @@ export function tauriSurface(initialUrl: string): PageSurface {
         field.dispatchEvent(new KeyboardEvent('keyup', key))
         if (go && field.form) field.form.requestSubmit ? field.form.requestSubmit() : field.form.submit()
       })()`),
+    // In the page's own world, where browser_page.js stands in for its dialogs.
+    dialogs: async (ms, accept) => {
+      const asked = await invoke<PageDialog[] | null>('browser_run', { code: `window.__sbQuiet ? window.__sbQuiet(${js(ms)}, ${js(accept)}) : []`, page: true })
+      return Array.isArray(asked) ? asked : []
+    },
     on: one => {
       handlers.add(one)
       return () => void handlers.delete(one)

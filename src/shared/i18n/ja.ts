@@ -282,6 +282,7 @@ export const ja: Dict = {
   'settings.devMenu': '開発者メニューを表示',
   'settings.devMenuHint': '左のアイコン列に部品ギャラリーを表示します。',
   'common.cancel': 'キャンセル',
+  'common.ok': 'OK',
   'routines.title': '予約プロンプト',
   'routines.hint': '決めた時刻に、このプロジェクトのセッションへプロンプトを入れます。',
   'routines.hintMore': '受け取るエージェントは予約ごとに選びます。そのエージェントのセッションがなければ、アプリがターミナルを開きます。前回の実行が終わっていなければ今回はスキップし、知らせることのない実行は通知しません。',

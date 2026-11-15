@@ -74,6 +74,30 @@
     })
     return send.apply(this, arguments)
   }
+  // The page's alert(), confirm() and prompt() while a session presses or types in it
+  // (src/renderer/src/agentBrowser.ts): the dialog would open over the person's work and hold the
+  // page until they answer it. For that moment no dialog opens: the page gets the answer the
+  // session chose (dismissed, unless it said to accept), and what it asked is kept for the session.
+  let quietUntil = 0
+  let accepting = false
+  const asked = []
+  for (const kind of ['alert', 'confirm', 'prompt']) {
+    const original = window[kind]
+    if (typeof original !== 'function') continue
+    window[kind] = function (message, text) {
+      if (Date.now() >= quietUntil) return original.apply(window, arguments)
+      if (asked.length < 20) asked.push({ kind, message: String(message === undefined ? '' : message).slice(0, 300) })
+      if (kind === 'confirm') return accepting
+      if (kind === 'prompt') return accepting ? String(text === undefined ? '' : text) : null
+    }
+  }
+  // For `ms` from now the page's dialogs are answered here, accepted when `accept`; 0 ends it.
+  // Answers with what the page asked since the last call.
+  window.__sbQuiet = (ms, accept) => {
+    quietUntil = ms > 0 ? Date.now() + ms : 0
+    accepting = accept === true
+    return asked.splice(0)
+  }
   let lastUrl = location.href
   let lastTitle = ''
   window.__sbDrain = () => {

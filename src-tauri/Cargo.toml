@@ -29,8 +29,8 @@ dunce = "1"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 block2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSValue", "NSProcessInfo", "NSUserNotification", "NSArray"] }
-objc2-app-kit = { version = "0.3", features = ["NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics", "NSView", "NSResponder"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSValue", "NSProcessInfo", "NSUserNotification", "NSArray", "NSURL"] }
+objc2-app-kit = { version = "0.3", features = ["NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics", "NSView", "NSResponder", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSTextField", "NSWindow", "block2"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKContentWorld", "WKFrameInfo", "WKSnapshotConfiguration", "WKNavigation", "block2", "objc2-app-kit", "objc2-core-foundation"] }
 objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
 

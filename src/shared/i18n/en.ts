@@ -282,6 +282,7 @@ export const en: Dict = {
   'settings.devMenu': 'Show developer menu',
   'settings.devMenuHint': 'Adds the component gallery to the left icon bar.',
   'common.cancel': 'Cancel',
+  'common.ok': 'OK',
   'routines.title': 'Scheduled prompts',
   'routines.hint': 'At the set time, puts the prompt into a session of the project.',
   'routines.hintMore': 'Each routine picks the agent that gets it. With no session of that agent, the app opens its terminal. A run is skipped while the previous one has not finished, and a run with nothing to report sends no notification.',

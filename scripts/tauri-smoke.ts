@@ -137,6 +137,9 @@ export function pageScript(scratch: string, page: string): string {
   })
   await step('browser', async () => {
     await invoke('browser_place', { url: ${JSON.stringify(page)}, x: 0, y: 0, width: 800, height: 600, visible: true })
+    // The app's browser screen may have made the page already, on a blank one (it was open when the
+    // app last ran on this computer): placing only moves that page, so it is sent to the address.
+    if ((await invoke('browser_run', { code: 'location.href' }).catch(() => '')) === 'about:blank') await invoke('browser_load', { url: ${JSON.stringify(page)} })
     const title = await until(() => invoke('browser_run', { code: 'document.readyState === "complete" && document.title' }))
     // The app's own world keeps what it sets between scripts, and the page does not see it.
     await invoke('browser_run', { code: 'window.__smoke = 7; 1' })
@@ -147,6 +150,23 @@ export function pageScript(scratch: string, page: string): string {
       throw new Error(JSON.stringify({ title, kept, promised, shot: shot && shot.slice(0, 40) }))
     }
     return 'title, world, promise and a ' + shot.length + '-character snapshot'
+  })
+  await step('dialogs', async () => {
+    // The app's own page keeps the system's alert() and confirm(): no plugin stands in for them
+    // (in a page of the browser that stand-in answered every confirm with a promise, read as yes).
+    const own = ['alert', 'confirm'].every(name => Function.prototype.toString.call(window[name]).includes('[native code]'))
+    // While a session presses, the page's confirm() opens nothing and gets the session's answer.
+    const pressed = async accept => {
+      await invoke('browser_run', { code: 'window.__sbQuiet(5000, ' + accept + ')', page: true })
+      await invoke('browser_run', { code: 'document.getElementById("ask").click(); 1' })
+      const asked = await invoke('browser_run', { code: 'window.__sbQuiet(0)', page: true })
+      return { said: await invoke('browser_run', { code: 'document.getElementById("ask").dataset.said' }), asked }
+    }
+    const got = { own, no: await pressed(false), yes: await pressed(true) }
+    const asked = [{ kind: 'confirm', message: 'Sure?' }]
+    const want = { own: true, no: { said: 'boolean false', asked }, yes: { said: 'boolean true', asked } }
+    if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error(JSON.stringify(got))
+    return 'a confirm answered for a session without a dialog'
   })
   report('done')
 })()`
@@ -203,7 +223,7 @@ async function main(): Promise<number> {
   const { work, home, scratch, env } = testHome('sb-smoke-')
   const site = createServer((_req, res) => {
     res.setHeader('content-type', 'text/html')
-    res.end('<!doctype html><title>Smoke page</title><h1 id="t">hello</h1><script>console.log("smoke console")</script>')
+    res.end('<!doctype html><title>Smoke page</title><h1 id="t">hello</h1><button id="ask" onclick="var said = confirm(\'Sure?\'); this.dataset.said = typeof said + \' \' + said">ask</button><script>console.log("smoke console")</script>')
   })
   await new Promise<void>(r => site.listen(0, '127.0.0.1', r))
   const address = site.address()

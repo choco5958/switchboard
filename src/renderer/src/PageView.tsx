@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { WebviewTag } from 'electron'
 import { invoke } from '@tauri-apps/api/core'
+import { t } from '../../shared/i18n'
 import { webviewSurface, type PageSurface } from './pageSurface'
 import { tauriSurface } from './tauriSurface'
 
@@ -45,10 +46,12 @@ function TauriPage({ src, visible, onSurface }: Props) {
       const r = element.getBoundingClientRect()
       const shown = visible && r.width > 0 && r.height > 0 && !covered(r)
       // The window's height too: full screen drops the title bar the page's place is measured below.
-      const now = `${r.left},${r.top},${r.width},${r.height},${shown},${window.innerHeight}`
+      // The labels: macOS draws the page's alert(), confirm() and prompt() with the app's words.
+      const labels = [t('common.ok'), t('common.cancel')]
+      const now = `${r.left},${r.top},${r.width},${r.height},${shown},${window.innerHeight},${labels}`
       if (now === last) return
       last = now
-      void invoke('browser_place', { url: 'about:blank', x: r.left, y: r.top, width: r.width, height: r.height, visible: shown, viewport: window.innerHeight }).then(() => {
+      void invoke('browser_place', { url: 'about:blank', x: r.left, y: r.top, width: r.width, height: r.height, visible: shown, viewport: window.innerHeight, labels }).then(() => {
         if (started.current) return
         started.current = true
         void surface.load(src)

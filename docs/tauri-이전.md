@@ -93,6 +93,7 @@ cd src-tauri && cargo build --release
 - **App Nap:** 앱 번들로 띄운 Tauri판은 창이 안 보이면 macOS가 재워서 페이지의 타이머가 거의 멈춘다(3초 대기가 2분 넘게 끝나지 않았다). 번들 밖의 실행 파일로 띄우면 생기지 않아서 저장소 모양의 시험에서는 보이지 않았다. Rust 셸이 시작할 때 NSProcessInfo 활동을 걸어 App Nap을 끈다(컴퓨터의 잠자기는 막지 않는다).
 - **페이지가 호스트보다 먼저 뜬다:** Electron판은 앱 논리가 시작된 뒤 창을 만들지만, Tauri판은 창의 페이지가 곧바로 뜬다. 그 사이의 호출은 브리지가 없어 빈 상태를 받았고, 바뀐 것이 생길 때까지 세션 목록이 비어 있었다. 이제 페이지의 호출은 호스트가 ready를 보낼 때까지 기다린다.
 - **undefined 인자:** Electron IPC는 undefined를 그대로 넘기고 처리기는 그것을 null과 구분한다. JSON에는 undefined가 없어서 Tauri 쪽은 표시를 붙여 보내고 호스트가 되살린다(src/shared/ideCalls.ts).
+- **페이지의 alert, confirm, prompt:** 대화 상자 플러그인(tauri-plugin-dialog)은 모든 웹뷰에 `alert`와 `confirm`을 자기 호출로 바꾸는 스크립트를 넣는다. 내장 브라우저의 페이지에서는 그 호출이 거절되어 alert는 아무것도 띄우지 않았고, confirm은 Promise를 돌려줘 늘 참으로 읽혔다. 플러그인을 감싸 그 스크립트를 넣지 않는다(main.rs `NoPageScript`). macOS의 wry는 이 대화 상자를 그리지 않아서(UI delegate에 해당 메서드가 없다) 셸이 delegate를 감싸 앱 창의 시트로 띄운다(browser.rs `PageDialogs`). Windows와 Linux는 시스템 웹뷰가 그린다. 세션이 누르는 동안의 대화 상자는 페이지 스크립트(browser_page.js `__sbQuiet`)가 띄우지 않고 답한다.
 - **시험 실행과 OS 기능:** `CLAUDE_IDE_CAPTURE_JS`가 있으면 키체인, 대화상자, 알림을 건드리지 않는다. 키는 실행마다 새로 만들고(그래서 터미널 호스트 대신 Node 호스트 안에서 터미널이 돈다), 확인 대화상자는 취소로, 폴더 고르기는 고르지 않음으로 답하고, 알림은 로그에만 남긴다.
 - **WebKitGTK의 화면 찍기:** 한 번도 화면에 나오지 않은 창은 그리지 않아서 찍히지 않는다. 숨긴 확인을 가상 화면(Xvfb)에서 할 때는 `CLAUDE_IDE_CAPTURE_SHOW=1`로 창을 띄운다.
 - **Windows의 경로:** Tauri의 resource_dir는 Windows에서 `\\?\C:\...` 모양을 돌려주고, Node는 그 경로의 스크립트를 실행하지 못한다(`EISDIR lstat 'C:'`). 셸이 dunce로 일반 경로로 바꾼 뒤 호스트에 넘긴다.

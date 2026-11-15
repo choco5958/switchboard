@@ -4,8 +4,11 @@
 // element. Clicks and typing go in as real input events; a click on an element that is now
 // hidden, disabled or out of view, or that something else covers, is refused with why, so the
 // session never reads a click that went nowhere as one that worked. A press never opens the
-// system's file dialog (FILE_NOTE). Only pages on this computer can be driven, and
-// pages on the private network too when the person allows it in Settings (BROWSER_LAN_KEY).
+// system's file dialog (FILE_NOTE) or a dialog of the page's (dialogNote). Only pages on this
+// computer can be driven, and pages on the private network too when the person allows it in
+// Settings (BROWSER_LAN_KEY).
+
+import type { PageDialog } from './pageSurface'
 
 export const ELEMENTS_MAX = 200
 export const TEXT_MAX = 12_000
@@ -13,6 +16,29 @@ export const TEXT_MAX = 12_000
 export const OPTIONS_MAX = 30
 // How long after a press the page's asks for a file are turned down (ms).
 const FILE_GUARD_MS = 2000
+
+// How long after a press or typing the page's alert(), confirm() and prompt() open no dialog (ms).
+export const DIALOG_GUARD_MS = 2000
+
+// What the session reads when its press or typing made the page ask with alert(), confirm() or
+// prompt(): what was asked and how it was answered. No dialog opened: it would sit over the
+// person's work and hold the page until they answered. Empty when the page asked nothing.
+export function dialogNote(dialogs: readonly PageDialog[], accept: boolean): string {
+  return dialogs
+    .map(({ kind, message }) => {
+      const said = JSON.stringify(message)
+      if (kind === 'alert') return `The page showed an alert: ${said}`
+      if (kind === 'confirm') {
+        return accept
+          ? `The page asked to confirm: ${said} It was answered OK.`
+          : `The page asked to confirm: ${said} No dialog was opened and it was answered Cancel. To answer OK, do it again with dialog "accept".`
+      }
+      return accept
+        ? `The page asked for text: ${said} It was answered with the text the page suggested.`
+        : `The page asked for text: ${said} No dialog was opened and it was cancelled. With dialog "accept" it gets the text the page suggests; to type another, ask the person.`
+    })
+    .join('\n')
+}
 
 // What the session reads when its press made the page ask for a file.
 export const FILE_NOTE =

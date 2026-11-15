@@ -18,7 +18,7 @@ import { commentStatusLabel, commentStatusSlug, t, type Key } from '../../shared
 import { composing } from './ime'
 import { Badge, Button, Card, Chip, EmptyState, IconButton, Input, Select, cx } from './ui'
 import { consoleEntry, logText, pushEntry, type PageLogEntry } from '../../shared/pageLog'
-import { FILE_NOTE, fileAskedScript, fillScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
+import { DIALOG_GUARD_MS, FILE_NOTE, dialogNote, fileAskedScript, fillScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotScript, snapshotText, type Snapshot } from './agentBrowser'
 import type { PageSurface, SurfaceEvents } from './pageSurface'
 import { PageView } from './PageView'
 
@@ -377,27 +377,33 @@ export function BrowserView({
         if (!path) throw new Error('the screenshot could not be saved')
         return { path, text: path }
       }
+      // While the session presses or types, the page's alert(), confirm() and prompt() open no
+      // dialog and get the answer the session chose; `asked` ends that and tells what they were.
+      const accept = args.dialog === 'accept'
+      const quiet = (ms: number) => wv.dialogs?.(ms, accept).catch(() => []) ?? Promise.resolve([])
+      const asked = async () => dialogNote(await quiet(0), accept)
       if (action === 'click') {
         const point = (await run(pointScript(element(args.ref)))) as { x?: number; y?: number; error?: string; by?: string } | undefined
         const refused = refusal(point)
         if (refused) throw new Error(refused)
         const at = { x: point!.x!, y: point!.y! }
+        await quiet(DIALOG_GUARD_MS)
         wv.click(at.x, at.y)
         await settle(600)
-        const askedFile = (await run(fileAskedScript())) === true
-        const text = await snapshot()
-        return { text: askedFile ? `${FILE_NOTE}\n\n${text}` : text }
+        const notes = [(await run(fileAskedScript())) === true ? FILE_NOTE : '', await asked()]
+        return { text: [...notes, await snapshot()].filter(Boolean).join('\n\n') }
       }
       if (action === 'type') {
         const text = String(args.text ?? '')
         const filled = (await run(fillScript(element(args.ref), text))) as { error?: string; done?: boolean } | undefined
         const refused = refusal(filled)
         if (refused) throw new Error(refused)
+        await quiet(DIALOG_GUARD_MS)
         // A select, a date, a slider: the script set it; typing would undo that.
         if (!filled?.done) await wv.insertText(text)
         if (args.submit === true) wv.pressEnter()
         await settle(500)
-        return { text: await snapshot() }
+        return { text: [await asked(), await snapshot()].filter(Boolean).join('\n\n') }
       }
       throw new Error(`unknown action: ${action}`)
     }

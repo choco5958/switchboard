@@ -57,8 +57,15 @@ fn top_inset(app: &AppHandle, viewport: Option<f64>) -> f64 {
 
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
-pub async fn browser_place(app: AppHandle, webview: Webview, url: String, x: f64, y: f64, width: f64, height: f64, visible: bool, viewport: Option<f64>) -> Result<(), String> {
+pub async fn browser_place(app: AppHandle, webview: Webview, url: String, x: f64, y: f64, width: f64, height: f64, visible: bool, viewport: Option<f64>, labels: Option<[String; 2]>) -> Result<(), String> {
     from_app(&webview)?;
+    // The OK and Cancel of a page's dialogs, in the app's language (macOS draws them itself).
+    #[cfg(target_os = "macos")]
+    if let Some(labels) = labels {
+        *mac::DIALOG_LABELS.lock().unwrap() = Some(labels);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = labels;
     // On macOS the page's parent view spans the whole window, title bar included, while the app's
     // page (and the rectangle it measured) starts below the title bar: the page goes down by the
     // difference. Elsewhere the two are the same and nothing moves.
@@ -114,6 +121,8 @@ pub async fn browser_place(app: AppHandle, webview: Webview, url: String, x: f64
     if !visible {
         let _ = page.hide();
     }
+    #[cfg(target_os = "macos")]
+    let _ = page.with_webview(|platform| unsafe { mac::show_dialogs(&platform) });
     collect(app.clone());
     Ok(())
 }
@@ -177,11 +186,13 @@ pub async fn browser_probe(webview: Webview, url: String) -> Result<Option<Strin
 }
 
 // A script in the app's own world ("switchboard"), answering with its value (a promise is awaited).
+// `page`: in the page's world instead, where browser_page.js keeps what the app asks it for.
 #[tauri::command]
-pub async fn browser_run(app: AppHandle, webview: Webview, code: String) -> Result<Value, String> {
+pub async fn browser_run(app: AppHandle, webview: Webview, code: String, page: Option<bool>) -> Result<Value, String> {
     from_app(&webview)?;
-    let page = page(&app).ok_or("no browser yet")?;
-    run_in(&page, code, World::App).await
+    let world = if page == Some(true) { World::Page } else { World::App };
+    let page = self::page(&app).ok_or("no browser yet")?;
+    run_in(&page, code, world).await
 }
 
 // A PNG data URL of the page, or of a part of it (page coordinates in points).
@@ -220,6 +231,11 @@ async fn run_in(page: &Webview, code: String, world: World) -> Result<Value, Str
     return win::run(page, code, world).await;
     #[cfg(not(target_os = "windows"))]
     {
+        // The page's scripts all wait while its dialog is open: said at once, not after the wait.
+        #[cfg(target_os = "macos")]
+        if mac::DIALOG_OPEN.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("the page is showing a dialog that the person has to answer first".into());
+        }
         let (tx, rx) = oneshot::channel();
         page.with_webview(move |platform| unsafe { native::run(&platform, &code, world, tx) }).map_err(|e| e.to_string())?;
         answer(rx).await
@@ -264,15 +280,17 @@ use mac as native;
 #[cfg(target_os = "macos")]
 mod mac {
     use super::{data_url, World, ASYNC_BODY};
-    use block2::RcBlock;
+    use block2::{Block, RcBlock};
     use objc2::rc::Retained;
-    use objc2::runtime::AnyObject;
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
+    use objc2::runtime::{AnyObject, Bool, NSObject, Sel};
+    use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
+    use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSBitmapImageFileType, NSBitmapImageRep, NSImage, NSModalResponse, NSTextField};
     use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-    use objc2_foundation::{NSDictionary, NSError, NSString};
-    use objc2_web_kit::{WKContentWorld, WKSnapshotConfiguration, WKWebView};
+    use objc2_foundation::{NSDictionary, NSError, NSObjectProtocol, NSString};
+    use objc2_web_kit::{WKContentWorld, WKFrameInfo, WKSnapshotConfiguration, WKWebView};
     use serde_json::Value;
+    use std::cell::Cell;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
     use tokio::sync::oneshot;
 
@@ -347,6 +365,119 @@ mod mac {
         let rep = NSBitmapImageRep::imageRepWithData(&tiff)?;
         let data = rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())?;
         Some(data.to_vec())
+    }
+
+    // A page's alert(), confirm() and prompt(). WebKit leaves showing them to the webview's UI
+    // delegate, and Tauri's (wry) shows none: an alert does nothing, a confirm answers no and a
+    // prompt nothing. This delegate shows them as a sheet on the app's window and hands every
+    // other question (a file to upload, the camera, a new window) to wry's own.
+    pub static DIALOG_OPEN: AtomicBool = AtomicBool::new(false);
+    pub static DIALOG_LABELS: Mutex<Option<[String; 2]>> = Mutex::new(None);
+    const DIALOG_TEXT_MAX: usize = 1000;
+
+    struct DialogIvars {
+        inner: Retained<AnyObject>,
+    }
+
+    define_class!(
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "SwitchboardPageDialogs"]
+        #[ivars = DialogIvars]
+        struct PageDialogs;
+
+        unsafe impl NSObjectProtocol for PageDialogs {}
+
+        impl PageDialogs {
+            // WebKit asks once, when the delegate is set, which questions it answers.
+            #[unsafe(method(respondsToSelector:))]
+            fn responds(&self, selector: Sel) -> bool {
+                let own: bool = unsafe { msg_send![super(self), respondsToSelector: selector] };
+                own || unsafe { msg_send![&*self.ivars().inner, respondsToSelector: selector] }
+            }
+
+            #[unsafe(method(forwardingTargetForSelector:))]
+            fn target(&self, _selector: Sel) -> *mut AnyObject {
+                Retained::as_ptr(&self.ivars().inner).cast_mut()
+            }
+
+            #[unsafe(method(webView:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:))]
+            fn alert(&self, view: &WKWebView, message: &NSString, _frame: &WKFrameInfo, done: &Block<dyn Fn()>) {
+                let done = done.copy();
+                ask(view, &message.to_string(), None, false, move |_| done.call(()));
+            }
+
+            #[unsafe(method(webView:runJavaScriptConfirmPanelWithMessage:initiatedByFrame:completionHandler:))]
+            fn confirm(&self, view: &WKWebView, message: &NSString, _frame: &WKFrameInfo, done: &Block<dyn Fn(Bool)>) {
+                let done = done.copy();
+                ask(view, &message.to_string(), None, true, move |answer| done.call((Bool::new(answer.is_some()),)));
+            }
+
+            #[unsafe(method(webView:runJavaScriptTextInputPanelWithPrompt:defaultText:initiatedByFrame:completionHandler:))]
+            fn prompt(&self, view: &WKWebView, message: &NSString, text: Option<&NSString>, _frame: &WKFrameInfo, done: &Block<dyn Fn(*mut NSString)>) {
+                let done = done.copy();
+                let text = text.map(|text| text.to_string()).unwrap_or_default();
+                ask(view, &message.to_string(), Some(text), true, move |answer| match answer {
+                    Some(text) => done.call((Retained::as_ptr(&NSString::from_str(&text)).cast_mut(),)),
+                    None => done.call((std::ptr::null_mut(),)),
+                });
+            }
+        }
+    );
+
+    // Shows one dialog and answers `done`: None when it was dismissed, else the text typed (empty
+    // unless `text` gave it a field). `cancel`: whether it can be dismissed at all (an alert cannot).
+    // Not shown, and answered as dismissed, in a check with nobody at the screen and while the
+    // browser screen is closed or covered: a page nobody is looking at would put a sheet over
+    // whatever the person is doing, as a browser's tab in the back may not.
+    fn ask(view: &WKWebView, message: &str, text: Option<String>, cancel: bool, done: impl FnOnce(Option<String>) + 'static) {
+        if crate::os::capturing() {
+            eprintln!("capture: page dialog {message}");
+            return done(None);
+        }
+        let window = if view.isHiddenOrHasHiddenAncestor() { None } else { view.window().filter(|window| window.isVisible()) };
+        let (Some(window), Some(mtm)) = (window, MainThreadMarker::new()) else {
+            return done(None);
+        };
+        let from = unsafe { view.URL() }.and_then(|url| url.absoluteString()).map(|url| url.to_string()).unwrap_or_default();
+        let from = from.parse::<tauri::Url>().ok().and_then(|url| url.host_str().map(|host| url.port().map_or(host.to_string(), |port| format!("{host}:{port}")))).unwrap_or(from);
+        let [ok, no] = DIALOG_LABELS.lock().unwrap().clone().unwrap_or(["OK".into(), "Cancel".into()]);
+        let alert = NSAlert::new(mtm);
+        alert.setMessageText(&NSString::from_str(&from));
+        alert.setInformativeText(&NSString::from_str(&message.chars().take(DIALOG_TEXT_MAX).collect::<String>()));
+        alert.addButtonWithTitle(&NSString::from_str(&ok));
+        if cancel {
+            alert.addButtonWithTitle(&NSString::from_str(&no));
+        }
+        let field = text.map(|text| {
+            let field = NSTextField::textFieldWithString(&NSString::from_str(&text), mtm);
+            field.setFrame(CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(280.0, 24.0)));
+            alert.setAccessoryView(Some(&field));
+            alert.window().setInitialFirstResponder(Some(&field));
+            field
+        });
+        DIALOG_OPEN.store(true, Ordering::SeqCst);
+        let done = Cell::new(Some(done));
+        let closed = RcBlock::new(move |pressed: NSModalResponse| {
+            DIALOG_OPEN.store(false, Ordering::SeqCst);
+            let typed = || field.as_ref().map(|field| field.stringValue().to_string()).unwrap_or_default();
+            if let Some(done) = done.take() {
+                done((pressed == NSAlertFirstButtonReturn).then(typed));
+            }
+        });
+        alert.beginSheetModalForWindow_completionHandler(&window, Some(&closed));
+    }
+
+    // The page's dialogs are shown from now on. The webview keeps no hold on its delegate, and the
+    // browser has one page for the life of the app: this one is never freed.
+    pub unsafe fn show_dialogs(platform: &tauri::webview::PlatformWebview) {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let view = web_view(platform);
+        let inner: Option<Retained<AnyObject>> = msg_send![view, UIDelegate];
+        let Some(inner) = inner else { return };
+        let delegate: Retained<PageDialogs> = msg_send![super(mtm.alloc::<PageDialogs>().set_ivars(DialogIvars { inner })), init];
+        let _: () = msg_send![view, setUIDelegate: &*delegate];
+        std::mem::forget(delegate);
     }
 }
 

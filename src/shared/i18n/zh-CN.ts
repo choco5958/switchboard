@@ -282,6 +282,7 @@ export const zhCN: Dict = {
   'settings.devMenu': '显示开发者菜单',
   'settings.devMenuHint': '在左侧图标栏显示组件库。',
   'common.cancel': '取消',
+  'common.ok': '确定',
   'routines.title': '定时提示',
   'routines.hint': '到了设定的时间，把提示送入该项目的会话。',
   'routines.hintMore': '每个计划可以选择接收的代理。没有该代理的会话时，应用会打开终端。上一次运行尚未结束时本次跳过，没有可报告内容的运行不发通知。',

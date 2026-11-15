@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
-import { fileAskedScript, fillScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotText } from './agentBrowser'
+import { dialogNote, fileAskedScript, fillScript, isLocalUrl, navigatedTo, pointScript, refRevision, refusal, snapshotText } from './agentBrowser'
 
 test('only pages on this computer can be driven, the private network too when the person allows it', () => {
   const here = ['http://localhost:5173/', 'http://127.0.0.1:8951/x', 'https://app.localhost/', 'http://[::1]:4000', 'http://127.1.2.3']
@@ -266,4 +267,74 @@ test('the person’s own press on a file field opens the dialog as ever', () => 
   // A press that asked for no file says nothing.
   view.run(pointScript('1:1'))
   expect(view.run(fileAskedScript())).toBe(false)
+})
+
+// The script the Tauri shell puts into every page of the browser, run on a page whose own
+// dialogs say what they were asked.
+function pageWorld() {
+  const shown: string[] = []
+  const window: Record<string, any> = {
+    alert: (message: string) => void shown.push(`alert ${message}`),
+    confirm: (message: string) => shown.push(`confirm ${message}`) > 0,
+    prompt: (message: string) => (shown.push(`prompt ${message}`), 'typed'),
+  }
+  window.top = window
+  const clock = { now: 1000 }
+  const script = readFileSync(new URL('../../../src-tauri/src/browser_page.js', import.meta.url), 'utf8')
+  new Function('window', 'console', 'addEventListener', 'XMLHttpRequest', 'location', 'document', 'Date', script)(window, {}, () => {}, class {}, { href: 'http://localhost:5173/' }, { title: '' }, { now: () => clock.now })
+  return { window, shown, clock }
+}
+
+test("a page's dialogs open as ever while no session is pressing", () => {
+  const { window, shown } = pageWorld()
+  expect([window.alert('저장했습니다'), window.confirm('지울까요?'), window.prompt('이름', '새 글')]).toEqual([undefined, true, 'typed'])
+  expect(shown).toEqual(['alert 저장했습니다', 'confirm 지울까요?', 'prompt 이름'])
+  expect(window.__sbQuiet(0)).toEqual([])
+})
+
+test("while a session presses, a page's dialogs open nothing and are dismissed, and the session reads what was asked", () => {
+  const { window, shown } = pageWorld()
+  expect(window.__sbQuiet(2000, false)).toEqual([])
+  expect([window.alert('저장했습니다'), window.confirm('지울까요?'), window.prompt('이름', '새 글')]).toEqual([undefined, false, null])
+  expect(shown).toEqual([])
+  const asked = window.__sbQuiet(0)
+  expect(asked).toEqual([
+    { kind: 'alert', message: '저장했습니다' },
+    { kind: 'confirm', message: '지울까요?' },
+    { kind: 'prompt', message: '이름' },
+  ])
+  // Read once, and the person's own presses open the dialogs again.
+  expect(window.__sbQuiet(0)).toEqual([])
+  expect(window.confirm('지울까요?')).toBe(true)
+  expect(shown).toEqual(['confirm 지울까요?'])
+})
+
+test('a session that said to accept gets OK from a confirm and the suggested text from a prompt', () => {
+  const { window, shown, clock } = pageWorld()
+  window.__sbQuiet(2000, true)
+  expect([window.confirm('지울까요?'), window.prompt('이름', '새 글'), window.prompt('메모')]).toEqual([true, '새 글', ''])
+  expect(shown).toEqual([])
+  // The moment passes on its own, should the app never come back to end it.
+  clock.now += 2000
+  expect(window.confirm('또 지울까요?')).toBe(true)
+  expect(shown).toEqual(['confirm 또 지울까요?'])
+})
+
+test('a page that asks without end fills no more than a few notes', () => {
+  const { window } = pageWorld()
+  window.__sbQuiet(2000, false)
+  for (let i = 0; i < 50; i++) window.alert('x'.repeat(1000))
+  const asked = window.__sbQuiet(0) as { message: string }[]
+  expect(asked.length).toBe(20)
+  expect(asked[0]!.message.length).toBe(300)
+})
+
+test('the session reads what the page asked and how it was answered', () => {
+  expect(dialogNote([], false)).toBe('')
+  expect(dialogNote([{ kind: 'alert', message: '저장했습니다' }], false)).toBe('The page showed an alert: "저장했습니다"')
+  const dismissed = dialogNote([{ kind: 'confirm', message: '지울까요?' }, { kind: 'prompt', message: '이름' }], false).split('\n')
+  expect(dismissed[0]).toBe('The page asked to confirm: "지울까요?" No dialog was opened and it was answered Cancel. To answer OK, do it again with dialog "accept".')
+  expect(dismissed[1]).toContain('it was cancelled')
+  const accepted = dialogNote([{ kind: 'confirm', message: '지울까요?' }, { kind: 'prompt', message: '이름' }], true).split('\n')
+  expect(accepted).toEqual(['The page asked to confirm: "지울까요?" It was answered OK.', 'The page asked for text: "이름" It was answered with the text the page suggested.'])
 })

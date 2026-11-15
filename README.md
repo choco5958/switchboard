@@ -108,6 +108,7 @@ Jump to any session, task or decision question. Gather projects into groups and 
 - Sessions read, click and type in local pages with the `browser_*` tools. By default they reach only this computer's addresses; allow private network addresses in Settings > Permissions and access.
 - Sessions choose a select's option by its name and set date, time, color and slider fields. A reading of the page shows each field's value, a select's choice and options, and whether a checkbox is checked. The value of a password field is never read.
 - When a session's click makes the page ask for a file, no file dialog opens. The session is told, and asks you to choose the file.
+- A page's `alert`, `confirm` and `prompt` open as dialogs. While a session clicks or types, no dialog opens and the session is told what the page asked. A `confirm` gets Cancel, and OK when the session repeats the action with `dialog` set to `accept`.
 - The page takes the full width; open comments and dev servers on the right with `Comments` and `Dev servers` in the toolbar. Turning on comment mode or leaving a comment opens the comments by itself.
 
 #### Terminals
