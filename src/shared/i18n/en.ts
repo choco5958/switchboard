@@ -1205,6 +1205,7 @@ export const en: Dict = {
   'accounts.active': 'In use',
   'accounts.defaultDetail': 'Your usual login',
   'accounts.usage': '5 hours {five}, week {week}',
+  'accounts.usageSpend': 'spend limit {spend}',
   'accounts.rename': 'Rename',
   'accounts.save': 'Save',
   'accounts.removeTitle': 'Remove this account from the list?',

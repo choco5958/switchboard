@@ -298,11 +298,12 @@ export type UpdateStatus = {
 export type AccountInfo = { email: string; plan: string; ccr?: { current: number; slots: CcrSlot[] } }
 
 // One agent's accounts, account 1 (the CLI's own login) first. until: epoch ms its limit lifts.
-// active: the account new sessions start on. usage: the latest percents its live sessions reported.
+// active: the account new sessions start on. usage: the latest percents its live sessions reported
+// (spend: of a Codex seat's own spending cap, mcp/codexUsage.ts).
 export type AccountRow = {
   agent: string
   active: number
-  accounts: { id: number; name: string; email: string; signedIn: boolean; until?: number; usage?: { five?: number; week?: number } }[]
+  accounts: { id: number; name: string; email: string; signedIn: boolean; until?: number; usage?: { five?: number; week?: number; spend?: number } }[]
 }
 
 // One ccr slot. until: epoch seconds its limit lifts (0: not marked spent); usage as ccr measured it at measuredAt.

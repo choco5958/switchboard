@@ -1204,6 +1204,7 @@ export const ko = {
   'accounts.active': '사용 중',
   'accounts.defaultDetail': '원래 쓰던 로그인',
   'accounts.usage': '5시간 {five}, 주간 {week}',
+  'accounts.usageSpend': '지출 한도 {spend}',
   'accounts.rename': '이름 바꾸기',
   'accounts.save': '저장',
   'accounts.removeTitle': '이 계정을 목록에서 뺄까요?',

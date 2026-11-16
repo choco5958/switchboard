@@ -222,7 +222,7 @@ export function envOf(p: AccountPaths, spec: AccountSpec, id: number): Record<st
 }
 
 // The latest plan usage of each account, from its live sessions: agent → account → percents.
-export type AccountUsage = Record<string, Record<number, { five?: number; week?: number }>>
+export type AccountUsage = Record<string, Record<number, { five?: number; week?: number; spend?: number }>>
 
 // What the live sessions on each account last reported of their plan (bridge sessions, by the
 // terminal key their account run was noted under); the latest report of an account wins.
@@ -241,11 +241,13 @@ export function accountUsageOf(sessions: { terminal?: string; usage?: string; la
     const pct = (kind: string) => limits.find(l => l.kind === kind)?.percentUsed
     const five = pct('five_hour')
     const week = pct('seven_day')
-    if (five === undefined && week === undefined) continue
+    // A Codex seat's own spending cap, the only window some seats have (mcp/codexUsage.ts).
+    const spend = pct('spend')
+    if (five === undefined && week === undefined && spend === undefined) continue
     const at = `${run.agent}:${run.account}`
     if ((seen[at] ?? -1) > (session.last_seen ?? 0)) continue
     seen[at] = session.last_seen ?? 0
-    ;(out[run.agent] ??= {})[run.account] = { five, week }
+    ;(out[run.agent] ??= {})[run.account] = { five, week, ...(spend === undefined ? {} : { spend }) }
   }
   return out
 }

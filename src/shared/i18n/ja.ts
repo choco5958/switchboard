@@ -1205,6 +1205,7 @@ export const ja: Dict = {
   'accounts.active': '使用中',
   'accounts.defaultDetail': '普段のログイン',
   'accounts.usage': '5 時間 {five}、週 {week}',
+  'accounts.usageSpend': '利用上限 {spend}',
   'accounts.rename': '名前を変更',
   'accounts.save': '保存',
   'accounts.removeTitle': 'このアカウントを一覧から外しますか？',

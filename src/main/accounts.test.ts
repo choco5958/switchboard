@@ -220,4 +220,10 @@ describe('the account in use', () => {
       ),
     ).toEqual({ codex: { 2: { five: 40, week: 20 } } })
   })
+
+  it('keeps the spending cap of a seat that has no other window', () => {
+    const runs = new Map([['k1', { agent: 'codex', account: 2, cwd: '/a' }]])
+    const spend = JSON.stringify({ rateLimits: [{ kind: 'spend', percentUsed: 62.4 }] })
+    expect(accountUsageOf([{ terminal: 'k1', usage: spend, last_seen: 1 }], runs)).toEqual({ codex: { 2: { five: undefined, week: undefined, spend: 62.4 } } })
+  })
 })

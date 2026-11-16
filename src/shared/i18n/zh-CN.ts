@@ -1205,6 +1205,7 @@ export const zhCN: Dict = {
   'accounts.active': '使用中',
   'accounts.defaultDetail': '原本的登录',
   'accounts.usage': '5 小时 {five}，每周 {week}',
+  'accounts.usageSpend': '支出上限 {spend}',
   'accounts.rename': '重命名',
   'accounts.save': '保存',
   'accounts.removeTitle': '从列表中移除此账号？',

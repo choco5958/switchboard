@@ -15,10 +15,13 @@ export function accountLabel(account: Pick<Account, 'id' | 'name'>): string {
   return account.name || (account.id === 1 ? t('accounts.default') : t('accounts.numbered', { n: account.id }))
 }
 
-function usageText(usage: Account['usage']): string {
+// A seat with only a spending cap (a Codex workspace member's) shows that alone, not two empty windows.
+export function usageText(usage: Account['usage']): string {
   if (!usage) return ''
   const pct = (value?: number) => (value === undefined ? '-' : `${Math.round(value)}%`)
-  return t('accounts.usage', { five: pct(usage.five), week: pct(usage.week) })
+  const windows = usage.five === undefined && usage.week === undefined ? '' : t('accounts.usage', { five: pct(usage.five), week: pct(usage.week) })
+  const spend = usage.spend === undefined ? '' : t('accounts.usageSpend', { spend: pct(usage.spend) })
+  return [windows, spend].filter(Boolean).join(', ')
 }
 
 // The settings section of the accounts of each installed agent CLI (src/main/accounts.ts), as Orca
