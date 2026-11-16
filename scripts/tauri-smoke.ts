@@ -1,7 +1,7 @@
 // A check of a built Tauri app with nobody at the screen (docs/tauri-이전.md, step 8), the same on
 // macOS, Windows and Linux: the app runs hidden (CLAUDE_IDE_CAPTURE_JS: no window, keychain,
 // dialog or notification) on sample sessions, in a temporary home of its own, and a script in its
-// page checks the bridge, the session list, a terminal and the in-app browser.
+// page checks the bridge, the session list, the app's links, a terminal and the in-app browser.
 //
 //   node scripts/tauri-smoke.ts <the app's executable> [--repo]
 //
@@ -87,6 +87,13 @@ export const SHELL_WORDS = `text => {
   return text.replace(new RegExp(ESC + '[[][0-9;?]*[ -/]*[@-~]|' + ESC + '][^' + BEL + ESC + ']*' + BEL + '?|' + ESC + '.', 'g'), '').trim()
 }`
 
+// The addresses the links step asks for, at a name that never resolves, and those of them the shell
+// did not say it opened ("capture: open <address>": a check opens no browser, src-tauri/src/main.rs).
+export const LINKS = ['https://switchboard.invalid/smoke-link?a=1&b=2', 'https://switchboard.invalid/smoke-open']
+export function unopened(lines: readonly string[]): string[] {
+  return LINKS.filter(url => !lines.includes(`capture: open ${url}`))
+}
+
 // What runs in the app's page once it has loaded. Each step reports one line; "done" ends it.
 export function pageScript(scratch: string, page: string): string {
   return `(async () => {
@@ -112,6 +119,20 @@ export function pageScript(scratch: string, page: string): string {
     const open = (state.questions || []).filter(q => q.status === 'pending').length
     if (open < 2) throw new Error(open + ' open questions')
     return open + ' open questions'
+  })
+  await step('links', async () => {
+    // A link of the app's own page with target="_blank" (the settings' links) and its window.open
+    // (the release page) ask for a new window; the shell opens the address in the person's browser
+    // instead, and the app's page stays. What the shell opened is read from its lines afterwards.
+    const [linked, opened] = ${JSON.stringify(LINKS)}
+    const link = Object.assign(document.createElement('a'), { href: linked, target: '_blank', rel: 'noreferrer' })
+    document.body.append(link)
+    link.click()
+    link.remove()
+    window.open(opened)
+    await sleep(1500)
+    if (!(await window.ide.connected())) throw new Error('the app page is gone')
+    return 'asked for two addresses'
   })
   await step('terminal', async () => {
     const term = await window.ide.termOpen(${JSON.stringify(scratch)}, false, 100, 30)
@@ -263,6 +284,8 @@ async function main(): Promise<number> {
       // A file still held open (Windows): the system's temporary folder keeps it.
     }
   }
+  const missing = unopened(lines)
+  if (missing.length > 0) lines.push(`capture: step links: FAILED the shell did not open ${missing.join(' or ')}`)
   const steps = lines.filter(line => line.startsWith('capture: step '))
   const failed = steps.filter(line => line.includes(': FAILED'))
   const finished = lines.includes('capture: done')

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { SHELL_WORDS, pageScript } from './tauri-smoke.ts'
+import { LINKS, SHELL_WORDS, pageScript, unopened } from './tauri-smoke.ts'
 
 const words = new Function(`return ${SHELL_WORDS}`)() as (text: string) => string
 
@@ -24,4 +24,12 @@ test('the page script is one expression that parses', () => {
   const script = pageScript('C:\\Users\\runner\\scratch', 'http://127.0.0.1:1/')
   assert.doesNotThrow(() => new Function(`return ${script}`))
   assert.match(script, /words\(await output\(\)\)\.length > 0, 90000/)
+})
+
+test('the links step passes only when the shell said it opened both addresses', () => {
+  const said = LINKS.map(url => `capture: open ${url}`)
+  assert.deepEqual(unopened(['capture: step links: asked for two addresses', ...said]), [])
+  assert.deepEqual(unopened([said[0]!]), [LINKS[1]])
+  assert.deepEqual(unopened(['capture: open https://switchboard.invalid/smoke-link']), LINKS)
+  assert.deepEqual(unopened([]), LINKS)
 })

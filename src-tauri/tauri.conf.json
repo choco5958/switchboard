@@ -10,6 +10,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Switchboard",
         "width": 1440,
         "height": 900,

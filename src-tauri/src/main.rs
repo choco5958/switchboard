@@ -128,6 +128,19 @@ fn open_with_system(target: &str) -> String {
     }
 }
 
+// A web address in the person's own browser; anything else opens nowhere. A check without a
+// person at the screen says which address it would have opened and opens none.
+fn open_link(url: &str) {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return;
+    }
+    if os::capturing() {
+        eprintln!("capture: open {url}");
+        return;
+    }
+    open_with_system(url);
+}
+
 // The main window. Not get_webview_window: once the in-app browser's webview joins it, the window
 // holds two webviews and is no longer a webview window, and that lookup finds nothing.
 fn main_window(app: &AppHandle) -> Option<tauri::Window> {
@@ -172,10 +185,7 @@ fn on_os(app: &AppHandle, host: &Arc<Host>, message: &Value) {
         }
         "openPath" => json!(open_with_system(message["path"].as_str().unwrap_or(""))),
         "openExternal" => {
-            let url = message["url"].as_str().unwrap_or("");
-            if url.starts_with("https://") || url.starts_with("http://") {
-                open_with_system(url);
-            }
+            open_link(message["url"].as_str().unwrap_or(""));
             Value::Null
         }
         // The Dock's badge; the Electron app shows none on Windows and Linux either.
@@ -398,6 +408,18 @@ fn main() {
             browser::browser_capture
         ])
         .setup(|app| {
+            // The window, made here and not by Tauri from tauri.conf.json ("create": false), for
+            // the one thing the file cannot say: a link of the app's own page with target="_blank"
+            // (the settings' links) or its window.open (the release page) opens in the person's
+            // browser, as in the Electron app. Left alone the click did nothing (seen on macOS: the
+            // webview answers such a request only through a handler). Not in the handler itself:
+            // WebView2 calls it inside its own event.
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &app.config().app.windows[0])?
+                .on_new_window(|url, _features| {
+                    thread::spawn(move || open_link(url.as_str()));
+                    tauri::webview::NewWindowResponse::Deny
+                })
+                .build()?;
             let host = start_host(app.handle());
             let power = host.clone();
             os::watch_power(move |event| power.write(&json!({ "t": "event", "name": "power", "event": event })));
