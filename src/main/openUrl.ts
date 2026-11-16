@@ -5,34 +5,10 @@
 
 import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { isLocalAddress, webAddress } from '../shared/webAddress'
 
-// Only a web address opens: open and xdg-open would take another scheme to whatever app owns it
-// (or a file), and a word that starts with '-' as an option of their own. The address the
-// browser gets is the one URL wrote out again, which always starts with its scheme.
-// Also the script's own copy, as isLocalAddress below.
-export function webAddress(raw: string): string | null {
-  try {
-    const url = new URL(raw)
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null
-  } catch {
-    return null
-  }
-}
-
-// Also the script's own copy: openUrlScript embeds its source, which the build has stripped of types.
-export function isLocalAddress(raw: string): boolean {
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    return false
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
-  const host = url.hostname.replace(/^\[|\]$/g, '')
-  if (host === 'localhost' || host.endsWith('.localhost') || host === '::1') return true
-  const parts = host.split('.').map(Number)
-  return parts.length === 4 && parts[0] === 127 && parts.every(n => Number.isInteger(n) && n >= 0 && n <= 255)
-}
+// The script's own copies: openUrlScript embeds their source, which the build has stripped of types.
+export { isLocalAddress, webAddress }
 
 export function openUrlScript(): string {
   return `#!/usr/bin/env node

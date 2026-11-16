@@ -395,6 +395,7 @@ export const zhCN: Dict = {
   'palette.more': '还有 {n} 项。多输入一些文字可以缩小范围。',
   // Terminals
   'term.exited': '已结束，代码 {code}',
+  'term.linkHint': '按住 {key} 点击打开',
   'term.shell': '终端',
   'term.pickFolder': '项目文件夹',
   'term.noFolder': '文件夹不存在：{path}',

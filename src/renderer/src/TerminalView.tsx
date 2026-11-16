@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { acceptDrops } from './termDrop'
+import { termLinks } from './termLinks'
 import { createReplay } from './termReplay'
 import { t } from '../../shared/i18n'
 import { termTheme } from './termTheme'
@@ -24,6 +26,8 @@ export function TerminalView({ id, visible, themeKey }: { id: string; visible: b
     if (!box.current) return
     const css = getComputedStyle(document.documentElement)
     const family = css.getPropertyValue('--mono').trim() || 'monospace'
+    // Web addresses in the output open with ⌘ or Ctrl held, the ones the program names too (OSC 8).
+    const links = termLinks(box.current)
     const xterm = new Terminal({
       fontFamily: family,
       fontSize: 13,
@@ -32,9 +36,11 @@ export function TerminalView({ id, visible, themeKey }: { id: string; visible: b
       allowProposedApi: true,
       macOptionIsMeta: true,
       theme: themeFromTokens(),
+      linkHandler: links.named,
     })
     const fitter = new FitAddon()
     xterm.loadAddon(fitter)
+    xterm.loadAddon(new WebLinksAddon(links.open, { hover: links.hover, leave: links.leave }))
     xterm.open(box.current)
     term.current = xterm
     fit.current = fitter

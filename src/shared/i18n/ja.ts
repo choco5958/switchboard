@@ -395,6 +395,7 @@ export const ja: Dict = {
   'palette.more': 'ほかに {n} 件あります。検索語を足すと絞り込めます。',
   // Terminals
   'term.exited': '終了、コード {code}',
+  'term.linkHint': '{key}を押しながらクリックで開きます',
   'term.shell': 'シェル',
   'term.pickFolder': 'プロジェクトのフォルダー',
   'term.noFolder': 'フォルダーがありません: {path}',

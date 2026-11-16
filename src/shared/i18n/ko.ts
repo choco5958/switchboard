@@ -394,6 +394,7 @@ export const ko = {
   'palette.more': '{n}개가 더 있습니다. 검색어를 더 적으면 좁혀집니다.',
   // Terminals
   'term.exited': '종료, 코드 {code}',
+  'term.linkHint': '{key} 키를 누른 채 누르면 열립니다',
   'term.shell': '셸',
   'term.pickFolder': '프로젝트 폴더',
   'term.noFolder': '폴더가 없습니다: {path}',

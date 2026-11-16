@@ -395,6 +395,7 @@ export const en: Dict = {
   'palette.more': '{n} more. Type more to narrow the list.',
   // Terminals
   'term.exited': 'ended, code {code}',
+  'term.linkHint': 'Hold {key} and click to open',
   'term.shell': 'shell',
   'term.pickFolder': 'Project folder',
   'term.noFolder': 'Folder not found: {path}',
