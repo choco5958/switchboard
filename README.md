@@ -175,6 +175,7 @@ Add any other CLI in Settings > Agent CLIs with its command and how it connects.
 | `H` twice | Hold |
 | `M` | Add a note (`Cmd+Enter` sends, `Esc` leaves) |
 | `Cmd+K` (`Ctrl+K` on Windows and Linux) | Find |
+| `Cmd+,` (`Ctrl+,` on Windows and Linux) | Settings |
 | `?` or `Cmd+/` | Shortcut list |
 
 ## Install

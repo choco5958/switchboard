@@ -1150,6 +1150,7 @@ export const zhCN: Dict = {
   'keys.decisionFocus': '仅在决定卡片获得焦点时生效。可在设置的快捷键中扩展到整个窗口。',
   'keys.decisionAnywhere': '按设置在窗口任意位置生效。在输入框中输入时不生效。',
   'keys.palette': '打开或关闭查找',
+  'keys.settings': '打开设置',
   'keys.help': '打开或关闭快捷键列表',
   'keys.close': '关闭对话框、菜单或评论模式',
   'keys.choose': '选择选项（选项字母或序号）',

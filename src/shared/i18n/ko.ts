@@ -1149,6 +1149,7 @@ export const ko = {
   'keys.decisionFocus': '결정 카드에 초점이 있을 때만 받습니다. 설정의 단축키에서 창 전체로 넓힐 수 있습니다.',
   'keys.decisionAnywhere': '설정에 따라 창 어디서나 받습니다. 입력칸에서 글을 쓰는 중에는 받지 않습니다.',
   'keys.palette': '찾기 열고 닫기',
+  'keys.settings': '설정 열기',
   'keys.help': '단축키 목록 열고 닫기',
   'keys.close': '대화상자, 메뉴, 코멘트 모드 닫기',
   'keys.choose': '선택지 고르기 (선택지 글자나 번호)',

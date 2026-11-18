@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { DICTS } from '../../shared/i18n'
-import { isHelpKey, isPaletteKey, shortcutGroups } from './shortcuts'
+import { isHelpKey, isPaletteKey, isSettingsKey, shortcutGroups } from './shortcuts'
 
 const key = (k: string, extra: Partial<KeyboardEvent> = {}) => ({ key: k, metaKey: false, ctrlKey: false, altKey: false, target: null, ...extra })
 // A stand-in for an element: closest() answers as the real one would for these selectors.
@@ -14,6 +14,14 @@ describe('the keys the app listens for', () => {
     expect(isPaletteKey(key('k', { metaKey: true }))).toBe(true)
     expect(isPaletteKey(key('K', { ctrlKey: true }))).toBe(true)
     expect(isPaletteKey(key('k'))).toBe(false)
+  })
+
+  test('⌘, and Ctrl+, open the settings, a typed comma does not', () => {
+    expect(isSettingsKey(key(',', { metaKey: true, target: field }))).toBe(true)
+    expect(isSettingsKey(key(',', { ctrlKey: true }))).toBe(true)
+    expect(isSettingsKey(key(',', { target: field }))).toBe(false)
+    expect(isSettingsKey(key(',', { metaKey: true, altKey: true }))).toBe(false)
+    expect(isSettingsKey(key('k', { metaKey: true }))).toBe(false)
   })
 
   test('? opens the help outside a text field, ⌘/ and Ctrl+/ anywhere', () => {

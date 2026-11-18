@@ -29,7 +29,7 @@ import { applyTheme } from './theme'
 import { installSettingSaver, postSetting, saveSetting, settle, withPending, type Pending } from './settings'
 import { LOCALE_TAG, resolveLang, setLang, stageLabel, t } from '../../shared/i18n'
 import { waitCount, waitParts } from './waiting'
-import { isHelpKey, isPaletteKey } from './shortcuts'
+import { isHelpKey, isPaletteKey, isSettingsKey } from './shortcuts'
 import { OPEN_SETTINGS, ShortcutHelp } from './flows'
 import { sessionRows, termKey, type SessionRow } from './sessions'
 import { Sidebar, rowStateText, type NavItem } from './Sidebar'
@@ -216,6 +216,11 @@ export function App() {
       if (isPaletteKey(event)) {
         event.preventDefault()
         setPalette(open => !open)
+      } else if (isSettingsKey(event)) {
+        event.preventDefault()
+        setPalette(false)
+        setHelp(false)
+        setRoute({ kind: 'settings' })
       } else if (isHelpKey(event) && !event.defaultPrevented) {
         event.preventDefault()
         setHelp(open => !open)

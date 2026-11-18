@@ -19,6 +19,11 @@ export function isPaletteKey(event: KeyLike): boolean {
   return (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k'
 }
 
+// ⌘, (Ctrl+, elsewhere) opens the settings, from anywhere: where a Mac app's settings are.
+export function isSettingsKey(event: KeyLike): boolean {
+  return (event.metaKey || event.ctrlKey) && !event.altKey && event.key === ','
+}
+
 // ⌘/ (Ctrl+/) from anywhere; ? only outside a text field, where it would be a typed character.
 export function isHelpKey(event: KeyLike): boolean {
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key === '/') return true
@@ -38,6 +43,7 @@ export function shortcutGroups(mac: boolean, decisionKeysAnywhere: boolean): Sho
       title: 'keys.groupApp',
       items: [
         { keys: [chord(mod, 'K')], label: 'keys.palette', source: 'App.tsx', needle: 'isPaletteKey(event)' },
+        { keys: [chord(mod, ',')], label: 'keys.settings', source: 'App.tsx', needle: 'isSettingsKey(event)' },
         { keys: ['?', chord(mod, '/')], label: 'keys.help', source: 'App.tsx', needle: 'isHelpKey(event)' },
         { keys: ['Esc'], label: 'keys.close', source: 'ui.tsx', needle: "event.key === 'Escape'" },
       ],

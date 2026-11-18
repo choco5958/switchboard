@@ -175,6 +175,7 @@ Claude Code는 mod로, 다른 CLI는 앱이 그 실행에만 붙이는 연결 �
 | `H` 두 번 | 보류 |
 | `M` | 메모 입력 (`Cmd+Enter` 보내기, `Esc` 나가기) |
 | `Cmd+K` (Windows, Linux는 `Ctrl+K`) | 찾기 |
+| `Cmd+,` (Windows, Linux는 `Ctrl+,`) | 설정 |
 | `?` 또는 `Cmd+/` | 단축키 목록 |
 
 ## 설치

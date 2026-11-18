@@ -1150,6 +1150,7 @@ export const en: Dict = {
   'keys.decisionFocus': 'Only while the decision card has focus. Settings, Shortcuts can widen this to the whole window.',
   'keys.decisionAnywhere': 'Anywhere in the window, as set in Settings. Not while you type in a field.',
   'keys.palette': 'Open or close search',
+  'keys.settings': 'Open settings',
   'keys.help': 'Open or close this list',
   'keys.close': 'Close a dialog, a menu or comment mode',
   'keys.choose': 'Pick an option (its letter or number)',

@@ -175,6 +175,7 @@ Claude Code は mod で、ほかの CLI はアプリがその実行にだけ付�
 | `H` を 2 回 | 保留 |
 | `M` | メモを入力 (`Cmd+Enter` で送信、`Esc` で抜ける) |
 | `Cmd+K` (Windows と Linux は `Ctrl+K`) | 検索 |
+| `Cmd+,` (Windows と Linux は `Ctrl+,`) | 設定 |
 | `?` または `Cmd+/` | ショートカット一覧 |
 
 ## インストール

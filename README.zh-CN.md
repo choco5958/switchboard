@@ -175,6 +175,7 @@ Claude Code 通过 mod 连接，其他 CLI 通过应用只为该次运行附加�
 | 按两次 `H` | 暂缓 |
 | `M` | 输入备注 (`Cmd+Enter` 发送，`Esc` 退出) |
 | `Cmd+K` (Windows 和 Linux 为 `Ctrl+K`) | 查找 |
+| `Cmd+,` (Windows 和 Linux 为 `Ctrl+,`) | 设置 |
 | `?` 或 `Cmd+/` | 快捷键列表 |
 
 ## 安装

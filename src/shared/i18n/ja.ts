@@ -1150,6 +1150,7 @@ export const ja: Dict = {
   'keys.decisionFocus': '決定カードにフォーカスがあるときだけ受け付けます。設定のショートカットでウィンドウ全体に広げられます。',
   'keys.decisionAnywhere': '設定によりウィンドウのどこでも受け付けます。入力欄で入力中は受け付けません。',
   'keys.palette': '検索を開く、閉じる',
+  'keys.settings': '設定を開く',
   'keys.help': 'このショートカット一覧を開く、閉じる',
   'keys.close': 'ダイアログ、メニュー、コメントモードを閉じる',
   'keys.choose': '選択肢を選ぶ (選択肢の文字か番号)',
