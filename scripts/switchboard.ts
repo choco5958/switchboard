@@ -55,10 +55,11 @@ export function duration(text: string): number | null {
 
 export type Peer = { id: string; project: string; cwd: string; agent: string; live: boolean; state: string; task: string; now: string }
 
-// A session by its id, or by its project when one connected session has it.
+// A session by its id, or by its project when one connected session has it. A project's name is
+// its folder's, which macOS may keep in separate jamo (NFD) where a typed name is composed (NFC).
 export function resolveSession(peers: readonly Peer[], name: string): { id: string } | { error: 'none' | 'many'; ids: string[] } {
   if (peers.some(p => p.id === name)) return { id: name }
-  const byProject = peers.filter(p => p.project === name)
+  const byProject = peers.filter(p => p.project.normalize('NFC') === name.normalize('NFC'))
   const live = byProject.filter(p => p.live)
   const pick = live.length > 0 ? live : byProject
   if (pick.length === 1) return { id: pick[0]!.id }

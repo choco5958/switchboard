@@ -73,6 +73,10 @@ test('arguments, durations and which session a name means', () => {
   assert.deepEqual(resolveSession(peers, 'web'), { id: 's1' })
   assert.deepEqual(resolveSession(peers, 'api'), { error: 'many', ids: ['s3', 's4'] })
   assert.deepEqual(resolveSession(peers, 'docs'), { error: 'none', ids: [] })
+  // A folder made in Finder keeps its Korean name in separate jamo; the name typed in a shell is composed.
+  const onDisk = '가계부'.normalize('NFD')
+  assert.notEqual(onDisk, '가계부')
+  assert.deepEqual(resolveSession([...peers, { ...peers[0]!, id: 's5', project: onDisk }], '가계부'), { id: 's5' })
 })
 
 test('send --wait prints the reply the session gave at the end of its turn', async () => {

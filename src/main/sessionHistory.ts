@@ -268,12 +268,13 @@ export async function loadFrom(sources: readonly Source[]): Promise<{ total: num
 }
 
 // Every word of the query, ignoring case, somewhere in the title, the snippet, the folder, the
-// project folder name or the branch. Newest first, at most limit.
+// project folder name or the branch. Newest first, at most limit. Both sides are composed first
+// (NFC): macOS gives a folder made in Finder a Korean name in separate jamo, unlike typed text.
 export function searchSessions(sessions: readonly PastSession[], query: string, limit = MAX_RESULTS): PastSession[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const words = query.normalize('NFC').toLowerCase().split(/\s+/).filter(Boolean)
   const hits = sessions.filter(s => {
     if (words.length === 0) return true
-    const text = [s.title, s.snippet, s.cwd, s.project, s.folder, s.branch].join('\n').toLowerCase()
+    const text = [s.title, s.snippet, s.cwd, s.project, s.folder, s.branch].join('\n').normalize('NFC').toLowerCase()
     return words.every(word => text.includes(word))
   })
   return [...hits].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)

@@ -6,10 +6,13 @@ import { Dialog, EmptyState, cx } from './ui'
 // disabled holds the reason the item cannot run now; it shows in place of the hint.
 export type PaletteItem = { id: string; group: string; label: string; hint?: string; disabled?: string; run: () => void }
 
-// Every word of the query must appear somewhere in the label or hint (case-insensitive).
+// Every word of the query must appear somewhere in the label or hint (case-insensitive). Both
+// sides are composed first: a folder made in Finder keeps its Korean name as separate jamo (NFD),
+// which typed text (NFC) would never match.
 export function matches(query: string, item: Pick<PaletteItem, 'label' | 'hint' | 'group'>): boolean {
-  const hay = `${item.group} ${item.label} ${item.hint ?? ''}`.toLowerCase()
+  const hay = `${item.group} ${item.label} ${item.hint ?? ''}`.normalize('NFC').toLowerCase()
   return query
+    .normalize('NFC')
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean)

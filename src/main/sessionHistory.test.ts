@@ -164,6 +164,15 @@ describe('searchSessions', () => {
     expect(searchSessions(all, '-work-').map(s => s.id)).toEqual(['a'])
   })
 
+  test('a Korean folder name kept in separate jamo (a folder made in Finder) matches typed text, and the other way round', () => {
+    const typed = '가계부'
+    const onDisk = typed.normalize('NFD')
+    expect(onDisk).not.toBe(typed)
+    const korean = [at('k', 1, { title: 'Totals', cwd: `/work/${onDisk}`, project: onDisk }), at('n', 2, { title: `${typed} 정리` })]
+    expect(searchSessions(korean, typed).map(s => s.id)).toEqual(['n', 'k'])
+    expect(searchSessions(korean, onDisk).map(s => s.id)).toEqual(['n', 'k'])
+  })
+
   test('every word must match somewhere', () => {
     expect(searchSessions(all, 'shop release').map(s => s.id)).toEqual(['c'])
     expect(searchSessions(all, 'shop nothing')).toEqual([])
