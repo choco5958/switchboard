@@ -1215,6 +1215,8 @@ export const ja: Dict = {
   'accounts.numbered': 'アカウント {n}',
   'accounts.notSignedIn': '未ログイン',
   'accounts.limited': '上限、{time} に解除',
+  'accounts.sameLogin': '同じログイン: {account}',
+  'accounts.sameLoginDetail': '上限を共有します。別のアカウントで使うには、もう一度ログインを押してそのアカウントでログインしてください。',
   'accounts.add': 'アカウントを追加',
   'accounts.login': 'もう一度ログイン',
   'accounts.remove': '外す',

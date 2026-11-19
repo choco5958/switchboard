@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { accountList, accountOrder, accountSpec, activeOf, limitsOf, nextAccountId, pickAccount } from '../shared/accounts'
-import { accountRows, accountUsageOf, claudeStateText, defaultBase, homeOf, markLimit, prepareHome, readLimits, runAccount, type AccountPaths } from './accounts'
+import { accountRows, accountUsageOf, claudeStateText, defaultBase, homeOf, markLimit, prepareHome, readLimits, runAccount, sameLogin, type AccountPaths } from './accounts'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -171,6 +171,52 @@ describe('the account of a run', () => {
       { id: 2, name: 'side', email: 'so****@example.com', signedIn: false, until: undefined, usage: undefined },
     ])
     expect(gemini.active).toBe(1)
+  })
+})
+
+describe('one login added twice', () => {
+  const claude = (p: AccountPaths, id: number, oauthAccount: unknown) => {
+    const file = id === 1 ? join(p.home, '.claude.json') : join(homeOf(p, 'claude', id), '.claude.json')
+    mkdirSync(join(file, '..'), { recursive: true })
+    writeFileSync(file, JSON.stringify({ oauthAccount }))
+  }
+
+  it('finds the Claude accounts signed in as the same account of the same organization', () => {
+    const p = paths()
+    keep(p, { claude: [{ id: 2, name: '' }, { id: 3, name: '' }, { id: 4, name: '' }] })
+    claude(p, 1, { emailAddress: 'one@example.com', accountUuid: 'A-1', organizationUuid: 'O-1' })
+    claude(p, 2, { emailAddress: 'One@Example.com', accountUuid: 'a-1', organizationUuid: 'O-1' })
+    // The same person's seat in another organization has a limit of its own.
+    claude(p, 3, { emailAddress: 'one@example.com', accountUuid: 'A-1', organizationUuid: 'O-2' })
+    claude(p, 4, { emailAddress: 'two@example.com', accountUuid: 'A-2', organizationUuid: 'O-1' })
+    expect(sameLogin(p, 'claude', 1)).toEqual([2])
+    expect(sameLogin(p, 'claude', 2)).toEqual([1])
+    expect(sameLogin(p, 'claude', 3)).toEqual([])
+    expect(sameLogin(p, 'claude', 4)).toEqual([])
+    const rows = accountRows(p).find(r => r.agent === 'claude')!.accounts
+    expect(rows.map(a => a.sameAs)).toEqual([undefined, 1, undefined, undefined])
+  })
+
+  it('goes by the email when Claude Code wrote no account id', () => {
+    const p = paths()
+    keep(p, { claude: [{ id: 2, name: '' }] })
+    claude(p, 1, { emailAddress: 'one@example.com' })
+    claude(p, 2, { emailAddress: 'ONE@example.com' })
+    expect(sameLogin(p, 'claude', 2)).toEqual([1])
+  })
+
+  it('finds a Gemini account on the same Google account, and says nothing where no file names the login', () => {
+    const p = paths()
+    keep(p, { gemini: [{ id: 2, name: '' }], codex: [{ id: 2, name: '' }] })
+    for (const dir of [p.home, homeOf(p, 'gemini', 2)]) {
+      mkdirSync(join(dir, '.gemini'), { recursive: true })
+      writeFileSync(join(dir, '.gemini', 'google_accounts.json'), JSON.stringify({ active: 'someone@example.com' }))
+    }
+    expect(sameLogin(p, 'gemini', 2)).toEqual([1])
+    expect(sameLogin(p, 'codex', 2)).toEqual([])
+    // An account that has not signed in yet repeats nobody.
+    keep(p, { claude: [{ id: 2, name: '' }] })
+    expect(sameLogin(p, 'claude', 2)).toEqual([])
   })
 })
 

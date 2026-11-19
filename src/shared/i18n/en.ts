@@ -1215,6 +1215,8 @@ export const en: Dict = {
   'accounts.numbered': 'Account {n}',
   'accounts.notSignedIn': 'Not signed in',
   'accounts.limited': 'At limit until {time}',
+  'accounts.sameLogin': 'Same login as {account}',
+  'accounts.sameLoginDetail': 'It shares that limit. To use another account here, press Sign in again and sign in as that account.',
   'accounts.add': 'Add account',
   'accounts.login': 'Sign in again',
   'accounts.remove': 'Remove',

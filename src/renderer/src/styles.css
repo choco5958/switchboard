@@ -1147,6 +1147,7 @@ details[open] > summary .agent-card-open { transform: rotate(180deg); }
 .account-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .account-name { font-weight: 550; }
 .account-detail { overflow-wrap: anywhere; }
+.account-same { display: block; }
 .account-actions { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
 .account-rename { width: 12em; }
 .account-add { display: flex; justify-content: flex-end; margin-top: var(--sp-3); }

@@ -114,6 +114,7 @@ export function AccountsSection() {
                 const held = account.until !== undefined && account.until > Date.now()
                 const editing = renaming?.agent === row.agent && renaming.id === account.id
                 const usage = usageText(account.usage)
+                const sameAs = row.accounts.find(other => other.id === account.sameAs)
                 return (
                   <li key={account.id} className={`account-row ${active ? 'active' : ''} ${held ? 'held' : ''}`}>
                     <button type="button" role="radio" aria-checked={active} className="account-pick" onClick={() => void select(row.agent, account.id)}>
@@ -129,6 +130,11 @@ export function AccountsSection() {
                             {t('accounts.notSignedIn')}
                           </Badge>
                         )}
+                        {sameAs && (
+                          <Badge shape="pill" tone="warn">
+                            {t('accounts.sameLogin', { account: accountLabel(sameAs) })}
+                          </Badge>
+                        )}
                         {held && (
                           <Badge shape="pill" tone="bad">
                             {t('accounts.limited', { time: new Date(account.until!).toLocaleString(LOCALE_TAG[getLang()], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })}
@@ -137,6 +143,7 @@ export function AccountsSection() {
                       </span>
                       <span className="account-detail small quiet">
                         {[account.email, account.id === 1 ? t('accounts.defaultDetail') : '', usage].filter(Boolean).join(', ')}
+                        {sameAs && <span className="account-same">{t('accounts.sameLoginDetail')}</span>}
                       </span>
                     </button>
                     {account.id > 1 && (

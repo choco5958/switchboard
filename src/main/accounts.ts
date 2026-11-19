@@ -192,6 +192,30 @@ export function accountEmail(p: AccountPaths, agent: string, id: number): string
   return ''
 }
 
+// Who an account signed in as, to tell one login added twice from two logins: '' when no file
+// without tokens says. Only compared here, never shown or sent. Claude Code names the account and
+// its organization (one person's seats in two organizations have limits of their own).
+function loginOf(p: AccountPaths, agent: string, id: number): string {
+  const base = id === 1 ? defaultBase(p, agent) : homeOf(p, agent, id)
+  const text = (value: unknown) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
+  if (agent === 'claude') {
+    const account = (readJson(id === 1 ? claudeStateFile(p) : join(base, '.claude.json')) as { oauthAccount?: Record<string, unknown> } | null)?.oauthAccount
+    const who = text(account?.accountUuid) || text(account?.emailAddress)
+    return who ? `${who} ${text(account?.organizationUuid)}` : ''
+  }
+  if (agent === 'gemini') return text((readJson(join(base, '.gemini', 'google_accounts.json')) as { active?: unknown } | null)?.active)
+  return ''
+}
+
+// The agent's other accounts signed in as the same login as this one. A browser already signed in
+// gives a new account the login the person has, and the two then share one limit.
+export function sameLogin(p: AccountPaths, agent: string, id: number): number[] {
+  const who = loginOf(p, agent, id)
+  if (!who) return []
+  const ids = [1, ...(readAccounts(p)[agent] ?? []).map(e => e.id)]
+  return ids.filter(other => other !== id && loginOf(p, agent, other) === who)
+}
+
 // The runs the app started on an account, by terminal key, for a move to another account at a
 // limit (accountRotate.ts). Kept for the app's life: a run the host kept from before is not moved.
 export type AccountRun = { agent: string; account: number; cwd: string }
@@ -264,6 +288,8 @@ export function accountRows(p: AccountPaths, usage: AccountUsage = {}, now = Dat
       name: entry.name,
       email: accountEmail(p, spec.agent, entry.id),
       signedIn: signedIn(p, spec.agent, entry.id),
+      // The earlier account this one repeats; that one keeps its row as it is.
+      sameAs: sameLogin(p, spec.agent, entry.id).find(other => other < entry.id),
       until: limits[spec.agent]?.[String(entry.id)],
       usage: usage[spec.agent]?.[entry.id],
     })),

@@ -128,6 +128,24 @@ describe('moving a session at its limit to the next account', () => {
     expect(notes).toHaveLength(1)
   })
 
+  it('holds an account added twice with the one at its limit, and does not reopen on it', async () => {
+    const p = paths(['claude'])
+    // Account 2 signed in as the login account 1 already has.
+    const same = JSON.stringify({ oauthAccount: { emailAddress: 'one@example.com', accountUuid: 'A-1', organizationUuid: 'O-1' } })
+    writeFileSync(join(p.home, '.claude.json'), same)
+    writeFileSync(join(homeOf(p, 'claude', 2), '.claude.json'), same)
+    accountRuns.set('k1', { agent: 'claude', account: 1, cwd: '/work' })
+    const term = terminal('claude')
+    const { d, opened, notes } = deps(p, { k1: term }, [{ id: '11111111-2222-3333-4444-555555555555', terminal: 'k1', usage: limited, last_seen: 1_000_000 }])
+    const rotation = startRotation(d)
+    await rotation.check()
+    rotation.stop()
+    expect(opened).toEqual([])
+    expect(term.typed).toEqual([])
+    expect(notes).toHaveLength(1)
+    expect(Object.keys(readLimits(p, 1_000_000).claude ?? {})).toEqual(['1', '2'])
+  })
+
   it('opens nothing when the CLI will not end', async () => {
     const p = paths(['codex'])
     accountRuns.set('k1', { agent: 'codex', account: 1, cwd: '/work' })

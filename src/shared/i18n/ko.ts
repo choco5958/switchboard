@@ -1214,6 +1214,8 @@ export const ko = {
   'accounts.numbered': '계정 {n}',
   'accounts.notSignedIn': '로그인 안 됨',
   'accounts.limited': '한도, {time}에 풀림',
+  'accounts.sameLogin': '같은 로그인: {account}',
+  'accounts.sameLoginDetail': '한도를 함께 씁니다. 다른 계정으로 쓰려면 다시 로그인을 눌러 그 계정으로 로그인하세요.',
   'accounts.add': '계정 추가',
   'accounts.login': '다시 로그인',
   'accounts.remove': '빼기',

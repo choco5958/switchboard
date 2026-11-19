@@ -1215,6 +1215,8 @@ export const zhCN: Dict = {
   'accounts.numbered': '账号 {n}',
   'accounts.notSignedIn': '未登录',
   'accounts.limited': '已达上限，{time} 解除',
+  'accounts.sameLogin': '相同的登录：{account}',
+  'accounts.sameLoginDetail': '与该账号共用上限。要使用其他账号，请点击重新登录并用那个账号登录。',
   'accounts.add': '添加账号',
   'accounts.login': '重新登录',
   'accounts.remove': '移除',

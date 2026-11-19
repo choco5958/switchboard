@@ -4,7 +4,7 @@ import { limitedUntil } from '../shared/limit'
 import { t } from '../shared/i18n'
 import type { Reply } from '../shared/types'
 import type { TypingTarget } from './agentInput'
-import { accountRuns, markLimit, readAccounts, readLimits, signedIn, type AccountPaths, type AccountRun } from './accounts'
+import { accountRuns, markLimit, readAccounts, readLimits, sameLogin, signedIn, type AccountPaths, type AccountRun } from './accounts'
 
 // A session the app started on an account (accounts.ts accountRuns) that hits the account's limit
 // goes on on the next free account of its CLI (docs/계정-여러-개.md): its CLI is ended in its
@@ -58,7 +58,9 @@ export function startRotation(deps: RotateDeps): { check: () => Promise<void>; s
   const move = async (key: string, run: AccountRun, until: number, session: Session | undefined, target: TypingTarget) => {
     accountRuns.delete(key)
     const paths = deps.paths()
-    markLimit(paths, run.agent, run.account, until, now())
+    // An account added twice has one limit: its other rows are held with it, so the session is
+    // not reopened on the same login only to stop again.
+    for (const id of [run.account, ...sameLogin(paths, run.agent, run.account)]) markLimit(paths, run.agent, id, until, now())
     const ids = [1, ...(readAccounts(paths)[run.agent] ?? []).map(e => e.id)]
     const next = pickAccount(ids, id => signedIn(paths, run.agent, id), readLimits(paths, now())[run.agent], now(), run.account)
     if (next === null) return deps.notify(t('accounts.allLimited', { agent: label(run.agent) }))
