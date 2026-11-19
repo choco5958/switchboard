@@ -1193,6 +1193,58 @@ describe('scheduled prompts and waits', () => {
     await call('POST', `/routines/${r.id}/delete`)
   })
 
+  test('a run whose session is at its usage limit tells the app so, and says why it did not run', async () => {
+    // The app's stream, where 'routine-open' asks it for a terminal.
+    const events: { type?: string; routineId?: number; limited?: boolean }[] = []
+    const app = request({ socketPath, path: '/stream', headers: { 'x-switchboard-app': APP_KEY } }, res => {
+      let buffer = ''
+      res.on('data', chunk => {
+        buffer += chunk
+        for (const m of buffer.matchAll(/event: change\ndata: (.*)\n\n/g)) events.push(JSON.parse(m[1] ?? '{}'))
+        buffer = buffer.slice(buffer.lastIndexOf('\n\n') + 2)
+      })
+    })
+    app.on('error', () => undefined)
+    app.end()
+    const asked = async () => {
+      let found: (typeof events)[number] | undefined
+      await eventually(async () => {
+        bridge.tickRoutines()
+        found = events.find(e => e.type === 'routine-open' && e.routineId === r.id)
+        return found !== undefined
+      })
+      events.length = 0
+      return found!
+    }
+    const { json: r } = await call('POST', '/routines', { name: '한도 점검', prompt: 'p', project: 'capped', cwd: '/w/capped', schedule: { kind: 'once', at: '2099-01-01T09:00' } })
+    // No session there at all: a terminal is what it needs.
+    await call('POST', `/routines/${r.id}/run`)
+    assert.equal((await asked()).limited, false)
+    bridge.tickRoutines(Date.now() + 31 * 60_000)
+    assert.equal((await runs(r.id)).at(-1)!.failure, '연결된 세션이 30분 동안 없어 실행하지 못함')
+
+    await call('POST', '/sessions', { id: 'cp-1', cwd: '/w/capped' })
+    const stream = open('cp-1')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const later = new Date(Date.now() + 3600_000).toISOString()
+    await call('POST', '/sessions/usage', { sessionId: 'cp-1', usage: { rateLimits: [{ kind: 'five_hour', percentUsed: 100, resetsAt: later }] } })
+    await call('POST', `/routines/${r.id}/run`)
+    assert.equal((await asked()).limited, true)
+    assert.deepEqual([(await runs(r.id)).at(-1)!.status, await take('cp-1')], ['waiting', []])
+    bridge.tickRoutines(Date.now() + 31 * 60_000)
+    assert.deepEqual([(await runs(r.id)).at(-1)!.status, (await runs(r.id)).at(-1)!.failure], ['failed', '세션이 사용량 한도에 걸려 30분 동안 실행하지 못함'])
+    // It reached no session, so it does not count toward switching the routine off.
+    assert.equal((await call('GET', '/state')).json.routines.find((row: { id: number }) => row.id === r.id).enabled, 1)
+
+    // The window open again: the run goes to that session.
+    await call('POST', '/sessions/usage', { sessionId: 'cp-1', usage: { rateLimits: [{ kind: 'five_hour', percentUsed: 3, resetsAt: later }] } })
+    await call('POST', `/routines/${r.id}/run`)
+    assert.equal((await runs(r.id)).at(-1)!.status, 'sent')
+    stream.destroy()
+    await call('POST', `/routines/${r.id}/delete`)
+    await new Promise(resolve => { app.destroy(); setTimeout(resolve, 300) })
+  })
+
   test('a run due long ago follows the missed policy; a once switches itself off', async () => {
     const make = async (missed: string, schedule: object) =>
       (await call('POST', '/routines', { name: missed, prompt: 'p', project: 'gone', cwd: '/w/gone', schedule, missed })).json

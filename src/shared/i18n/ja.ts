@@ -757,6 +757,7 @@ export const ja: Dict = {
   'peer.cancelRules': 'm{id} に関する作業を止め、この依頼には返事を送らないでください。すでに変えたものがあればユーザーに伝えてください。',
   'routine.skippedLive': '前回の実行が終わっていないためスキップ',
   'routine.noSession': 'つながっているセッションが 30 分間なく、実行できなかった',
+  'routine.limited': 'セッションが使用量の上限に達していて 30 分間実行できなかった',
   'routine.noResult': '6 時間以内にセッションの応答が終わらない',
   'routine.interrupted': 'セッションの応答が中断された',
   'routine.notInRun': 'このセッションは今、予約プロンプトを実行していません',

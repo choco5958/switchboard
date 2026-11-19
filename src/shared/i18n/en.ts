@@ -757,6 +757,7 @@ export const en: Dict = {
   'peer.cancelRules': 'Stop the work for m{id} and send no answer to it. If you already changed something, tell the user.',
   'routine.skippedLive': 'Skipped: the previous run had not ended',
   'routine.noSession': 'No connected session for 30 minutes',
+  'routine.limited': 'The session was at its usage limit for 30 minutes',
   'routine.noResult': 'The session did not finish its reply within 6 hours',
   'routine.interrupted': 'The session\'s reply was interrupted',
   'routine.notInRun': 'This session is not running a scheduled prompt now',

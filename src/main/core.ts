@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { BridgeState, Reply, WorktreeCheck } from '../shared/types'
 import { sharedStart, watchBridge } from './bridgeWatch'
 import { registerAccount } from './account'
-import { accountPaths, accountRuns, accountUsageOf, registerAccounts } from './accounts'
+import { accountPaths, accountRuns, accountUsageOf, freeAccount, registerAccounts } from './accounts'
 import { startRotation } from './accountRotate'
 import { ccrPath } from './termAccount'
 import { registerDevServers } from './devservers'
@@ -303,8 +303,8 @@ export function watchCore(): void {
     },
     onEvent: event => {
       // A scheduled prompt found no session of its agent in its project: start one there.
-      const change = event as { type?: string; routineId?: unknown }
-      if (change.type === 'routine-open') void openForRoutine(change.routineId)
+      const change = event as { type?: string; routineId?: unknown; limited?: unknown }
+      if (change.type === 'routine-open') void openForRoutine(change.routineId, change.limited === true)
       if (change.type === 'delegate-open') void openForDelegation((event as { delegationId?: unknown }).delegationId)
       send('bridge:change', event)
       scheduleScan()
@@ -316,12 +316,16 @@ export function watchCore(): void {
 
 // A scheduled prompt's terminal, where the routine the person saved says: only for a routine a
 // bridge that proved the key lists, never a folder or a CLI an event names by itself.
-async function openForRoutine(routineId: unknown): Promise<void> {
+// `limited`: its agent's session there is at its usage limit. Another terminal on the same login
+// would only meet that limit, so one opens only when an account is free; else the run waits for
+// the reset in the bridge.
+async function openForRoutine(routineId: unknown, limited = false): Promise<void> {
   if (typeof routineId !== 'number') return
   const reply = await call('GET', '/state')
   if (!reply.proven) return
   const routine = ((reply.json as unknown as BridgeState).routines ?? []).find(r => r.id === routineId)
   if (!routine?.cwd) return
+  if (limited && freeAccount(accountPaths(terminalConfigDir()), routine.agent || 'claude') === null) return
   const opened = !routine.agent || routine.agent === 'claude' ? openClaudeIn(routine.cwd) : await openAgentIn(call, routine.cwd, routine.agent)
   if ('error' in opened) console.error('routine terminal:', opened.error)
   else send('term:opened', opened)

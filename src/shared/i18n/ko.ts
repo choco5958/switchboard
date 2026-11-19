@@ -756,6 +756,7 @@ export const ko = {
   'peer.cancelRules': 'm{id}와 관련한 작업을 멈추고, 이 요청에 답을 보내지 마세요. 이미 바꾼 것이 있으면 사용자에게 알리세요.',
   'routine.skippedLive': '이전 실행이 아직 끝나지 않아 건너뜀',
   'routine.noSession': '연결된 세션이 30분 동안 없어 실행하지 못함',
+  'routine.limited': '세션이 사용량 한도에 걸려 30분 동안 실행하지 못함',
   'routine.noResult': '6시간 안에 세션이 응답을 마치지 않음',
   'routine.interrupted': '세션의 응답이 중단됨',
   'routine.notInRun': '지금 예약 프롬프트 실행 중이 아닙니다',

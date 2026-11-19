@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { accountList, accountOrder, accountSpec, activeOf, limitsOf, nextAccountId, pickAccount } from '../shared/accounts'
-import { accountRows, accountUsageOf, claudeStateText, defaultBase, homeOf, markLimit, prepareHome, readLimits, runAccount, sameLogin, type AccountPaths } from './accounts'
+import { accountRows, accountUsageOf, claudeStateText, defaultBase, freeAccount, homeOf, markLimit, prepareHome, readLimits, runAccount, sameLogin, type AccountPaths } from './accounts'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -244,6 +244,14 @@ describe('the account in use', () => {
     expect(runAccount(p, 'codex', undefined, 1000)?.id).toBe(3)
     markLimit(p, 'codex', 3, 5000, 1000)
     expect(runAccount(p, 'codex', undefined, 1000)?.id).toBe(1)
+    expect(freeAccount(p, 'codex', 1000)).toBe(1)
+    // Every account held, or none added: no account to start on by itself.
+    markLimit(p, 'codex', 1, 5000, 1000)
+    markLimit(p, 'codex', 2, 5000, 1000)
+    expect(freeAccount(p, 'codex', 1000)).toBe(null)
+    expect(runAccount(p, 'codex', 2, 1000)?.id).toBe(2)
+    expect(freeAccount(p, 'gemini', 1000)).toBe(null)
+    expect(freeAccount(p, 'codex', 6000)).toBe(3)
     expect(accountRows(p, {}, 1000).find(r => r.agent === 'codex')?.active).toBe(3)
   })
 

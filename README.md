@@ -275,7 +275,7 @@ Allowing on Telegram takes a second tap, and requests with masked secrets cannot
 
 ### Scheduled prompts
 
-In Settings > Scheduled prompts, set a name, project, agent, prompt and schedule. Intervals are 5 minutes or longer. A run is skipped while the previous one is still going, and runs missed while the app was off can run once at start. After 5 failed runs in a row, the schedule turns itself off and tells you.
+In Settings > Scheduled prompts, set a name, project, agent, prompt and schedule. Intervals are 5 minutes or longer. A run is skipped while the previous one is still going, and runs missed while the app was off can run once at start. After 5 failed runs in a row, the schedule turns itself off and tells you. While that project's session is at its usage limit, the app does not open another terminal on the same login: the run waits up to 30 minutes for the reset. With an account that is not at its limit, it opens on that account.
 
 ## From the shell
 

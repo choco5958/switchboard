@@ -226,13 +226,21 @@ export const accountRuns = new Map<string, AccountRun>()
 // CLI's own login, with nothing added.
 export function runAccount(p: AccountPaths, agent: string, asked?: number, now = Date.now()): { id: number; env: Record<string, string> } | null {
   const spec = accountSpec(agent)
-  const { list, active } = readAccountFile(p)
-  const extra = list[agent] ?? []
+  const extra = readAccounts(p)[agent] ?? []
   if (!spec || extra.length === 0) return null
-  const ids = [1, ...extra.map(e => e.id)]
-  const id = asked !== undefined && ids.includes(asked) ? asked : pickAccount(accountOrder(ids, active[agent]), n => signedIn(p, agent, n), readLimits(p, now)[agent], now)
+  const id = asked !== undefined && (asked === 1 || extra.some(e => e.id === asked)) ? asked : freeAccount(p, agent, now)
   if (id === null) return null
   return { id, env: { ...envOf(p, spec, id), SWITCHBOARD_ACCOUNT: String(id) } }
+}
+
+// The account a new run would go on by itself: the first signed in one whose limit is not holding,
+// from the one the person picked. Null with no extra accounts, or with every one held.
+export function freeAccount(p: AccountPaths, agent: string, now = Date.now()): number | null {
+  const { list, active } = readAccountFile(p)
+  const extra = list[agent] ?? []
+  if (!accountSpec(agent) || extra.length === 0) return null
+  const ids = [1, ...extra.map(e => e.id)]
+  return pickAccount(accountOrder(ids, active[agent]), n => signedIn(p, agent, n), readLimits(p, now)[agent], now)
 }
 
 // The env of a run on the account; its home is made ready first.

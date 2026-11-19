@@ -878,6 +878,14 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const ready = rows.filter(row => live.includes(row.id) && !limitedSession(row.id))
     return (ready.find(row => activity.get(row.id)?.state !== 'working') ?? ready[0])?.id ?? null
   }
+  // A session of the routine's agent is in its project but at its usage limit. A new terminal on
+  // the same login would only meet that limit, so the app opens one only on another account
+  // (core.ts openForRoutine) and the run waits here for the reset.
+  const routineLimited = (project: string, agent: string): boolean => {
+    const live = liveSessions()
+    const rows = db.prepare('select id from sessions where project = ? and agent = ?').all(project, agent) as { id: string }[]
+    return rows.some(row => live.includes(row.id) && limitedSession(row.id))
+  }
   const assignRuns = () => {
     const waiting = db
       .prepare("select rr.*, r.project, r.cwd, r.name, r.agent from routine_runs rr join routines r on r.id = rr.routine_id where rr.status = 'waiting' order by rr.id")
@@ -888,7 +896,8 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
         // Only the app opens terminals: with it away the run asks again on the next tick.
         if (!run.opened && watchers.size > 0) {
           db.prepare('update routine_runs set opened = 1 where id = ?').run(run.id)
-          for (const res of watchers) sseSend(res, 'change', { type: 'routine-open', routineId: run.routine_id, cwd: run.cwd, project: run.project, agent: run.agent })
+          const limited = routineLimited(run.project, run.agent)
+          for (const res of watchers) sseSend(res, 'change', { type: 'routine-open', routineId: run.routine_id, cwd: run.cwd, project: run.project, agent: run.agent, limited })
         }
         continue
       }
@@ -984,11 +993,15 @@ export function createBridge(dbPath: string, locale = systemLocale(), options: B
     const woke = sleeping.check()
     const before = (ms: number) => (woke < at - ms ? at - ms : 0)
     const stale = db
-      .prepare("select id, routine_id, status from routine_runs where (status = 'waiting' and created_at < ?) or (status = 'sent' and created_at < ?)")
-      .all(before(RUN_WAIT_MS), before(RUN_RESULT_MS)) as { id: number; routine_id: number; status: string }[]
+      .prepare(
+        `select rr.id, rr.routine_id, rr.status, r.project, r.agent from routine_runs rr left join routines r on r.id = rr.routine_id
+         where (rr.status = 'waiting' and rr.created_at < ?) or (rr.status = 'sent' and rr.created_at < ?)`,
+      )
+      .all(before(RUN_WAIT_MS), before(RUN_RESULT_MS)) as { id: number; routine_id: number; status: string; project: string | null; agent: string | null }[]
     for (const run of stale) {
+      const waited = run.project !== null && run.agent !== null && routineLimited(run.project, run.agent) ? 'routine.limited' : 'routine.noSession'
       db.prepare("update routine_runs set status = 'failed', failure = ?, finished_at = ? where id = ?").run(
-        say(run.status === 'waiting' ? 'routine.noSession' : 'routine.noResult'),
+        say(run.status === 'waiting' ? waited : 'routine.noResult'),
         at,
         run.id,
       )

@@ -757,6 +757,7 @@ export const zhCN: Dict = {
   'peer.cancelRules': '停止与 m{id} 相关的工作，不要回复这个请求。如果已经做了改动，请告诉用户。',
   'routine.skippedLive': '上一次运行尚未结束，已跳过',
   'routine.noSession': '30 分钟内没有已连接的会话，未能运行',
+  'routine.limited': '会话已达用量上限，30 分钟内未能运行',
   'routine.noResult': '6 小时内会话没有结束回应',
   'routine.interrupted': '会话的回应被中断',
   'routine.notInRun': '此会话当前未在运行定时提示',
