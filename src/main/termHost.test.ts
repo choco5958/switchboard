@@ -85,7 +85,7 @@ describe.skipIf(!unix)('the terminal host', () => {
       env: { PATH: '/usr/bin:/bin', TERM: 'xterm-256color' },
       cols: 80,
       rows: 24,
-      meta: { project: 'proj', cwd: dir, title: 'codex', claude: false, agent: 'codex', shell: '/bin/sh', bins: ['codex'] },
+      meta: { project: 'proj', cwd: dir, title: 'codex', claude: false, agent: 'codex', shell: '/bin/sh', bins: ['codex'], account: 2 },
     })
     expect(started).toMatchObject({ pid: expect.any(Number) })
     await wait(() => output.includes('hi'))
@@ -98,7 +98,7 @@ describe.skipIf(!unix)('the terminal host', () => {
     const second = terminalHosts(options('build-a', { data: (_id, data) => (again += data) }))
     await second.restore(snapshot => found.push(snapshot))
     expect(found).toHaveLength(1)
-    expect(found[0]).toMatchObject({ id: 'run1-t1', alive: true, meta: { project: 'proj', title: 'codex', agent: 'codex', bins: ['codex'] } })
+    expect(found[0]).toMatchObject({ id: 'run1-t1', alive: true, meta: { project: 'proj', title: 'codex', agent: 'codex', bins: ['codex'], account: 2 } })
     expect(found[0]!.screen).toContain('hi')
     second.write('run1-t1', 'abc\r')
     await wait(() => again.includes('got-abc'))

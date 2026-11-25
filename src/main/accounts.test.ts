@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { accountList, accountOrder, accountSpec, activeOf, limitsOf, nextAccountId, pickAccount } from '../shared/accounts'
-import { accountRows, accountUsageOf, claudeStateText, defaultBase, freeAccount, homeOf, markLimit, prepareHome, readLimits, runAccount, sameLogin, type AccountPaths } from './accounts'
+import { accountRows, accountUsageOf, claudeStateText, defaultBase, freeAccount, homeOf, keptRun, markLimit, prepareHome, readLimits, runAccount, sameLogin, type AccountPaths } from './accounts'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -171,6 +171,29 @@ describe('the account of a run', () => {
       { id: 2, name: 'side', email: 'so****@example.com', signedIn: false, until: undefined, usage: undefined },
     ])
     expect(gemini.active).toBe(1)
+  })
+})
+
+describe('a run the terminal host kept while the app was closed', () => {
+  const claude = { claude: true, account: 2, cwd: '/work', shell: '/bin/zsh' }
+  const codex = { claude: false, agent: 'codex', account: 1, cwd: '/work', shell: '/bin/zsh' }
+
+  it('is on its account again while its CLI is in front', () => {
+    expect(keptRun(claude, true, 'claude.exe')).toEqual({ agent: 'claude', account: 2, cwd: '/work' })
+    expect(keptRun(claude, true, '2.1.327')).toEqual({ agent: 'claude', account: 2, cwd: '/work' })
+    expect(keptRun(codex, true, 'codex')).toEqual({ agent: 'codex', account: 1, cwd: '/work' })
+  })
+
+  it('is not taken with the shell in front, where a move already ended the CLI', () => {
+    expect(keptRun(claude, true, 'zsh')).toBeNull()
+    expect(keptRun(codex, true, '-zsh')).toBeNull()
+    expect(keptRun(codex, true, '')).toBeNull()
+  })
+
+  it('is not taken from a terminal that ended, one with no account, or a plain shell', () => {
+    expect(keptRun(claude, false, 'claude.exe')).toBeNull()
+    expect(keptRun({ ...codex, account: undefined }, true, 'codex')).toBeNull()
+    expect(keptRun({ claude: false, account: 2, cwd: '/work', shell: '/bin/zsh' }, true, 'vim')).toBeNull()
   })
 })
 

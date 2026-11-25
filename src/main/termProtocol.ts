@@ -24,6 +24,8 @@ export type TermMeta = {
   agent?: string
   shell: string
   bins: string[]
+  // The account the run in it started on, when its CLI has more than one (accounts.ts keptRun).
+  account?: number
 }
 
 // `fg`: the program in front of the terminal (node-pty's `process`), for the answer typing.

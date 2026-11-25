@@ -6,6 +6,7 @@ import { ACCOUNT_SPECS, accountList, accountOrder, accountSpec, activeOf, limits
 import type { AccountRow, TermInfo } from '../shared/types'
 import { commandWord } from '../shared/agents'
 import { maskEmail, readAccount } from './account'
+import { shellInFront } from './agentInput'
 
 // The accounts of each agent CLI (docs/계정-여러-개.md): the list the person keeps, each account's
 // home, the env a run on it gets, and when each account's limit lifts.
@@ -217,9 +218,19 @@ export function sameLogin(p: AccountPaths, agent: string, id: number): number[] 
 }
 
 // The runs the app started on an account, by terminal key, for a move to another account at a
-// limit (accountRotate.ts). Kept for the app's life: a run the host kept from before is not moved.
+// limit (accountRotate.ts).
 export type AccountRun = { agent: string; account: number; cwd: string }
 export const accountRuns = new Map<string, AccountRun>()
+
+// The run of a terminal the host kept while the app was closed, so that it is still moved at its
+// limit, or null. Its shell carries the account's env, so a CLI in front of it runs on that account.
+// With the shell in front the CLI has ended, as it does after a move: taken again, that terminal
+// would reopen the conversation a second time.
+export function keptRun(meta: { claude: boolean; agent?: string; account?: number; cwd: string; shell: string }, alive: boolean, fg: string): AccountRun | null {
+  const agent = meta.claude ? 'claude' : meta.agent
+  if (!alive || !agent || meta.account === undefined || shellInFront(fg, meta.shell)) return null
+  return { agent, account: meta.account, cwd: meta.cwd }
+}
 
 // The account a new run of the agent goes on, and its env: `asked` when given, else the first free one
 // from the account the person picked to use (`active`). No extra accounts, or every one held: the

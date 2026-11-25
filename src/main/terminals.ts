@@ -7,7 +7,7 @@ import * as pty from 'node-pty'
 import type { TermInfo } from '../shared/types'
 import { projectName, shellQuote, terminalEnv } from '../shared/projects'
 import { accountDir, ccrPath, claudeLauncher, claudeLine } from './termAccount'
-import { accountPaths, accountRuns, runAccount } from './accounts'
+import { accountPaths, accountRuns, keptRun, runAccount } from './accounts'
 import { ccrPaths } from './account'
 import { pasteModeAfter, type TypingTarget } from './agentInput'
 import { createScreen, type Screen } from './termScreen'
@@ -205,7 +205,7 @@ export function openTerminal(start: TermStart): TermInfo | { error: string } {
     buffer: '', seq: 0, key, shell: shell.file, lastOutput: Date.now(), paste: false, fg: '', bins: start.bins ?? [], screen: createScreen(cols, rows), backend,
   }
   terms.set(id, term)
-  const meta = { project, cwd: folder, title, claude: term.claude, agent: start.agent, shell: shell.file, bins: term.bins }
+  const meta = { project, cwd: folder, title, claude: term.claude, agent: start.agent, shell: shell.file, bins: term.bins, account: accountRuns.get(key)?.account }
   void backend.spawn({ id: key, file: shell.file, args: shell.interactive, cwd: folder, env, cols, rows, meta }).then(result => {
     if (!('error' in result)) return
     const why = result.error === HOST_DOWN ? t('term.hostFailed', { log: HOST_LOG }) : result.error
@@ -232,6 +232,8 @@ function restored(snapshot: Snapshot, backend: TermBackend): void {
     buffer: snapshot.screen, seq: 0, key: snapshot.id, shell: meta.shell, lastOutput: snapshot.lastOutput, paste: pasteModeAfter(false, snapshot.screen),
     fg: snapshot.fg, bins: meta.bins, screen, backend,
   })
+  const run = keptRun(meta, snapshot.alive, snapshot.fg)
+  if (run) accountRuns.set(snapshot.id, run)
 }
 
 // Before the window opens: finds the hosts that run (this build's and older ones), shows

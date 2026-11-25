@@ -99,6 +99,7 @@ function spawnRequest(message: Record<string, unknown>): SpawnRequest | null {
       agent: typeof meta.agent === 'string' ? meta.agent : undefined,
       shell: str(meta.shell),
       bins: Array.isArray(meta.bins) ? meta.bins.map(String) : [],
+      account: Number.isInteger(meta.account) ? (meta.account as number) : undefined,
     },
   }
 }
