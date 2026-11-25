@@ -3,7 +3,7 @@ import { CONTINUE_LAST, agentOf, resumableId } from '../shared/agents'
 import { limitedUntil } from '../shared/limit'
 import { t } from '../shared/i18n'
 import type { Reply } from '../shared/types'
-import type { TypingTarget } from './agentInput'
+import { shellInFront, type TypingTarget } from './agentInput'
 import { accountRuns, markLimit, readAccounts, readLimits, sameLogin, signedIn, type AccountPaths, type AccountRun } from './accounts'
 
 // A session the app started on an account (accounts.ts accountRuns) that hits the account's limit
@@ -45,8 +45,15 @@ export function screenLimited(agent: string, screen: readonly string[] | undefin
   return spec.limit.test(tail.join('\n'))
 }
 
-// The CLI is in front of its terminal (not the shell it was started from).
-const cliInFront = (target: TypingTarget): boolean => !!target.foreground && (target.expect ?? []).some(bin => target.foreground === bin || target.foreground.endsWith(`/${bin}`))
+// The CLI is in front of its terminal (not the shell it was started from). A Claude Code terminal
+// names no programs, and a name would not tell: what macOS reads is the file the `claude` link
+// points at, `claude.exe` from npm and the version number from the native installer. There any
+// program but the shell is the CLI, or it would never be ended before its conversation reopens.
+const cliInFront = (target: TypingTarget): boolean => {
+  const expect = target.expect ?? []
+  if (expect.length === 0) return !shellInFront(target.foreground, target.shell)
+  return !!target.foreground && expect.some(bin => target.foreground === bin || target.foreground.endsWith(`/${bin}`))
+}
 
 export function startRotation(deps: RotateDeps): { check: () => Promise<void>; stop: () => void } {
   const now = deps.now ?? Date.now

@@ -38,15 +38,23 @@ export function pasteModeAfter(current: boolean, output: string): boolean {
   return on > off
 }
 
+// A program's name as it is compared here: no folder, no login dash, no .exe or .cmd.
+const programName = (path: string) => path.split(/[\\/]/).pop()?.replace(/^-/, '').replace(/\.(exe|cmd)$/i, '').toLowerCase() ?? ''
+
+// The login shell is in front of the pty, or nothing could be read: no CLI runs there (any more).
+export function shellInFront(foreground: string, shell: string): boolean {
+  const front = programName(foreground)
+  return front === '' || front === programName(shell) || SHELL_NAMES.includes(front)
+}
+
 // The pty's foreground process is the login shell again once the CLI has quit:
 // typing then would run the answer as shell commands. Only the program names the
 // terminal was opened for (`expect`) count as the CLI: with none, nothing does.
 export function cliInFront(foreground: string, shell: string, expect: readonly string[] = []): boolean {
-  const name = (path: string) => path.split(/[\\/]/).pop()?.replace(/^-/, '').replace(/\.(exe|cmd)$/i, '').toLowerCase() ?? ''
-  const front = name(foreground)
-  if (front === '' || front === name(shell) || SHELL_NAMES.includes(front)) return false
+  if (shellInFront(foreground, shell)) return false
   // Another program the person started there (ssh, python) is not the CLI.
-  return expect.some(bin => name(bin) === front)
+  const front = programName(foreground)
+  return expect.some(bin => programName(bin) === front)
 }
 
 // A menu the CLI shows now: its own "run this command?" confirmation, or a yes/no question

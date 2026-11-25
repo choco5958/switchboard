@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PASTE_END, PASTE_START, QUIET_MS, cleanText, cliInFront, enterAllowed, pasteModeAfter, permissionMenu, readyToType, typedInput, typingBlock } from './agentInput'
+import { PASTE_END, PASTE_START, QUIET_MS, cleanText, cliInFront, enterAllowed, pasteModeAfter, permissionMenu, readyToType, shellInFront, typedInput, typingBlock } from './agentInput'
 import { createScreen, settled } from './termScreen'
 
 const answer = '[Switchboard] Q7 답이 왔습니다.\n질문: 어디에 둘까\n고른 것: (a) 카드 안\n이 답에 따라 멈춰 있던 작업을 이어서 진행하세요.'
@@ -35,6 +35,10 @@ describe('typing an answer', () => {
     expect(cliInFront('-zsh', '/bin/zsh', bins)).toBe(false)
     expect(cliInFront('bash', '/bin/zsh', bins)).toBe(false)
     expect(cliInFront('', '/bin/zsh', bins)).toBe(false)
+    // Claude Code as macOS names it (npm's file, the native installer's version): not the shell, and not a name to match.
+    for (const front of ['claude.exe', '2.1.327', 'node']) expect(shellInFront(front, '/bin/zsh')).toBe(false)
+    for (const front of ['zsh', '-zsh', 'login', '']) expect(shellInFront(front, '/bin/zsh')).toBe(true)
+    expect(cliInFront('claude.exe', '/bin/zsh', [])).toBe(false)
     const t = { alive: true, foreground: 'node', shell: '/bin/zsh', lastOutput: 1000, expect: bins }
     expect(readyToType(t, 1000 + QUIET_MS)).toBe(true)
     expect(readyToType(t, 1000 + QUIET_MS - 1)).toBe(false)

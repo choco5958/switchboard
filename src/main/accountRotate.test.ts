@@ -51,6 +51,14 @@ function terminal(bin: string, screen: string[] = [], exitsAfter = 2): TypingTar
   return target
 }
 
+// A Claude Code terminal as the app opens it: it names no programs, and macOS reads the CLI's name
+// off the file the `claude` link points at (`claude.exe` from npm, the version from the installer).
+function claudeTerminal(front = 'claude.exe', exitsAfter = 2): TypingTarget & { typed: string[] } {
+  const target = terminal(front, [], exitsAfter)
+  target.expect = []
+  return target
+}
+
 const limited = JSON.stringify({ rateLimits: [{ kind: 'five_hour', percentUsed: 100, resetsAt: new Date(10_000_000).toISOString() }] })
 
 function deps(p: AccountPaths, terms: Record<string, TypingTarget>, sessions: { id: string; terminal: string; usage?: string; last_seen?: number }[], proven = true) {
@@ -96,11 +104,37 @@ describe('moving a session at its limit to the next account', () => {
   it('goes on with the same Claude Code conversation by its id', async () => {
     const p = paths(['claude'])
     accountRuns.set('k1', { agent: 'claude', account: 1, cwd: '/work' })
-    const { d, opened } = deps(p, { k1: terminal('claude') }, [{ id: '11111111-2222-3333-4444-555555555555', terminal: 'k1', usage: limited, last_seen: 1_000_000 }])
+    const term = claudeTerminal()
+    const { d, opened } = deps(p, { k1: term }, [{ id: '11111111-2222-3333-4444-555555555555', terminal: 'k1', usage: limited, last_seen: 1_000_000 }])
     const rotation = startRotation(d)
     await rotation.check()
     rotation.stop()
+    expect(term.typed.filter(x => x === '\x03').length).toBe(2)
     expect(opened).toEqual([{ agent: 'claude', account: 2, resume: '11111111-2222-3333-4444-555555555555' }])
+  })
+
+  it('ends Claude Code under the name the native installer gives it, and opens nothing while it runs', async () => {
+    const session = { id: '11111111-2222-3333-4444-555555555555', terminal: 'k1', usage: limited, last_seen: 1_000_000 }
+    const p = paths(['claude'])
+    accountRuns.set('k1', { agent: 'claude', account: 1, cwd: '/work' })
+    const ends = claudeTerminal('2.1.327')
+    const first = deps(p, { k1: ends }, [session])
+    const rotation = startRotation(first.d)
+    await rotation.check()
+    rotation.stop()
+    expect(ends.typed.filter(x => x === '\x03').length).toBe(2)
+    expect(first.opened).toHaveLength(1)
+
+    const q = paths(['claude'])
+    accountRuns.set('k1', { agent: 'claude', account: 1, cwd: '/work' })
+    const stays = claudeTerminal('2.1.327', 99)
+    const second = deps(q, { k1: stays }, [session])
+    const again = startRotation(second.d)
+    await again.check()
+    again.stop()
+    expect(stays.typed.filter(x => x === '\x03').length).toBe(4)
+    expect(second.opened).toEqual([])
+    expect(second.notes).toHaveLength(1)
   })
 
   it('reads the limit off the screen for a CLI that sends no usage', async () => {
@@ -135,7 +169,7 @@ describe('moving a session at its limit to the next account', () => {
     writeFileSync(join(p.home, '.claude.json'), same)
     writeFileSync(join(homeOf(p, 'claude', 2), '.claude.json'), same)
     accountRuns.set('k1', { agent: 'claude', account: 1, cwd: '/work' })
-    const term = terminal('claude')
+    const term = claudeTerminal()
     const { d, opened, notes } = deps(p, { k1: term }, [{ id: '11111111-2222-3333-4444-555555555555', terminal: 'k1', usage: limited, last_seen: 1_000_000 }])
     const rotation = startRotation(d)
     await rotation.check()
