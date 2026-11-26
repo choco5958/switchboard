@@ -4,7 +4,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { acceptDrops } from './termDrop'
-import { termLinks } from './termLinks'
+import { LINK_PATTERN, termLinks } from './termLinks'
 import { createReplay } from './termReplay'
 import { t } from '../../shared/i18n'
 import { termTheme } from './termTheme'
@@ -40,7 +40,7 @@ export function TerminalView({ id, visible, themeKey }: { id: string; visible: b
     })
     const fitter = new FitAddon()
     xterm.loadAddon(fitter)
-    xterm.loadAddon(new WebLinksAddon(links.open, { hover: links.hover, leave: links.leave }))
+    xterm.loadAddon(new WebLinksAddon(links.open, { hover: links.hover, leave: links.leave, urlRegex: LINK_PATTERN }))
     xterm.open(box.current)
     term.current = xterm
     fit.current = fitter

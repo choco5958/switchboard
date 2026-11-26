@@ -9,6 +9,16 @@ import { isLocalAddress, webAddress } from '../../shared/webAddress'
 
 const MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent)
 
+// The addresses found in the output: xterm's own pattern, but an address ends where letters
+// outside ASCII come straight after an ASCII letter or digit. Korean, Japanese and Chinese put a
+// particle or the next word right after an address with no space ("http://localhost:3000에서",
+// ".../docsを参照"); read as part of it, the address is no web address at all or leads to a page
+// that is not there. Such letters after "/", "=" or another mark stay (".../wiki/한글").
+const MARK = String.raw`[#$%&+,\-./:;=?@\[\]_~]`
+// Not the marks around an address: dashes and quotes, box lines, CJK and full-width punctuation.
+const WIDE = String.raw`[^\x00-\x7f\s\u2000-\u206f\u2500-\u259f\u3000-\u303f\uff00-\uffef]`
+export const LINK_PATTERN = new RegExp(String.raw`(?:https?|HTTPS?)://(?:[A-Za-z0-9]|${MARK}${WIDE}*)*(?:[A-Za-z0-9]|${MARK}${WIDE}+|[#$%&+\-/;=@_])`)
+
 // Where a link's address opens; null for anything but a web address (file:, javascript:, a word).
 export function linkTarget(raw: string): { url: string; local: boolean } | null {
   const url = webAddress(raw)

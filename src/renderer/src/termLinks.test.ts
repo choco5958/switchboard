@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { setLang } from '../../shared/i18n'
-import { linkHint, linkKeyHeld, linkTarget } from './termLinks'
+import { LINK_PATTERN, linkHint, linkKeyHeld, linkTarget } from './termLinks'
 
 describe('linkTarget', () => {
   it('sends an address on this computer to the in-app browser and any other to the person’s browser', () => {
@@ -12,6 +12,30 @@ describe('linkTarget', () => {
 
   it('opens nothing but a web address', () => {
     for (const raw of ['file:///etc/hosts', 'javascript:alert(1)', 'vscode://file/x', 'mailto:a@example.com', '-a Calculator', 'README.md', '']) expect(linkTarget(raw), raw).toBeNull()
+  })
+})
+
+describe('LINK_PATTERN', () => {
+  const found = (line: string) => [...line.matchAll(new RegExp(LINK_PATTERN.source, 'g'))].map(m => m[0])
+
+  it('ends an address where a word of the sentence follows it with no space', () => {
+    expect(found('개발 서버가 http://localhost:5173에서 실행 중입니다.')).toEqual(['http://localhost:5173'])
+    expect(found('브라우저에서 http://localhost:3000/login으로 이동하세요')).toEqual(['http://localhost:3000/login'])
+    expect(found('サーバーはhttp://localhost:3000で起動しています。')).toEqual(['http://localhost:3000'])
+    expect(found('请访问http://localhost:8080/admin查看，或者https://example.com。')).toEqual(['http://localhost:8080/admin', 'https://example.com'])
+    expect(found('│ http://127.0.0.1:4000/│ http://localhost:9/a✅')).toEqual(['http://127.0.0.1:4000/', 'http://localhost:9/a'])
+    for (const address of found('http://localhost:5173에서 https://example.com/docs를')) expect(linkTarget(address), address).not.toBeNull()
+  })
+
+  it('keeps letters outside ASCII that start a part of the address', () => {
+    expect(found('see https://ko.wikipedia.org/wiki/한글 and https://example.com/search?q=가나다&x=1 end')).toEqual(['https://ko.wikipedia.org/wiki/한글', 'https://example.com/search?q=가나다&x=1'])
+    expect(found('https://example.com/문서/시작하기#설치。')).toEqual(['https://example.com/문서/시작하기#설치'])
+  })
+
+  it('reads an ASCII address as xterm does', () => {
+    expect(found('plain http://localhost:5173/app?x=1, then (https://github.com/a/b/pull/1).')).toEqual(['http://localhost:5173/app?x=1', 'https://github.com/a/b/pull/1'])
+    expect(found('http://[::1]:3000/ HTTPS://EXAMPLE.COM/A_b-c~d/ http://user:pw@host:8080/x;y=1!')).toEqual(['http://[::1]:3000/', 'HTTPS://EXAMPLE.COM/A_b-c~d/', 'http://user:pw@host:8080/x;y=1'])
+    expect(found('http:// https://. ftp://example.com')).toEqual([])
   })
 })
 
