@@ -55,7 +55,7 @@ test('a bad url is reported', () => {
 
 test('two targets cannot share a host and port, except the one being edited', () => {
   const other = makeTarget(draft({ name: '다른 앱' }), 't1')
-  expect(validateTarget(draft(), [other])).toEqual(['포트 8980는 이미 "다른 앱"이 씁니다.'])
+  expect(validateTarget(draft(), [other])).toEqual(['포트 8980번은 "다른 앱" 서버가 이미 씁니다.'])
   expect(validateTarget(draft(), [other], 't1')).toEqual([])
   expect(validateTarget(draft({ url: 'http://127.0.0.1:8981' }), [other])).toEqual([])
 })
@@ -89,7 +89,7 @@ test('appendLines joins chunks into lines and keeps the last ones', () => {
 test('fieldErrors puts each problem under its own field', () => {
   expect(fieldErrors(draft({ name: '', url: 'http://exa mple:99999' }))).toEqual({ name: '이름을 적으세요.', url: '개발 서버 URL이 올바르지 않습니다.' })
   const other = makeTarget(draft({ name: '다른 앱' }), 't1')
-  expect(fieldErrors(draft(), [other])).toEqual({ url: '포트 8980는 이미 "다른 앱"이 씁니다.' })
+  expect(fieldErrors(draft(), [other])).toEqual({ url: '포트 8980번은 "다른 앱" 서버가 이미 씁니다.' })
 })
 
 test('planOpen: a bare url of no target only opens the page', () => {

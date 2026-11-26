@@ -59,6 +59,14 @@ describe('dictionaries', () => {
     }
   })
 
+  test('no Korean particle hangs on a value put in (docs/용어.md)', () => {
+    // 이/가, 을/를, 은/는, 와/과 and 로/으로 change with the value's last sound ("0.3.41이", "0.3.42가").
+    // The two home steps put in a label that never changes ("+ 프로젝트", "+").
+    const fixed = ['home.step1Body', 'home.step2Body']
+    const hangs = /\{\w+\}["”’」]?(이|가|을|를|은|는|와|과|로|으로)(?=[\s.,?!:)]|$)/
+    expect(Object.entries(ko).filter(([key, value]) => !fixed.includes(key) && hangs.test(value)).map(([key]) => key)).toEqual([])
+  })
+
   test('the product name stays as it is', () => {
     for (const lang of OTHERS) expect(tIn(lang, 'prompt.answer.head', { id: 1 })).toContain('[Switchboard]')
   })

@@ -827,7 +827,7 @@ describe('messages between sessions', () => {
     const fwd = (await call('POST', `/questions/${q.id}/forward`, { to: 'pb' })).json
     const [got] = await take('pb')
     assert.equal(got!.id, fwd.message)
-    assert.match(got!.text, new RegExp(`front \\(pa\\)의 결정 질문 Q${q.id}`))
+    assert.match(got!.text, new RegExp(`front \\(pa\\)의 결정 질문\\(Q${q.id}\\)을`))
     assert.match(got!.text, /\(a\) 5분 \(질문한 세션의 추천\)/)
     const reply = (await call('POST', '/messages', { sessionId: 'pb', replyTo: fwd.message, text: 'b\n트래픽이 적어서 길게' })).json
     assert.equal(reply.answered, `Q${q.id}`)
@@ -1290,7 +1290,7 @@ describe('scheduled prompts and waits', () => {
     assert.equal((await call('GET', '/waits?session=wt-1')).json.waits.length, 1)
     await call('POST', `/waits/${json.id}/fire`, { payload: 'CI 통과 (12분)' })
     const [got] = await take('wt-1')
-    assert.match(got!.text, new RegExp(`기다리던 일 ${json.id}가 일어났습니다`))
+    assert.match(got!.text, new RegExp(`기다리던 일\\(${json.id}\\)이 일어났습니다`))
     assert.match(got!.text, /기다린 이유: CI가 끝나면/)
     // What the shell command carried is fenced: it may come from another session as well as the person.
     assert.match(got!.text, /함께 온 내용:\n.+\n--- 메시지 시작 \(경계 ([0-9a-f]{12})\) ---\nCI 통과 \(12분\)\n--- 메시지 끝 \(경계 \1\) ---/)
